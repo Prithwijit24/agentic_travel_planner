@@ -1,0 +1,28 @@
+{
+  "description": "Seed ingestion manifest for Rome.",
+  "defaults": {
+    "crawl_backend": "trafilatura",
+    "refresh_days": 14,
+    "tags": ["rome", "travel"],
+    "max_concurrency": 3
+  },
+  "seeds": [
+    {
+      "destination": "Rome",
+      "title": "Rome Wikivoyage",
+      "url": "https://en.wikivoyage.org/wiki/Rome",
+      "source_type": "wikivoyage",
+      "tags": ["guide"],
+      "priority": 1
+    },
+    {
+      "destination": "Rome",
+      "title": "Official Colosseum visitor info",
+      "url": "https://colosseo.it/en/",
+      "source_type": "web",
+      "tags": ["official", "attraction"],
+      "priority": 2
+    }
+  ]
+}
+

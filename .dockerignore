@@ -1,0 +1,14 @@
+.git
+.venv
+.uv-cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+data/chroma/*
+data/operations/*.db
+data/evaluation/*
+src/project_folder/notebooks
+

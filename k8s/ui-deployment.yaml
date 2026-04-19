@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentic-travel-planner-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agentic-travel-planner-ui
+  template:
+    metadata:
+      labels:
+        app: agentic-travel-planner-ui
+    spec:
+      containers:
+        - name: ui
+          image: agentic-travel-planner:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: APP_TARGET
+              value: "ui"
+            - name: API_BASE_URL
+              value: "http://agentic-travel-planner-api"
+            - name: STREAMLIT_SERVER_PORT
+              value: "8501"
+          envFrom:
+            - configMapRef:
+                name: agentic-travel-planner-config
+          ports:
+            - containerPort: 8501
+          readinessProbe:
+            tcpSocket:
+              port: 8501
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8501
+            initialDelaySeconds: 20
+            periodSeconds: 20
+

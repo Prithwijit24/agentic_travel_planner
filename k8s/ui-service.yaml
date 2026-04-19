@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentic-travel-planner-ui
+spec:
+  selector:
+    app: agentic-travel-planner-ui
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8501
+  type: ClusterIP

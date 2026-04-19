@@ -1,0 +1,15 @@
+[
+  {
+    "question": "Plan a Rome trip focused on ancient history with efficient routing.",
+    "ground_truth": "The answer should prioritize ancient-history landmarks and cluster the route.",
+    "reference_contexts": [
+      "Rome Wikivoyage guide",
+      "Official Colosseum visitor info"
+    ],
+    "metadata": {
+      "destination": "Rome",
+      "trip_length_days": 3,
+      "interests": ["ancient history", "walking"]
+    }
+  }
+]

@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentic-travel-planner-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agentic-travel-planner-api
+  template:
+    metadata:
+      labels:
+        app: agentic-travel-planner-api
+    spec:
+      containers:
+        - name: api
+          image: agentic-travel-planner:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: APP_TARGET
+              value: "api"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agentic-travel-planner-secrets
+                  key: OPENAI_API_KEY
+                  optional: true
+            - name: GOOGLE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agentic-travel-planner-secrets
+                  key: GOOGLE_API_KEY
+                  optional: true
+            - name: OPENWEATHER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agentic-travel-planner-secrets
+                  key: OPENWEATHER_API_KEY
+                  optional: true
+            - name: GOOGLE_MAPS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agentic-travel-planner-secrets
+                  key: GOOGLE_MAPS_API_KEY
+                  optional: true
+          envFrom:
+            - configMapRef:
+                name: agentic-travel-planner-config
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - name: app-data
+              mountPath: /app/data
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+      volumes:
+        - name: app-data
+          emptyDir: {}
+
