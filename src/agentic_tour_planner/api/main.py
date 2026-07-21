@@ -11,7 +11,7 @@ from prometheus_client import Counter, Histogram, generate_latest
 
 from agentic_tour_planner.api.events import EventEmitter, get_emitter, register_emitter, remove_emitter
 from agentic_tour_planner.config.settings import Settings, get_settings
-from agentic_tour_planner.domain.models import IngestedSourceRecord, PlanAPIResponse, PlanFeedback, PlanningRequest, PlanningResponse, StoredPlanRecord
+from agentic_tour_planner.domain.models import IngestedSourceRecord, LogEvent, PlanAPIResponse, PlanFeedback, PlanningRequest, PlanningResponse, StoredPlanRecord
 from agentic_tour_planner.ingestion.service import IngestionService
 from agentic_tour_planner.pipeline.agentic_pipeline import AgenticTourPlannerPipeline
 from agentic_tour_planner.storage.sqlite_store import SQLitePlanStore
@@ -58,17 +58,20 @@ def health() -> dict:
 async def create_plan(request: PlanningRequest) -> PlanAPIResponse:
     logger.info(f"POST /plans destination={request.destination} provider={request.provider or 'default'}")
     request_id = str(uuid4())
+    emitter = EventEmitter()
+    register_emitter(request_id, emitter)
     pipeline = AgenticTourPlannerPipeline()
     store = SQLitePlanStore()
     provider = (request.provider or settings.default_llm_provider) or "unknown"
     REQUEST_COUNT.labels(endpoint="/plans", provider=provider).inc()
     start = time.perf_counter()
     try:
-        response = await pipeline.run(request)
+        response = await pipeline.run(request, emitter=emitter)
         store.save_plan(request, response)
         elapsed = time.perf_counter() - start
         REQUEST_LATENCY.labels(endpoint="/plans").observe(elapsed)
         logger.info(f"POST /plans completed plan_id={response.plan_id} in {elapsed:.2f}s")
+        emitter.emit(LogEvent(event="done", message="Plan complete", detail={"plan_id": response.plan_id, "status": "completed"}))
         return PlanAPIResponse(
             request_id=request_id,
             plan=response,
@@ -78,6 +81,8 @@ async def create_plan(request: PlanningRequest) -> PlanAPIResponse:
         elapsed = time.perf_counter() - start
         REQUEST_LATENCY.labels(endpoint="/plans").observe(elapsed)
         logger.error(f"POST /plans failed in {elapsed:.2f}s: {e}")
+        emitter.emit(LogEvent(event="error", message=str(e)))
+        emitter.emit(LogEvent(event="done", message="Plan failed", detail={"status": "error"}))
         return PlanAPIResponse(
             request_id=request_id,
             plan=None,
