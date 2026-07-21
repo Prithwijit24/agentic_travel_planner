@@ -361,7 +361,7 @@ class LogEvent(BaseModel):
 class PlanAPIResponse(BaseModel):
     """Validated response the UI maps from."""
     request_id: str
-    plan: PlanningResponse
+    plan: PlanningResponse | None = None
     status: Literal["completed", "error"]
     error: str | None = None
 
