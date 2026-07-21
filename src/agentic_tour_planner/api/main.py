@@ -10,8 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import Counter, Histogram, generate_latest
 
 from agentic_tour_planner.api.events import EventEmitter, get_emitter, register_emitter, remove_emitter
+from agentic_tour_planner.api.images import resolve_images
 from agentic_tour_planner.config.settings import Settings, get_settings
-from agentic_tour_planner.domain.models import IngestedSourceRecord, LogEvent, PlanAPIResponse, PlanFeedback, PlanningRequest, PlanningResponse, StoredPlanRecord
+from agentic_tour_planner.domain.models import ImageResponse, IngestedSourceRecord, LogEvent, PlanAPIResponse, PlanFeedback, PlanningRequest, PlanningResponse, StoredPlanRecord
 from agentic_tour_planner.ingestion.service import IngestionService
 from agentic_tour_planner.pipeline.agentic_pipeline import AgenticTourPlannerPipeline
 from agentic_tour_planner.storage.sqlite_store import SQLitePlanStore
@@ -95,6 +96,24 @@ async def create_plan(request: PlanningRequest) -> PlanAPIResponse:
 def list_plans(limit: int = 20) -> list[StoredPlanRecord]:
     logger.info(f"GET /plans limit={limit}")
     return SQLitePlanStore().list_plans(limit)
+
+
+@app.get("/plans/{plan_id}/images", response_model=ImageResponse)
+async def get_plan_images(plan_id: str) -> ImageResponse:
+    logger.info(f"GET /plans/{plan_id}/images")
+    store = SQLitePlanStore()
+    record = store.get_plan(plan_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    places = []
+    for day in record.response.itinerary:
+        for spot in day.spots:
+            if spot.image_query:
+                places.append({"place_name": spot.name, "image_query": spot.image_query})
+
+    images = await resolve_images(places)
+    return ImageResponse(plan_id=plan_id, images=images)
 
 
 @app.get("/sources", response_model=list[IngestedSourceRecord])
