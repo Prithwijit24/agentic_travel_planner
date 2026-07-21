@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import re
+
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator
@@ -9,7 +11,7 @@ from pydantic import BaseModel, Field, HttpUrl, field_validator
 ProviderName = Literal["openai", "google", "ollama", "openrouter", "xai"]
 BudgetLevel = Literal["budget", "midrange", "luxury"]
 SourceKind = Literal["wikivoyage", "web", "youtube", "file", "search"]
-CrawlBackend = Literal["httpx", "trafilatura", "crawl4ai"]
+CrawlBackend = Literal["trafilatura", "scrapling"]
 ProxyRoutingStrategy = Literal["direct", "round_robin", "hash"]
 
 
@@ -21,10 +23,13 @@ class PlanningRequest(BaseModel):
     budget_level: BudgetLevel = "midrange"
     travel_month: str | None = None
     notes: str | None = None
-    provider: ProviderName | None = None
+    provider: str | None = None
     model: str | None = None
     include_live_data: bool = True
     max_attractions_per_day: int = Field(default=4, ge=1, le=8)
+    places_per_day: str | None = None
+    transport_mode: str | None = None
+    travelers: int = Field(default=1, ge=1)
 
     @field_validator("budget_level", mode="before")
     @classmethod
@@ -32,6 +37,24 @@ class PlanningRequest(BaseModel):
         if value == "mid-range":
             return "midrange"
         return value
+
+
+def parse_place_range(value: str | int | None, default: tuple[int, int] = (3, 5)) -> tuple[int, int]:
+    """Normalize a natural place-count range like '3-5', '3 to 5', '3 – 5' into (min, max)."""
+    if value is None:
+        return default
+    text = str(value)
+    match = re.search(r"(\d+)\s*(?:-|–|—|to|and)?\s*(\d+)", text)
+    if match:
+        lo, hi = int(match.group(1)), int(match.group(2))
+        if lo > hi:
+            lo, hi = hi, lo
+        return (lo, hi)
+    single = re.search(r"(\d+)", text)
+    if single:
+        n = int(single.group(1))
+        return (n, n)
+    return default
 
 
 class SourceDocument(BaseModel):
@@ -47,6 +70,28 @@ class SearchResult(BaseModel):
     title: str
     url: HttpUrl | str
     snippet: str
+
+
+class LiveWebSource(BaseModel):
+    """A single crawled + translated source used as live, on-the-fly evidence."""
+
+    title: str
+    url: str
+    kind: str  # "video" | "blog"
+    original_language: str | None = None
+    audio_path: str | None = None  # local path to fetched audio (videos only)
+
+
+class LiveWebBrief(BaseModel):
+    """Structured, LLM-extracted live web intelligence — the authoritative source of
+    truth for the planner, gathered on the fly (never stored in the knowledge base)."""
+
+    path_instructions: str = ""
+    fair_charges: str = ""
+    transport_availability: str = ""
+    place_reviews: str = ""
+    daywise_guide: str = ""
+    sources: list[LiveWebSource] = Field(default_factory=list)
 
 
 class PlaceHours(BaseModel):
@@ -97,14 +142,106 @@ class PlanningInsights(BaseModel):
     timing: TimingGuidance
 
 
+class DayWeather(BaseModel):
+    temperature_c: float | None = None
+    temperature_night_c: float | None = None
+    sunrise: str | None = None
+    sunset: str | None = None
+    humidity_percent: int | None = None
+    rainfall_chance_percent: int | None = None
+
+
+class SpotDetail(BaseModel):
+    name: str
+    slot: str | None = None
+    history: str | None = None
+    opening_hours: str | None = None
+    closing_hours: str | None = None
+    best_time: str | None = None
+    description: str | None = None
+    image_query: str | None = None  # LLM-generated search term for images
+
+
+class Keyword(BaseModel):
+    """An important term inside a place description, tagged with a category.
+
+    ``text`` MUST appear verbatim in the description so the renderer can wrap it.
+    ``category`` is one of: place, altitude, person, deity, other.
+    """
+
+    text: str
+    category: str = "other"  # place | altitude | person | deity | other
+
+
+class DetailedPlace(BaseModel):
+    """A single place in the detailed, guidebook-style itinerary."""
+
+    name: str
+    description: str = ""  # ~200 words: history, locality, important things
+    opening_closing: str | None = None  # REAL hours from Google Places tool
+    best_time: str | None = None
+    transport: str | None = None  # available transport with fare
+    key_note: str | None = None  # ~200 word concise summary
+    keywords: list[Keyword] = Field(default_factory=list)
+    is_optional: bool = False
+
+
+class DetailedDay(BaseModel):
+    day: int
+    theme: str
+    places: list[DetailedPlace] = Field(default_factory=list)
+
+
+class DetailedPlan(BaseModel):
+    days: list[DetailedDay] = Field(default_factory=list)
+
+
+class TransportOption(BaseModel):
+    mode: str
+    description: str | None = None
+    fare: str | None = None
+    notes: str | None = None
+
+
 class DayPlan(BaseModel):
     day: int
     theme: str
+    summary: str | None = None
+    transport: str | None = None
     morning: list[str] = Field(default_factory=list)
     afternoon: list[str] = Field(default_factory=list)
     evening: list[str] = Field(default_factory=list)
     meals: list[str] = Field(default_factory=list)
     logistics: list[str] = Field(default_factory=list)
+    weather: DayWeather | None = None
+    spots: list[SpotDetail] = Field(default_factory=list)
+    needs_hotel_change: bool = False
+    hotel_recommendation: str | None = None
+
+
+class CostLineItem(BaseModel):
+    label: str
+    amount: float
+
+
+class DailyCost(BaseModel):
+    day: int
+    items: list[CostLineItem] = Field(default_factory=list)
+    subtotal: float | None = None
+    steps: list[str] = Field(default_factory=list)
+
+
+class OverallCost(BaseModel):
+    per_person_total: float | None = None
+    members: int = 1
+    grand_total: float | None = None
+    steps: list[str] = Field(default_factory=list)
+
+
+class CostEstimate(BaseModel):
+    daily: list[DailyCost] = Field(default_factory=list)
+    overall: OverallCost | None = None
+    calculations: list[dict] = Field(default_factory=list)
 
 
 class Citation(BaseModel):
@@ -123,6 +260,12 @@ class PlanningResponse(BaseModel):
     insights: PlanningInsights
     provider_used: str
     model_used: str
+    monthly_weather: str | None = None
+    transport_options: list[TransportOption] = Field(default_factory=list)
+    cost_estimate: CostEstimate | None = None
+    worker_provider_used: str | None = None
+    worker_model_used: str | None = None
+    live_web_brief: LiveWebBrief | None = None
 
 
 class StoredPlanRecord(BaseModel):
@@ -204,3 +347,32 @@ class RagEvaluationReport(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     metrics: dict = Field(default_factory=dict)
     output_path: str | None = None
+
+
+class LogEvent(BaseModel):
+    """A single event in the SSE stream."""
+    event: Literal["step", "debug", "metric", "error", "done"]
+    step: str | None = None
+    message: str
+    detail: dict[str, Any] | None = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class PlanAPIResponse(BaseModel):
+    """Validated response the UI maps from."""
+    request_id: str
+    plan: PlanningResponse
+    status: Literal["completed", "error"]
+    error: str | None = None
+
+
+class PlaceImage(BaseModel):
+    place_name: str
+    image_query: str
+    image_url: str | None = None
+    source: str | None = None
+
+
+class ImageResponse(BaseModel):
+    plan_id: str
+    images: list[PlaceImage]
