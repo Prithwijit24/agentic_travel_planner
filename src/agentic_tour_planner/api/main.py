@@ -4,11 +4,12 @@ import time
 from uuid import uuid4
 
 import uvicorn
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, HTTPException, Response
+from sse_starlette.sse import EventSourceResponse
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import Counter, Histogram, generate_latest
 
-from agentic_tour_planner.api.events import EventEmitter, register_emitter, remove_emitter
+from agentic_tour_planner.api.events import EventEmitter, get_emitter, register_emitter, remove_emitter
 from agentic_tour_planner.config.settings import Settings, get_settings
 from agentic_tour_planner.domain.models import IngestedSourceRecord, PlanAPIResponse, PlanFeedback, PlanningRequest, PlanningResponse, StoredPlanRecord
 from agentic_tour_planner.ingestion.service import IngestionService
@@ -111,6 +112,26 @@ def metrics() -> Response:
         logger.debug("Prometheus metrics disabled, returning 404")
         return Response(status_code=404)
     return Response(content=_export_metrics(), media_type="text/plain; version=0.0.4")
+
+
+@app.get("/plans/stream/{request_id}")
+async def stream_plan(request_id: str):
+    logger.info(f"GET /plans/stream/{request_id}")
+    emitter = get_emitter(request_id)
+    if emitter is None:
+        raise HTTPException(status_code=404, detail="Stream not found")
+
+    async def event_generator():
+        try:
+            async for event in emitter.stream():
+                yield {
+                    "event": event.event,
+                    "data": event.model_dump_json(),
+                }
+        finally:
+            remove_emitter(request_id)
+
+    return EventSourceResponse(event_generator())
 
 
 def run() -> None:
