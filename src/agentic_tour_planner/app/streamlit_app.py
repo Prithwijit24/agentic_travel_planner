@@ -974,6 +974,7 @@ import json
 import re
 import httpx
 from agentic_tour_planner.domain.models import PlanningRequest
+from agentic_tour_planner.llm.provider import LLMProvider
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
@@ -1388,14 +1389,20 @@ div[data-baseweb="select"] > div > div {
 
 load_css()
 
-PROVIDERS = ["omniroute", "openai", "anthropic", "google", "mock"]
-MODELS_MAP = {
-    "omniroute": ["agnes-2.0-flash", "agnes-2.0-pro", "o1-mini"],
-    "openai": ["gpt-4o", "gpt-4o-mini", "o1-preview"],
-    "anthropic": ["claude-3-5-sonnet", "claude-3-opus"],
-    "google": ["gemini-1.5-pro", "gemini-1.5-flash"],
-    "mock": ["mock-data-v1"]
-}
+def _build_provider_models() -> tuple[list[str], dict[str, list[str]]]:
+    """Pull providers and their models from llm.yml via LLMProvider."""
+    try:
+        llm = LLMProvider()
+        providers = llm.list_providers()
+        models_map: dict[str, list[str]] = {}
+        for p in providers:
+            models_map[p] = llm.list_models(p)
+        return providers, models_map
+    except Exception:
+        return ["agnes"], {"agnes": ["agnes-2.0-flash"]}
+
+
+PROVIDERS, MODELS_MAP = _build_provider_models()
 
 # Fixed pixel height that the input form card renders at (measured empirically
 # with this exact field set). The loading terminal is locked to this same
@@ -1436,9 +1443,9 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
                 st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
                 st.markdown("### Configuration")
                 conf_c1, conf_c2 = st.columns(2)
-                with conf_c1: provider = st.selectbox("🤖 Model Provider", PROVIDERS, index=PROVIDERS.index(st.session_state.provider))
+                with conf_c1: provider = st.selectbox("🤖 Model Provider", PROVIDERS, index=PROVIDERS.index(st.session_state.provider) if st.session_state.provider in PROVIDERS else 0)
                 with conf_c2:
-                    current_models = MODELS_MAP[provider]
+                    current_models = MODELS_MAP.get(provider, ["default"])
                     model_index = current_models.index(st.session_state.model) if st.session_state.model in current_models else 0
                     model = st.selectbox("⚙️ Model Name", current_models, index=model_index)
                 
@@ -1618,22 +1625,21 @@ elif st.session_state.is_loading:
                 plan_data = response_data["plan"]
 
                 progress = st.progress(0, text="Streaming logs...")
-                step_count = 0
+                step_counter = [0]  # mutable container for nonlocal-like behavior
                 total_steps = 4
 
                 def on_event(event_data):
-                    nonlocal step_count
                     event_type = event_data.get("event", "")
                     message = event_data.get("message", "")
                     if event_type == "step":
-                        step_count += 1
-                        progress.progress(min(step_count / total_steps, 0.95), text=message)
+                        step_counter[0] += 1
+                        progress.progress(min(step_counter[0] / total_steps, 0.95), text=message)
                     elif event_type == "debug":
                         pass
                     elif event_type == "metric":
                         pass
                     elif event_type == "error":
-                        progress.progress(step_count / total_steps, text=f"Error: {message}")
+                        progress.progress(step_counter[0] / total_steps, text=f"Error: {message}")
                     elif event_type == "done":
                         progress.progress(1.0, text="Complete!")
 
@@ -1682,10 +1688,10 @@ else:
         st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
         st.markdown("#### Configuration")
         
-        p_idx = PROVIDERS.index(st.session_state.provider)
+        p_idx = PROVIDERS.index(st.session_state.provider) if st.session_state.provider in PROVIDERS else 0
         st.selectbox("🤖 Model Provider", PROVIDERS, disabled=True, index=p_idx, key="sidebar_provider_disabled")
         
-        current_models = MODELS_MAP[st.session_state.provider]
+        current_models = MODELS_MAP.get(st.session_state.provider, ["default"])
         m_idx = current_models.index(st.session_state.model) if st.session_state.model in current_models else 0
         st.selectbox("⚙️ Model Name", current_models, disabled=True, index=m_idx, key="sidebar_model_disabled")
         
