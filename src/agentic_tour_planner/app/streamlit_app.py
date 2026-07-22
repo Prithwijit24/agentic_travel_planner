@@ -998,7 +998,7 @@ if 'plan' not in st.session_state:
 if 'images' not in st.session_state:
     st.session_state.images = []
 if 'provider' not in st.session_state:
-    st.session_state.provider = "omniroute"
+    st.session_state.provider = "agnes"
 if 'planner_model' not in st.session_state:
     st.session_state.planner_model = "agnes-2.0-flash"
 if 'worker_model' not in st.session_state:
@@ -1480,42 +1480,42 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
                 transport = st.selectbox("🚇 Transport Mode", ["Public Transport", "Private Cab", "Rental Car"], index=0)
                 interests = st.multiselect("🎯 Interests", ["Nature", "Monasteries", "Adventure", "Culture"], ["Nature", "Monasteries"])
                 
-                st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-                st.markdown("### Configuration")
-                conf_c1, conf_c2 = st.columns(2)
-                with conf_c1: provider = st.selectbox("🤖 Model Provider", PROVIDERS, index=PROVIDERS.index(st.session_state.provider) if st.session_state.provider in PROVIDERS else 0)
-                with conf_c2:
-                    current_planner = PLANNER_MODELS.get(provider, ["default"])
-                    planner_index = current_planner.index(st.session_state.planner_model) if st.session_state.planner_model in current_planner else 0
-                    planner_model = st.selectbox("🧠 Planner Model", current_planner, index=planner_index)
-                
-                conf_c3, conf_c4 = st.columns(2)
-                with conf_c3:
-                    current_worker = WORKER_MODELS.get(provider, ["default"])
-                    worker_index = current_worker.index(st.session_state.worker_model) if st.session_state.worker_model in current_worker else 0
-                    worker_model = st.selectbox("🛠️ Worker Model", current_worker, index=worker_index)
-                
                 st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
                 submit = st.form_submit_button("Generate Itinerary ✨")
+            
+            st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+            st.markdown("### Configuration")
+            conf_c1, conf_c2 = st.columns(2)
+            with conf_c1: provider = st.selectbox("🤖 Model Provider", PROVIDERS, index=PROVIDERS.index(st.session_state.provider) if st.session_state.provider in PROVIDERS else 0)
+            with conf_c2:
+                current_planner = PLANNER_MODELS.get(provider, ["default"])
+                planner_index = current_planner.index(st.session_state.planner_model) if st.session_state.planner_model in current_planner else 0
+                planner_model = st.selectbox("🧠 Planner Model", current_planner, index=planner_index)
+            
+            conf_c3, conf_c4 = st.columns(2)
+            with conf_c3:
+                current_worker = WORKER_MODELS.get(provider, ["default"])
+                worker_index = current_worker.index(st.session_state.worker_model) if st.session_state.worker_model in current_worker else 0
+                worker_model = st.selectbox("🛠️ Worker Model", current_worker, index=worker_index)
                 
-                if submit:
-                    st.session_state.provider = provider
-                    st.session_state.planner_model = planner_model
-                    st.session_state.worker_model = worker_model
-                    st.session_state.form_data = {
-                        "destination": destination.split(",")[0].strip() if destination else "",
-                        "origin": origin.split(",")[0].strip() if origin else None,
-                        "days": int(days),
-                        "month": month,
-                        "budget": budget,
-                        "travelers": int(travelers),
-                        "transport": transport,
-                        "interests": interests,
-                    }
-                    st.session_state.form_submitted = True
-                    st.session_state.is_loading = True
-                    main_area.empty()
-                    st.rerun()
+            if submit:
+                st.session_state.provider = provider
+                st.session_state.planner_model = planner_model
+                st.session_state.worker_model = worker_model
+                st.session_state.form_data = {
+                    "destination": destination.split(",")[0].strip() if destination else "",
+                    "origin": origin.split(",")[0].strip() if origin else None,
+                    "days": int(days),
+                    "month": month,
+                    "budget": budget,
+                    "travelers": int(travelers),
+                    "transport": transport,
+                    "interests": interests,
+                }
+                st.session_state.form_submitted = True
+                st.session_state.is_loading = True
+                main_area.empty()
+                st.rerun()
 
 # --- LOADING PAGE ---
 elif st.session_state.is_loading:
