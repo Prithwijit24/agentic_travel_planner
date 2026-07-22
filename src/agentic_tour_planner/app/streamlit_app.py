@@ -1483,18 +1483,32 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
                 st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
                 submit = st.form_submit_button("Generate Itinerary ✨")
             
-            st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-            st.markdown("### Configuration")
-            conf_c1, conf_c2, conf_c3 = st.columns(3)
-            with conf_c1: provider = st.selectbox("🤖 Model Provider", PROVIDERS, index=PROVIDERS.index(st.session_state.provider) if st.session_state.provider in PROVIDERS else 0)
-            with conf_c2:
-                current_planner = PLANNER_MODELS.get(provider, ["default"])
-                planner_index = current_planner.index(st.session_state.planner_model) if st.session_state.planner_model in current_planner else 0
-                planner_model = st.selectbox("🧠 Planner Model", current_planner, index=planner_index)
-            with conf_c3:
-                current_worker = WORKER_MODELS.get(provider, ["default"])
-                worker_index = current_worker.index(st.session_state.worker_model) if st.session_state.worker_model in current_worker else 0
-                worker_model = st.selectbox("🛠️ Worker Model", current_worker, index=worker_index)
+            with st.container():
+                st.markdown("""
+                <style>
+                .config-card {
+                    background: #ffffff;
+                    border: 1px solid var(--apple-border);
+                    border-radius: 12px;
+                    padding: 24px;
+                    margin-bottom: 16px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+                }
+                </style>
+                <div class="config-card">
+                """, unsafe_allow_html=True)
+                st.markdown("### Configuration")
+                conf_c1, conf_c2, conf_c3 = st.columns(3)
+                with conf_c1: provider = st.selectbox("🤖 Model Provider", PROVIDERS, index=PROVIDERS.index(st.session_state.provider) if st.session_state.provider in PROVIDERS else 0)
+                with conf_c2:
+                    current_planner = PLANNER_MODELS.get(provider, ["default"])
+                    planner_index = current_planner.index(st.session_state.planner_model) if st.session_state.planner_model in current_planner else 0
+                    planner_model = st.selectbox("🧠 Planner Model", current_planner, index=planner_index)
+                with conf_c3:
+                    current_worker = WORKER_MODELS.get(provider, ["default"])
+                    worker_index = current_worker.index(st.session_state.worker_model) if st.session_state.worker_model in current_worker else 0
+                    worker_model = st.selectbox("🛠️ Worker Model", current_worker, index=worker_index)
+                st.markdown("</div>", unsafe_allow_html=True)
                 
             if submit:
                 st.session_state.provider = provider
