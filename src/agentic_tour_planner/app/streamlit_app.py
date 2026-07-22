@@ -1722,7 +1722,7 @@ elif st.session_state.is_loading:
                 st.rerun()
 
 # --- RESULTS PAGE ---
-else:
+elif st.session_state.plan is not None:
     plan = st.session_state.plan
 
     with st.sidebar:
