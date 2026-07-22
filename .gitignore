@@ -14,7 +14,7 @@ build/
 dist/
 *.egg-info/
 .eggs/
-
+*/graphify-out/
 # Tool caches
 .uv-cache/
 .pytest_cache/
@@ -23,7 +23,8 @@ dist/
 .coverage
 .coverage.*
 htmlcov/
-
+.codex
+.antrigravity/
 # Jupyter / notebooks
 .ipynb_checkpoints/
 
@@ -33,6 +34,11 @@ htmlcov/
 # Environment files
 .env
 .env.*
+!.env.example
+
+# Local caches and fetched media (live web audio/video artifacts)
+cache/
+media_cache/
 
 # Local databases and generated data
 data/chroma/*
@@ -48,5 +54,13 @@ data/knowledge/processed/*
 # OS / editor files
 .DS_Store
 Thumbs.db
-.idea/
+.idea/inspectionProfiles/profiles_settings.xml
 .vscode/
+*/data/*
+.codegraph/
+.opencode/
+.kilo/
+*.db*
+*.sql*
+*.bz*
+*.gz*
