@@ -618,7 +618,7 @@ class LLMProvider:
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
-        chain = self._chain_for(provider_override, "worker")
+        chain = self._chain_for(provider_override, role)
         for provider, model in chain:
             content = await self._litellm_complete(provider=provider, model=model, messages=messages, role=role)
             if content:
@@ -641,7 +641,7 @@ class LLMProvider:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ]
-        chain = self._chain_for(provider_override, "worker")
+        chain = self._chain_for(provider_override, role)
         for provider, model in chain:
             content = await self._litellm_complete(provider=provider, model=model, messages=messages, role=role)
             if content is None:

@@ -91,26 +91,26 @@ class AgenticTourPlannerPipeline:
         async def _gather_with_events() -> RetrievedContext:
             if context is not None:
                 return context
-            if emitter:
-                emitter.emit(LogEvent(event="step", step="Gather Context", message="Gathering context..."))
-            ctx = await self.gather_context(request)
-            if emitter:
-                emitter.emit(
-                    LogEvent(
-                        event="debug",
-                        step="Gather Context",
-                        message="Context gathered",
-                        detail={
-                            "documents_count": len(ctx.documents),
-                            "search_results_count": len(ctx.search_results),
-                            "place_hours_count": len(ctx.place_hours),
-                        },
+            async with self.profiler.atrack("Gather Context"):
+                if emitter:
+                    emitter.emit(LogEvent(event="step", step="Gather Context", message="Gathering context..."))
+                ctx = await self.gather_context(request)
+                if emitter:
+                    emitter.emit(
+                        LogEvent(
+                            event="debug",
+                            step="Gather Context",
+                            message="Context gathered",
+                            detail={
+                                "documents_count": len(ctx.documents),
+                                "search_results_count": len(ctx.search_results),
+                                "place_hours_count": len(ctx.place_hours),
+                            },
+                        )
                     )
-                )
             return ctx
 
-        async with self.profiler.atrack("Gather Context"):
-            context_task = asyncio.create_task(_gather_with_events())
+        context_task = asyncio.create_task(_gather_with_events())
 
         live_task: asyncio.Task | None = None
         if request.include_live_data:
@@ -155,7 +155,7 @@ class AgenticTourPlannerPipeline:
         if live_task:
             live_brief = await live_task
             if live_brief and live_brief.sources:
-                async with self.profiler.atrack("Live Web Collection"):
+                async with self.profiler.atrack("Place Hours Lookup"):
                     ph = []
                     for src in live_brief.sources[:3]:
                         ph.append(await lookup_opening_hours(src.title, request.destination))
