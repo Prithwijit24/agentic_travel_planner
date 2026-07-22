@@ -1497,23 +1497,27 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
                     worker_model = st.selectbox("🛠️ Worker Model", current_worker, index=worker_index)
                 
                 if submit:
-                    st.session_state.provider = provider
-                    st.session_state.planner_model = planner_model
-                    st.session_state.worker_model = worker_model
-                    st.session_state.form_data = {
-                        "destination": destination.split(",")[0].strip() if destination else "",
-                        "origin": origin.split(",")[0].strip() if origin else None,
-                        "days": int(days),
-                        "month": month,
-                        "budget": budget,
-                        "travelers": int(travelers),
-                        "transport": transport,
-                        "interests": interests,
-                    }
-                    st.session_state.form_submitted = True
-                    st.session_state.is_loading = True
-                    main_area.empty()
-                    st.rerun()
+                    dest_clean = destination.split(",")[0].strip() if destination else ""
+                    if not dest_clean or len(dest_clean) < 2:
+                        st.error("Please enter a valid destination (at least 2 characters)")
+                    else:
+                        st.session_state.provider = provider
+                        st.session_state.planner_model = planner_model
+                        st.session_state.worker_model = worker_model
+                        st.session_state.form_data = {
+                            "destination": dest_clean,
+                            "origin": origin.split(",")[0].strip() if origin else None,
+                            "days": int(days),
+                            "month": month,
+                            "budget": budget,
+                            "travelers": int(travelers),
+                            "transport": transport,
+                            "interests": interests,
+                        }
+                        st.session_state.form_submitted = True
+                        st.session_state.is_loading = True
+                        main_area.empty()
+                        st.rerun()
 
 # --- LOADING PAGE ---
 elif st.session_state.is_loading:
