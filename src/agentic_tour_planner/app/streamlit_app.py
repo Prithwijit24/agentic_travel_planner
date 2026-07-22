@@ -1468,7 +1468,7 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
                 with c5: budget = st.selectbox("💰 Budget", ["Budget", "Midrange", "Luxury"], index=1)
                 with c6: travelers = st.number_input("👥 Travelers", 1, 10, 4)
                 
-                transport = st.selectbox("🚇 Transport Mode", ["Public Transport", "Private Cab", "Rental Car"], index=1)
+                transport = st.selectbox("🚇 Transport Mode", ["Public Transport", "Private Cab", "Rental Car"], index=0)
                 interests = st.multiselect("🎯 Interests", ["Nature", "Monasteries", "Adventure", "Culture"], ["Nature", "Monasteries"])
                 
                 st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
