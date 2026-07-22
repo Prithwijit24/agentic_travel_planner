@@ -1485,14 +1485,12 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
             
             st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
             st.markdown("### Configuration")
-            conf_c1, conf_c2 = st.columns(2)
+            conf_c1, conf_c2, conf_c3 = st.columns(3)
             with conf_c1: provider = st.selectbox("🤖 Model Provider", PROVIDERS, index=PROVIDERS.index(st.session_state.provider) if st.session_state.provider in PROVIDERS else 0)
             with conf_c2:
                 current_planner = PLANNER_MODELS.get(provider, ["default"])
                 planner_index = current_planner.index(st.session_state.planner_model) if st.session_state.planner_model in current_planner else 0
                 planner_model = st.selectbox("🧠 Planner Model", current_planner, index=planner_index)
-            
-            conf_c3, conf_c4 = st.columns(2)
             with conf_c3:
                 current_worker = WORKER_MODELS.get(provider, ["default"])
                 worker_index = current_worker.index(st.session_state.worker_model) if st.session_state.worker_model in current_worker else 0
