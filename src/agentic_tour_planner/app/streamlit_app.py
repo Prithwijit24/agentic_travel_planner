@@ -1462,7 +1462,7 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
                 st.markdown("### Trip Details")
                 c3, c4 = st.columns(2)
                 with c3: days = st.slider("📅 Duration (Days)", 1, 40, 4)
-                with c4: month = st.selectbox("🌤️ Travel Month", ["September", "October", "November"], index=0)
+                with c4: month = st.selectbox("🌤️ Travel Month", ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"], index=8)
                 
                 c5, c6 = st.columns(2)
                 with c5: budget = st.selectbox("💰 Budget", ["Budget", "Midrange", "Luxury"], index=1)
