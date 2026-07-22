@@ -975,6 +975,8 @@ import re
 import httpx
 from agentic_tour_planner.domain.models import PlanningRequest
 from agentic_tour_planner.llm.provider import LLMProvider
+from streamlit_searchbox import st_searchbox
+from agentic_tour_planner.geonames.index import search_places
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
@@ -1005,6 +1007,16 @@ def clean_html(html_str):
     lines = html_str.split('\n')
     cleaned_lines = [line.lstrip() for line in lines]
     return '\n'.join(cleaned_lines).strip()
+
+def _search_suggestions(query: str) -> list[str]:
+    if len(query) < 1:
+        return []
+    try:
+        results = search_places(query, limit=8)
+        return [r.name for r in results]
+    except Exception:
+        return []
+
 
 def fluent_card(title, color, content_html):
     color_map = {
@@ -1423,12 +1435,31 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
         
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
+            destination = st_searchbox(
+                _search_suggestions,
+                placeholder="e.g. Sikkim, Kyoto, Paris... (click to select)",
+                label="🌍 Destination *",
+                default="",
+                default_use_searchterm=True,
+                clear_on_submit=False,
+                edit_after_submit="option",
+                debounce=200,
+                key="dest_searchbox",
+            )
+            origin = st_searchbox(
+                _search_suggestions,
+                placeholder="e.g. Kolkata, Mumbai... (click to select)",
+                label="📍 Origin",
+                default="",
+                default_use_searchterm=True,
+                clear_on_submit=False,
+                edit_after_submit="option",
+                debounce=200,
+                key="origin_searchbox",
+            )
+
             with st.form("trip_planner_form"):
                 st.markdown("### Trip Details")
-                c1, c2 = st.columns(2)
-                with c1: origin = st.text_input("📍 Origin", "Kolkata")
-                with c2: destination = st.text_input("🌍 Destination", "Sikkim")
-                
                 c3, c4 = st.columns(2)
                 with c3: days = st.slider("📅 Duration (Days)", 1, 40, 4)
                 with c4: month = st.selectbox("🌤️ Travel Month", ["September", "October", "November"], index=0)
@@ -1456,8 +1487,8 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
                     st.session_state.provider = provider
                     st.session_state.model = model
                     st.session_state.form_data = {
-                        "destination": destination,
-                        "origin": origin,
+                        "destination": destination.split(",")[0].strip() if destination else "",
+                        "origin": origin.split(",")[0].strip() if origin else None,
                         "days": int(days),
                         "month": month,
                         "budget": budget,
