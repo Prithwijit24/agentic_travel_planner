@@ -8,47 +8,136 @@ from agentic_tour_planner.domain.models import (
     RouteGuidance,
     TimingGuidance,
 )
+from agentic_tour_planner.llm.provider import LLMProvider
+from agentic_tour_planner.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class RoutePlannerWorker:
-    def build(self, request: PlanningRequest, context: RetrievedContext) -> RouteGuidance:
-        clustered = []
-        for document in context.documents[:3]:
-            clustered.append(f"Cluster activities around evidence from {document.title}.")
-        transit = [
-            f"Start from {request.origin} transport hub first when arriving." if request.origin else "Anchor day one near the city center.",
-            "Group nearby attractions into walkable or single-transit corridors.",
-        ]
+    def __init__(self) -> None:
+        self.llm = LLMProvider()
+        logger.debug("RoutePlannerWorker initialized")
+
+    async def build(
+        self,
+        request: PlanningRequest,
+        context: RetrievedContext,
+        provider_override: str | None = None,
+    ) -> RouteGuidance:
+        logger.info("RoutePlannerWorker.build start destination={} days={} provider_override={}", request.destination, request.trip_length_days, provider_override)
+
+        days = request.trip_length_days
+        if days <= 3:
+            routing_directive = (
+                "Keep the trip COMPACT: wander the nearer places around a single base; "
+                "minimise long transfers between regions."
+            )
+        elif days <= 6:
+            routing_directive = (
+                "Cover the main sights AND include 1-2 offbeat / lesser-known places "
+                "in addition to the popular ones."
+            )
+        elif days >= 11:
+            routing_directive = (
+                "Split the stay across TWO OR MORE distinct regions/areas of the destination "
+                "(e.g. Andaman: first 5-6 days in one area, then move to a different region such "
+                "as the north for the remaining days). Apply this region-split principle to any long trip."
+            )
+        else:
+            routing_directive = (
+                "Balance popular and offbeat sights; if the destination is large, consider a "
+                "regional split so the trip stays coherent."
+            )
+
+        # Generate route guidance using LLM
+        prompt = f"""
+Generate route guidance for a {days}-day trip to {request.destination}.
+Origin: {request.origin or 'Not specified'}
+Interests: {', '.join(request.interests) or 'General sightseeing'}
+
+MANDATORY ROUTING DIRECTIVE (you MUST follow this exactly):
+{routing_directive}
+
+Based on the available documents and context, provide:
+1. A route strategy (1-2 sentences) that reflects the directive above
+2. 3-5 cluster advice for grouping nearby attractions
+3. Transit notes for efficient travel
+
+Return JSON with keys: strategy, cluster_advice (list), transit_notes (list)
+"""
+        result = await self.llm.complete_structured(prompt, "route", provider_override=provider_override, model_override=request.worker_model)
+
+        if "error" in result or not result:
+            # Fallback to basic guidance
+            logger.warning("RoutePlannerWorker.build fell back to heuristic guidance")
+            return RouteGuidance(
+                strategy=routing_directive,
+                cluster_advice=[f"Group major sights in {request.destination} by neighborhood."],
+                transit_notes=[
+                    "Start from transport hub first when arriving." if request.origin else "Anchor day one near city center.",
+                    "Group nearby attractions into walkable or single-transit corridors.",
+                ],
+            )
+
+        logger.debug("RoutePlannerWorker.build done strategy_len={}", len(result.get("strategy", "")))
         return RouteGuidance(
-            strategy=f"Build each day around one zone of {request.destination} to limit transit churn.",
-            cluster_advice=clustered or [f"Group major sights in {request.destination} by neighborhood."],
-            transit_notes=transit,
+            strategy=result.get("strategy", f"Navigate {request.destination} by geographic clusters."),
+            cluster_advice=result.get("cluster_advice", []),
+            transit_notes=result.get("transit_notes", []),
         )
 
 
 class BudgetPlannerWorker:
-    DAILY_BUDGETS = {"budget": 70.0, "midrange": 160.0, "luxury": 320.0}
+    def __init__(self) -> None:
+        self.llm = LLMProvider()
+        logger.debug("BudgetPlannerWorker initialized")
 
-    def build(self, request: PlanningRequest, context: RetrievedContext) -> BudgetGuidance:
-        base = self.DAILY_BUDGETS[request.budget_level]
-        multiplier = 1.0 + min(len(request.interests), 5) * 0.05
-        daily = round(base * multiplier, 2)
-        total = round(daily * request.trip_length_days, 2)
-        assumptions = [
-            "Estimate includes lodging, local transport, attraction tickets, and meals.",
-            "Flight or long-haul rail to destination is excluded unless explicitly noted.",
-        ]
-        if context.weather:
-            assumptions.append("Weather-driven taxi or rideshare usage may increase transport cost.")
-        tips = [
-            "Reserve flagship attractions early to avoid surge pricing.",
-            "Use neighborhood clusters to reduce repeated transit fares.",
-        ]
+    async def build(
+        self,
+        request: PlanningRequest,
+        context: RetrievedContext,
+        provider_override: str | None = None,
+    ) -> BudgetGuidance:
+        logger.info("BudgetPlannerWorker.build start destination={} budget_level={} provider_override={}", request.destination, request.budget_level, provider_override)
+        prompt = f"""
+Generate budget guidance for a {request.trip_length_days}-day {request.budget_level} trip to {request.destination}.
+Interests: {', '.join(request.interests) or 'General sightseeing'}
+Travel month: {request.travel_month or 'Flexible'}
+Weather: {context.weather.summary if context.weather else 'Not available'}
+
+Return JSON with keys: estimated_daily_budget, estimated_total_budget, assumptions (list), saving_tips (list)
+"""
+        result = await self.llm.complete_structured(prompt, "budget", provider_override=provider_override, model_override=request.worker_model)
+
+        if "error" in result or not result:
+            # Fallback to calculated guidance
+            logger.warning("BudgetPlannerWorker.build fell back to calculated guidance")
+            daily_budgets = {"budget": 70.0, "midrange": 160.0, "luxury": 320.0}
+            base = daily_budgets.get(request.budget_level, 160.0)
+            multiplier = 1.0 + min(len(request.interests), 5) * 0.05
+            daily = round(base * multiplier, 2)
+            total = round(daily * request.trip_length_days, 2)
+
+            return BudgetGuidance(
+                estimated_daily_budget=daily,
+                estimated_total_budget=total,
+                assumptions=[
+                    "Estimate includes lodging, local transport, attraction tickets, and meals.",
+                    "Flight or long-haul rail to destination is excluded.",
+                ],
+                saving_tips=[
+                    "Reserve flagship attractions early to avoid surge pricing.",
+                    "Use neighborhood clusters to reduce repeated transit fares.",
+                ],
+            )
+
+        logger.debug("BudgetPlannerWorker.build done daily={} total={}", result.get("estimated_daily_budget"), result.get("estimated_total_budget"))
         return BudgetGuidance(
-            estimated_daily_budget=daily,
-            estimated_total_budget=total,
-            assumptions=assumptions,
-            saving_tips=tips,
+            estimated_daily_budget=result.get("estimated_daily_budget", 160.0),
+            estimated_total_budget=result.get("estimated_total_budget", 640.0),
+            assumptions=result.get("assumptions", []),
+            saving_tips=result.get("saving_tips", []),
         )
 
 
@@ -57,25 +146,60 @@ class TimingPlannerWorker:
         "june", "july", "august", "december",
     }
 
-    def build(self, request: PlanningRequest, context: RetrievedContext) -> TimingGuidance:
+    def __init__(self) -> None:
+        self.llm = LLMProvider()
+        logger.debug("TimingPlannerWorker initialized")
+
+    async def build(
+        self,
+        request: PlanningRequest,
+        context: RetrievedContext,
+        provider_override: str | None = None,
+    ) -> TimingGuidance:
         month = (request.travel_month or "").strip().lower()
         high_season = month in self.HIGH_SEASON_MONTHS
-        season_summary = (
-            f"{request.travel_month} is likely a busier travel month for {request.destination}."
-            if high_season and request.travel_month
-            else f"{request.travel_month or 'Your target month'} is likely manageable for balanced pacing in {request.destination}."
-        )
-        booking_window = "Book 8-12 weeks ahead for lodging and high-demand tickets." if high_season else "Book 4-8 weeks ahead and recheck prices weekly."
-        notes = [
-            "Front-load reservation-only sights earlier in the trip.",
-            "Keep one flexible indoor block each day for weather or fatigue swings.",
-        ]
-        if context.place_hours:
-            notes.append("Validate venue opening windows again 24 hours before the visit.")
+        logger.info("TimingPlannerWorker.build start destination={} travel_month={} provider_override={}", request.destination, request.travel_month, provider_override)
+
+        prompt = f"""
+Generate timing guidance for a {request.trip_length_days}-day trip to {request.destination} in {request.travel_month or 'Flexible'}.
+Weather: {context.weather.summary if context.weather else 'Not available'}
+Place hours: {len(context.place_hours)} locations with opening hours available
+
+Return JSON with keys: season_summary, booking_window, day_planning_notes (list)
+"""
+        result = await self.llm.complete_structured(prompt, "timing", provider_override=provider_override, model_override=request.worker_model)
+
+        if "error" in result or not result:
+            # Fallback to calculated guidance
+            logger.warning("TimingPlannerWorker.build fell back to calculated guidance")
+            season_summary = (
+                f"{request.travel_month} is likely a busier travel month for {request.destination}."
+                if high_season and request.travel_month
+                else f"{request.travel_month or 'Your target month'} is likely manageable for balanced pacing in {request.destination}."
+            )
+            booking_window = (
+                "Book 8-12 weeks ahead for lodging and high-demand tickets."
+                if high_season
+                else "Book 4-8 weeks ahead and recheck prices weekly."
+            )
+            notes = [
+                "Front-load reservation-only sights earlier in the trip.",
+                "Keep one flexible indoor block each day for weather or fatigue swings.",
+            ]
+            if context.place_hours:
+                notes.append("Validate venue opening windows again 24 hours before the visit.")
+            
+            return TimingGuidance(
+                season_summary=season_summary,
+                booking_window=booking_window,
+                day_planning_notes=notes,
+            )
+        
+        logger.debug("TimingPlannerWorker.build done season_summary_len={}", len(result.get("season_summary", "")))
         return TimingGuidance(
-            season_summary=season_summary,
-            booking_window=booking_window,
-            day_planning_notes=notes,
+            season_summary=result.get("season_summary", f"Plan for {request.travel_month or 'optimal timing'} in {request.destination}."),
+            booking_window=result.get("booking_window", "Book 4-8 weeks ahead."),
+            day_planning_notes=result.get("day_planning_notes", []),
         )
 
 
@@ -84,11 +208,30 @@ class PlanningInsightsBuilder:
         self.route_worker = RoutePlannerWorker()
         self.budget_worker = BudgetPlannerWorker()
         self.timing_worker = TimingPlannerWorker()
+        # Provider/model actually used per worker role on the last build.
+        self.last_worker_used: dict[str, tuple[str, str]] = {}
+        logger.debug("PlanningInsightsBuilder initialized")
 
-    def build(self, request: PlanningRequest, context: RetrievedContext) -> PlanningInsights:
+    async def build(
+        self,
+        request: PlanningRequest,
+        context: RetrievedContext,
+        provider_override: str | None = None,
+    ) -> PlanningInsights:
+        logger.info("PlanningInsightsBuilder.build start destination={} provider_override={}", request.destination, provider_override)
+        route = await self.route_worker.build(request, context, provider_override=provider_override)
+        budget = await self.budget_worker.build(request, context, provider_override=provider_override)
+        timing = await self.timing_worker.build(request, context, provider_override=provider_override)
+
+        self.last_worker_used = {
+            "route": self.route_worker.llm.last_worker_used(),
+            "budget": self.budget_worker.llm.last_worker_used(),
+            "timing": self.timing_worker.llm.last_worker_used(),
+        }
+
+        logger.debug("PlanningInsightsBuilder.build done workers={}", self.last_worker_used)
         return PlanningInsights(
-            route=self.route_worker.build(request, context),
-            budget=self.budget_worker.build(request, context),
-            timing=self.timing_worker.build(request, context),
+            route=route,
+            budget=budget,
+            timing=timing,
         )
-

@@ -999,8 +999,10 @@ if 'images' not in st.session_state:
     st.session_state.images = []
 if 'provider' not in st.session_state:
     st.session_state.provider = "omniroute"
-if 'model' not in st.session_state:
-    st.session_state.model = "agnes-2.0-flash"
+if 'planner_model' not in st.session_state:
+    st.session_state.planner_model = "agnes-2.0-flash"
+if 'worker_model' not in st.session_state:
+    st.session_state.worker_model = "agnes-2.0-flash"
 
 # --- HELPER FUNCTIONS ---
 def clean_html(html_str):
@@ -1044,7 +1046,8 @@ def _build_request_from_form(
     month: str,
     notes: str | None,
     provider: str | None,
-    model: str | None,
+    planner_model: str | None,
+    worker_model: str | None,
     places_per_day: str,
     transport: str,
     travelers: int,
@@ -1065,7 +1068,8 @@ def _build_request_from_form(
         travel_month=month,
         notes=notes or None,
         provider=provider or None,
-        model=model or None,
+        planner_model=planner_model or None,
+        worker_model=worker_model or None,
         include_live_data=live,
         places_per_day=places_per_day,
         transport_mode=transport_map.get(transport, "public"),
@@ -1401,20 +1405,25 @@ div[data-baseweb="select"] > div > div {
 
 load_css()
 
-def _build_provider_models() -> tuple[list[str], dict[str, list[str]]]:
-    """Pull providers and their models from llm.yml via LLMProvider."""
+def _build_provider_models() -> tuple[list[str], dict[str, list[str]], dict[str, list[str]]]:
+    """Pull providers and their planner/worker models from llm.yml via LLMProvider."""
     try:
         llm = LLMProvider()
         providers = llm.list_providers()
-        models_map: dict[str, list[str]] = {}
+        planner_map: dict[str, list[str]] = {}
+        worker_map: dict[str, list[str]] = {}
         for p in providers:
-            models_map[p] = llm.list_models(p)
-        return providers, models_map
+            cfg = llm.providers.get(p, {})
+            planner_val = cfg.get("planner_model")
+            worker_val = cfg.get("worker_model")
+            planner_map[p] = [planner_val] if isinstance(planner_val, str) else (planner_val or [])
+            worker_map[p] = [worker_val] if isinstance(worker_val, str) else (worker_val or [])
+        return providers, planner_map, worker_map
     except Exception:
-        return ["agnes"], {"agnes": ["agnes-2.0-flash"]}
+        return ["agnes"], {"agnes": ["agnes-2.0-flash"]}, {"agnes": ["agnes-2.0-flash"]}
 
 
-PROVIDERS, MODELS_MAP = _build_provider_models()
+PROVIDERS, PLANNER_MODELS, WORKER_MODELS = _build_provider_models()
 
 # Fixed pixel height that the input form card renders at (measured empirically
 # with this exact field set). The loading terminal is locked to this same
@@ -1476,16 +1485,23 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
                 conf_c1, conf_c2 = st.columns(2)
                 with conf_c1: provider = st.selectbox("🤖 Model Provider", PROVIDERS, index=PROVIDERS.index(st.session_state.provider) if st.session_state.provider in PROVIDERS else 0)
                 with conf_c2:
-                    current_models = MODELS_MAP.get(provider, ["default"])
-                    model_index = current_models.index(st.session_state.model) if st.session_state.model in current_models else 0
-                    model = st.selectbox("⚙️ Model Name", current_models, index=model_index)
+                    current_planner = PLANNER_MODELS.get(provider, ["default"])
+                    planner_index = current_planner.index(st.session_state.planner_model) if st.session_state.planner_model in current_planner else 0
+                    planner_model = st.selectbox("🧠 Planner Model", current_planner, index=planner_index)
+                
+                conf_c3, conf_c4 = st.columns(2)
+                with conf_c3:
+                    current_worker = WORKER_MODELS.get(provider, ["default"])
+                    worker_index = current_worker.index(st.session_state.worker_model) if st.session_state.worker_model in current_worker else 0
+                    worker_model = st.selectbox("🛠️ Worker Model", current_worker, index=worker_index)
                 
                 st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
                 submit = st.form_submit_button("Generate Itinerary ✨")
                 
                 if submit:
                     st.session_state.provider = provider
-                    st.session_state.model = model
+                    st.session_state.planner_model = planner_model
+                    st.session_state.worker_model = worker_model
                     st.session_state.form_data = {
                         "destination": destination.split(",")[0].strip() if destination else "",
                         "origin": origin.split(",")[0].strip() if origin else None,
@@ -1593,7 +1609,7 @@ elif st.session_state.is_loading:
 
                     const logs = [
                         {{time: "00:01", text: "🚀 Initializing Agentic Tour Planner...", class: "info"}},
-                        {{time: "00:03", text: "🤖 Connecting to {st.session_state.model} via {st.session_state.provider}...", class: "info"}},
+                        {{time: "00:03", text: "🤖 Connecting to {st.session_state.provider} via {st.session_state.provider}...", class: "info"}},
                         {{time: "00:06", text: "📡 Sending request to API server...", class: "info"}},
                         {{time: "00:09", text: "🔄 Waiting for plan generation to begin...", class: "info"}}
                     ];
@@ -1632,7 +1648,8 @@ elif st.session_state.is_loading:
                 month=form_data.get("month", ""),
                 notes=None,
                 provider=st.session_state.provider,
-                model=st.session_state.model,
+                planner_model=st.session_state.planner_model,
+                worker_model=st.session_state.worker_model,
                 places_per_day="3-5",
                 transport=form_data.get("transport", "Public Transport"),
                 travelers=form_data.get("travelers", 1),
@@ -1722,9 +1739,13 @@ else:
         p_idx = PROVIDERS.index(st.session_state.provider) if st.session_state.provider in PROVIDERS else 0
         st.selectbox("🤖 Model Provider", PROVIDERS, disabled=True, index=p_idx, key="sidebar_provider_disabled")
         
-        current_models = MODELS_MAP.get(st.session_state.provider, ["default"])
-        m_idx = current_models.index(st.session_state.model) if st.session_state.model in current_models else 0
-        st.selectbox("⚙️ Model Name", current_models, disabled=True, index=m_idx, key="sidebar_model_disabled")
+        current_planner = PLANNER_MODELS.get(st.session_state.provider, ["default"])
+        pl_idx = current_planner.index(st.session_state.planner_model) if st.session_state.planner_model in current_planner else 0
+        st.selectbox("🧠 Planner Model", current_planner, disabled=True, index=pl_idx, key="sidebar_planner_disabled")
+        
+        current_worker = WORKER_MODELS.get(st.session_state.provider, ["default"])
+        w_idx = current_worker.index(st.session_state.worker_model) if st.session_state.worker_model in current_worker else 0
+        st.selectbox("🛠️ Worker Model", current_worker, disabled=True, index=w_idx, key="sidebar_worker_disabled")
         
         st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
         if st.button("← Start New Trip"):

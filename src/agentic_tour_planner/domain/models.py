@@ -25,6 +25,8 @@ class PlanningRequest(BaseModel):
     notes: str | None = None
     provider: str | None = None
     model: str | None = None
+    planner_model: str | None = None
+    worker_model: str | None = None
     include_live_data: bool = True
     max_attractions_per_day: int = Field(default=4, ge=1, le=8)
     places_per_day: str | None = None
