@@ -70,14 +70,14 @@ PLANNER_SYSTEM_PROMPT = (
 # Order is intentionally "most reliable cloud gateway first" so real generation succeeds fast;
 # the local-only (omniroute) and placeholder (gemini) entries are tried later in the cascade.
 PROVIDER_PRIORITY = [
+    "openrouter",
     "agnes",
-    "omniroute",
+    "nvidia",
     "llm7io",
     "morphllm",
     "grokai",
+    "omniroute",
     "gemini",
-    "openrouter",
-    "nvidia",
     "ollama",
 ]
 
@@ -403,7 +403,7 @@ class LLMProvider:
             content = response.choices[0].message.content
             logger.debug(f"[LLM] {provider}/{model} ok latency={elapsed:.3f}s tokens={total_tokens}")
             return content if isinstance(content, str) else (content or "")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - fallback routing handles all failures
             elapsed = time.perf_counter() - started
             self._record(provider, model, role, elapsed, 0, 0, 0, False, self._classify_error(exc))
             logger.warning(f"[LLM] {provider}/{model} failed: {exc}")
@@ -454,7 +454,7 @@ class LLMProvider:
             try:
                 json.loads(self._extract_json(content))
                 parse_ok = True
-            except Exception:
+            except Exception:  # noqa: BLE001
                 parse_ok = False
             return {
                 "provider": provider,
@@ -467,7 +467,7 @@ class LLMProvider:
                 "error_type": None,
                 "sample": content[:200],
             }
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             elapsed = time.perf_counter() - started
             logger.debug(
                 "test_provider_model failed provider={} model={} error_type={}",
@@ -550,7 +550,7 @@ class LLMProvider:
                 self.last_planner = (provider, model)
                 logger.debug("complete_json success provider={} model={}", provider, model)
                 return result
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 logger.warning(f"[LLM] JSON parse failed for {provider}/{model}: {exc}")
                 continue
         logger.error(
@@ -596,7 +596,7 @@ class LLMProvider:
                 self.last_worker = (provider, model)
                 logger.debug("complete_structured success provider={} model={}", provider, model)
                 return result
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 logger.warning(f"[LLM] structured parse failed {provider}/{model}: {exc}")
                 continue
         logger.error(f"[LLM] All worker providers failed for {worker_type}")
@@ -650,7 +650,7 @@ class LLMProvider:
                 result = json.loads(self._extract_json(content))
                 logger.debug("extract_json success provider={} model={}", provider, model)
                 return result
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 logger.warning(f"[LLM] extract_json parse failed {provider}/{model}: {exc}")
                 continue
         logger.error("[LLM] extract_json failed for all providers")
@@ -698,7 +698,7 @@ class LLMProvider:
                 None,
             )
             return response
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             elapsed = time.perf_counter() - started
             self._record(provider, model, role, elapsed, 0, 0, 0, False, self._classify_error(exc))
             logger.warning(f"[LLM] {provider}/{model} tool-call failed: {exc}")
@@ -758,7 +758,7 @@ class LLMProvider:
                         fn = tc.function
                         try:
                             args = json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments
-                        except Exception:
+                        except Exception:  # noqa: BLE001
                             args = {}
                         if fn.name == "calculator":
                             result = run_calculator(args)
@@ -781,7 +781,7 @@ class LLMProvider:
                         "complete_with_tools success provider={} model={} records={}", provider, model, len(records)
                     )
                     return parsed, records
-                except Exception:
+                except Exception:  # noqa: BLE001
                     return {"raw": content}, records
         logger.error(f"[LLM] All tool-calling providers failed for {role}")
         self.last_worker = ("fallback", "heuristic")
