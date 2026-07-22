@@ -129,12 +129,6 @@ class LLMProvider:
         self.include_ollama = include_ollama
         self.providers = self._load_providers()
         self.timeout = 120
-        self.planner_provider: str | None = getattr(self.settings, "planner_provider", None)
-        self.worker_provider: str | None = getattr(self.settings, "worker_provider", None)
-        logger.debug(
-            "LLMProvider per-role routing planner_provider={} worker_provider={}",
-            self.planner_provider, self.worker_provider,
-        )
         # Provider/model that actually produced the most recent result, per role.
         self.last_planner: tuple[str, str] | None = None
         self.last_worker: tuple[str, str] | None = None
@@ -203,14 +197,7 @@ class LLMProvider:
             return [(provider_override, m) for m in models] + [(p, m) for p in rest for m in self._models_for(p, role)]
         if provider_override:
             logger.warning(f"[LLM] Unknown provider {provider_override!r}; using default chain")
-        chain = [(p, m) for p in self._provider_chain() for m in self._models_for(p, role)]
-        # Per-role preferred provider: use configured worker_provider first
-        # (unless caller explicitly overrode).
-        if not provider_override and role == "worker" and self.worker_provider and self.worker_provider in self.providers:
-            preferred_models = self._models_for(self.worker_provider, "worker")
-            preferred_chain = [(self.worker_provider, m) for m in preferred_models]
-            chain = preferred_chain + [item for item in chain if item[0] != self.worker_provider]
-        return chain
+        return [(p, m) for p in self._provider_chain() for m in self._models_for(p, role)]
 
     def list_providers(self) -> list[str]:
         return list(self.providers.keys())
@@ -520,14 +507,6 @@ class LLMProvider:
         explicit_provider = request.provider if (request and getattr(request, "provider", None)) else None
         model_override = request.planner_model if (request and getattr(request, "planner_model", None)) else None
         chain = [(p, m) for p in self._provider_chain() for m in self._models_for(p, "planner")]
-
-        # Per-role preferred provider: use configured planner_provider first
-        # (unless caller explicitly overrode).
-        if not explicit_provider and self.planner_provider and self.planner_provider in self.providers:
-            preferred_models = self._models_for(self.planner_provider, "planner")
-            preferred_chain = [(self.planner_provider, m) for m in preferred_models]
-            chain = preferred_chain + [item for item in chain if item[0] != self.planner_provider]
-
         if explicit_provider:
             if explicit_provider in self.providers:
                 rest = [p for p in self._provider_chain() if p != explicit_provider]
