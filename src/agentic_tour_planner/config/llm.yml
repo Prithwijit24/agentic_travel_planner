@@ -1,0 +1,86 @@
+# Default provider/model used when a request does not specify one.
+# `agnes` is the proven-reliable, fast provider; `openrouter`'s free model
+# (gpt-oss-20b:free) currently returns InternalServerError, so it is not the
+# default. The provider layer cascades to other providers on failure anyway.
+default_llm_provider: agnes
+default_llm_model: agnes-2.0-flash
+
+# Per-role provider routing. Planner hits a fast cloud model; workers use local.
+planner_provider: agnes
+worker_provider: omniroute
+
+# # Default fallback models
+# default_llm_provider: openai
+# default_llm_model: gpt-4o-mini
+
+# # Ollama configuration
+# ollama_base_url: http://localhost:11434
+
+# # Planner agent configuration
+# planner_provider: ollama
+# planner_model: gemma3:270m
+# planner_fallback_provider: openai
+# planner_fallback_model: gpt-4o-mini
+
+# # Worker agent configuration
+# worker_provider: ollama
+# worker_model: gemma3:270m
+# worker_fallback_provider: openai
+# worker_fallback_model: gpt-4o-mini
+
+# Model fallback strategy
+# use_prod_models_if_available: true
+
+omniroute:
+  base_url: http://localhost:20128/v1
+  api_type: openai
+  planner_model: auto/best-fast
+  worker_model: auto/best-fast
+
+ollama:
+  base_url: http://localhost:11434
+  api_type: openai
+  planner_model: gemma4:e2b    ## lfm2.5-thinking:1.2b
+  worker_model: gemma3:270m    ## granite4:latest
+
+openrouter:
+  base_url: https://openrouter.ai/api/v1
+  api_type: openai
+  planner_model: openai/gpt-oss-20b:free
+  worker_model: google/gemma-4-31b-it:free
+
+gemini:
+  base_url: https://generativelanguage.googleapis.com/v1beta
+  api_type: gemini
+  planner_model: gemini-2.0-flash
+  worker_model: gemini-2.0-flash
+
+agnes:
+  base_url: https://apihub.agnes-ai.com/v1
+  api_type: openai
+  planner_model: agnes-2.0-flash
+  worker_model: agnes-2.0-flash
+
+nvidia:
+  base_url: https://integrate.api.nvidia.com/v1
+  api_type: openai
+  planner_model: [deepseek-ai/deepseek-v4-pro, poolside/laguna-xs-2.1, z-ai/glm-5.2, minimaxai/minimax-m3, stepfun-ai/step-3.7-flash, moonshotai/kimi-k2.6, openai/gpt-oss-120b, meta/llama-3.3-70b-instruct, nvidia/nemotron-3-ultra-550b-a55b]
+  worker_model: [deepseek-ai/deepseek-v4-flash, openai/gpt-oss-20b, meta/llama-3.1-8b-instruct, nvidia/nemotron-3-super-120b-a12, nvidia/llama-3.1-nemotron-nano-vl-8b-v1]
+
+grokai:
+  base_url: https://api.grok.ai/v1
+  api_type: groq
+  planner_model: [llama-3.3-70b-versatile, openai/gpt-oss-120b]
+  worker_model: [llama-3.1-8b-instant, openai/gpt-oss-20b, qwen/qwen3.6-27b]
+
+llm7io:
+  base_url: https://api.llm7.io/v1
+  api_type: openai
+  planner_model: gpt-oss:20b
+  worker_model: [codestral-latest, minimax-m2.7]
+
+morphllm:
+  base_url: https://api.morphllm.com/v1
+  api_type: openai
+  planner_model: [morph-glm52-744b, morph-minimax3-428b]
+  worker_model: [morph-minimax27-230b, morph-dsv4flash, morph-qwen36-27b]

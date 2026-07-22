@@ -10,15 +10,13 @@ from litellm import acompletion
 from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import PlanningRequest
 from agentic_tour_planner.llm.hooks import CallMetrics, metrics_bus
-from agentic_tour_planner.tools.calculator import CALCULATOR_TOOL, run_calculator
+from agentic_tour_planner.tools.calculator import run_calculator
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 # System prompts for worker agents - concise JSON format
-ROUTE_PROMPT = (
-    'Return ONLY JSON: {"strategy": "string", "cluster_advice": ["string"], "transit_notes": ["string"]}'
-)
+ROUTE_PROMPT = 'Return ONLY JSON: {"strategy": "string", "cluster_advice": ["string"], "transit_notes": ["string"]}'
 BUDGET_PROMPT = (
     'Return ONLY JSON: {"estimated_daily_budget": number, "estimated_total_budget": number, '
     '"assumptions": ["string"], "saving_tips": ["string"]}'
@@ -72,14 +70,14 @@ PLANNER_SYSTEM_PROMPT = (
 # Order is intentionally "most reliable cloud gateway first" so real generation succeeds fast;
 # the local-only (omniroute) and placeholder (gemini) entries are tried later in the cascade.
 PROVIDER_PRIORITY = [
-    "openrouter",
     "agnes",
-    "nvidia",
+    "omniroute",
     "llm7io",
     "morphllm",
     "grokai",
-    "omniroute",
     "gemini",
+    "openrouter",
+    "nvidia",
     "ollama",
 ]
 
@@ -109,9 +107,7 @@ _NATIVE_VENDOR_PREFIXES = {
     "nvidia",
 }
 
-_PING_PROMPT = (
-    'Reply with strictly valid JSON only, no markdown: {"ok": true, "pong": "hello"}'
-)
+_PING_PROMPT = 'Reply with strictly valid JSON only, no markdown: {"ok": true, "pong": "hello"}'
 
 
 class LLMProvider:
@@ -133,10 +129,18 @@ class LLMProvider:
         self.include_ollama = include_ollama
         self.providers = self._load_providers()
         self.timeout = 120
+        self.planner_provider: str | None = getattr(self.settings, "planner_provider", None)
+        self.worker_provider: str | None = getattr(self.settings, "worker_provider", None)
+        logger.debug(
+            "LLMProvider per-role routing planner_provider={} worker_provider={}",
+            self.planner_provider, self.worker_provider,
+        )
         # Provider/model that actually produced the most recent result, per role.
         self.last_planner: tuple[str, str] | None = None
         self.last_worker: tuple[str, str] | None = None
-        logger.debug("LLMProvider initialized providers={} include_ollama={}", list(self.providers.keys()), include_ollama)
+        logger.debug(
+            "LLMProvider initialized providers={} include_ollama={}", list(self.providers.keys()), include_ollama
+        )
 
     # ------------------------------------------------------------------ config
     def _load_providers(self) -> dict[str, dict[str, Any]]:
@@ -180,23 +184,33 @@ class LLMProvider:
             chain.append("ollama")
         return chain
 
-    def _chain_for(self, provider_override: str | None, role: str, model_override: str | None = None) -> list[tuple[str, str]]:
+    def _chain_for(
+        self, provider_override: str | None, role: str, model_override: str | None = None
+    ) -> list[tuple[str, str]]:
         """Build the (provider, model) attempt order. An explicit provider selection is
         tried first (sticky), then the remaining providers in priority order as a
         fallback so a flaky provider does not break the pipeline. An unknown explicit
         provider falls back to the default chain (with a warning)."""
-        logger.debug("_chain_for provider_override={} role={} model_override={}", provider_override, role, model_override)
+        logger.debug(
+            "_chain_for provider_override={} role={} model_override={}", provider_override, role, model_override
+        )
         if provider_override and provider_override in self.providers:
             models = self._models_for(provider_override, role)
             if model_override:
-                models = [m for m in models if m != model_override] 
+                models = [m for m in models if m != model_override]
                 models = [model_override] + models
             rest = [p for p in self._provider_chain() if p != provider_override]
-            return [(provider_override, m) for m in models] + \
-                   [(p, m) for p in rest for m in self._models_for(p, role)]
+            return [(provider_override, m) for m in models] + [(p, m) for p in rest for m in self._models_for(p, role)]
         if provider_override:
             logger.warning(f"[LLM] Unknown provider {provider_override!r}; using default chain")
-        return [(p, m) for p in self._provider_chain() for m in self._models_for(p, role)]
+        chain = [(p, m) for p in self._provider_chain() for m in self._models_for(p, role)]
+        # Per-role preferred provider: use configured worker_provider first
+        # (unless caller explicitly overrode).
+        if not provider_override and role == "worker" and self.worker_provider and self.worker_provider in self.providers:
+            preferred_models = self._models_for(self.worker_provider, "worker")
+            preferred_chain = [(self.worker_provider, m) for m in preferred_models]
+            chain = preferred_chain + [item for item in chain if item[0] != self.worker_provider]
+        return chain
 
     def list_providers(self) -> list[str]:
         return list(self.providers.keys())
@@ -314,7 +328,6 @@ class LLMProvider:
             return "connection"
         return "error"
 
-
     def _litellm_model_and_base(self, provider: str, model: str) -> tuple[str, str | None]:
         cfg = self.providers.get(provider, {})
         api_type = (cfg.get("api_type") or "openai").lower()
@@ -338,7 +351,9 @@ class LLMProvider:
         ok: bool,
         error_type: str | None,
     ) -> None:
-        logger.debug("_record provider={} model={} role={} ok={} total_tokens={}", provider, model, role, ok, total_tokens)
+        logger.debug(
+            "_record provider={} model={} role={} ok={} total_tokens={}", provider, model, role, ok, total_tokens
+        )
         metrics_bus.record(
             CallMetrics(
                 provider=provider,
@@ -388,7 +403,7 @@ class LLMProvider:
             content = response.choices[0].message.content
             logger.debug(f"[LLM] {provider}/{model} ok latency={elapsed:.3f}s tokens={total_tokens}")
             return content if isinstance(content, str) else (content or "")
-        except Exception as exc:  # noqa: BLE001 - fallback routing handles all failures
+        except Exception as exc:
             elapsed = time.perf_counter() - started
             self._record(provider, model, role, elapsed, 0, 0, 0, False, self._classify_error(exc))
             logger.warning(f"[LLM] {provider}/{model} failed: {exc}")
@@ -439,7 +454,7 @@ class LLMProvider:
             try:
                 json.loads(self._extract_json(content))
                 parse_ok = True
-            except Exception:  # noqa: BLE001
+            except Exception:
                 parse_ok = False
             return {
                 "provider": provider,
@@ -452,9 +467,14 @@ class LLMProvider:
                 "error_type": None,
                 "sample": content[:200],
             }
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             elapsed = time.perf_counter() - started
-            logger.debug("test_provider_model failed provider={} model={} error_type={}", provider, model, self._classify_error(exc))
+            logger.debug(
+                "test_provider_model failed provider={} model={} error_type={}",
+                provider,
+                model,
+                self._classify_error(exc),
+            )
             return {
                 "provider": provider,
                 "model": model,
@@ -497,13 +517,17 @@ class LLMProvider:
         # but if it fails we fall through the remaining providers in priority order
         # instead of dropping straight to the heuristic. Only if EVERY provider fails
         # do we use the heuristic fallback.
-        explicit_provider = (
-            request.provider if (request and getattr(request, "provider", None)) else None
-        )
-        model_override = (
-            request.planner_model if (request and getattr(request, "planner_model", None)) else None
-        )
+        explicit_provider = request.provider if (request and getattr(request, "provider", None)) else None
+        model_override = request.planner_model if (request and getattr(request, "planner_model", None)) else None
         chain = [(p, m) for p in self._provider_chain() for m in self._models_for(p, "planner")]
+
+        # Per-role preferred provider: use configured planner_provider first
+        # (unless caller explicitly overrode).
+        if not explicit_provider and self.planner_provider and self.planner_provider in self.providers:
+            preferred_models = self._models_for(self.planner_provider, "planner")
+            preferred_chain = [(self.planner_provider, m) for m in preferred_models]
+            chain = preferred_chain + [item for item in chain if item[0] != self.planner_provider]
+
         if explicit_provider:
             if explicit_provider in self.providers:
                 rest = [p for p in self._provider_chain() if p != explicit_provider]
@@ -511,8 +535,9 @@ class LLMProvider:
                 if model_override:
                     models = [m for m in models if m != model_override]
                     models = [model_override] + models
-                chain = [(explicit_provider, m) for m in models] + \
-                        [(p, m) for p in rest for m in self._models_for(p, "planner")]
+                chain = [(explicit_provider, m) for m in models] + [
+                    (p, m) for p in rest for m in self._models_for(p, "planner")
+                ]
             else:
                 logger.warning(f"[LLM] Unknown provider {explicit_provider!r}; using default chain")
 
@@ -525,10 +550,12 @@ class LLMProvider:
                 self.last_planner = (provider, model)
                 logger.debug("complete_json success provider={} model={}", provider, model)
                 return result
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning(f"[LLM] JSON parse failed for {provider}/{model}: {exc}")
                 continue
-        logger.error("[LLM] All planner providers failed (tried {}); using heuristic fallback", ", ".join(p for p, _ in chain))
+        logger.error(
+            "[LLM] All planner providers failed (tried {}); using heuristic fallback", ", ".join(p for p, _ in chain)
+        )
         self.last_planner = ("fallback", "heuristic")
         return self._fallback_json(prompt, request)
 
@@ -539,7 +566,12 @@ class LLMProvider:
         provider_override: str | None = None,
         model_override: str | None = None,
     ) -> dict[str, Any]:
-        logger.info("complete_structured start worker_type={} provider_override={} model_override={}", worker_type, provider_override, model_override)
+        logger.info(
+            "complete_structured start worker_type={} provider_override={} model_override={}",
+            worker_type,
+            provider_override,
+            model_override,
+        )
         system_prompt = {
             "route": ROUTE_PROMPT,
             "budget": BUDGET_PROMPT,
@@ -564,7 +596,7 @@ class LLMProvider:
                 self.last_worker = (provider, model)
                 logger.debug("complete_structured success provider={} model={}", provider, model)
                 return result
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning(f"[LLM] structured parse failed {provider}/{model}: {exc}")
                 continue
         logger.error(f"[LLM] All worker providers failed for {worker_type}")
@@ -618,7 +650,7 @@ class LLMProvider:
                 result = json.loads(self._extract_json(content))
                 logger.debug("extract_json success provider={} model={}", provider, model)
                 return result
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning(f"[LLM] extract_json parse failed {provider}/{model}: {exc}")
                 continue
         logger.error("[LLM] extract_json failed for all providers")
@@ -666,7 +698,7 @@ class LLMProvider:
                 None,
             )
             return response
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             elapsed = time.perf_counter() - started
             self._record(provider, model, role, elapsed, 0, 0, 0, False, self._classify_error(exc))
             logger.warning(f"[LLM] {provider}/{model} tool-call failed: {exc}")
@@ -688,7 +720,14 @@ class LLMProvider:
         Returns (parsed_result, tool_call_records). On total failure returns
         ({"error": "..."}, []).
         """
-        logger.info("complete_with_tools start role={} provider_override={} model_override={} max_tool_rounds={} force_tool_first={}", role, provider_override, model_override, max_tool_rounds, force_tool_first)
+        logger.info(
+            "complete_with_tools start role={} provider_override={} model_override={} max_tool_rounds={} force_tool_first={}",
+            role,
+            provider_override,
+            model_override,
+            max_tool_rounds,
+            force_tool_first,
+        )
         # Explicit provider selection is sticky: try only that provider's models.
         chain = self._chain_for(provider_override, role, model_override=model_override)
 
@@ -719,25 +758,30 @@ class LLMProvider:
                         fn = tc.function
                         try:
                             args = json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments
-                        except Exception:  # noqa: BLE001
+                        except Exception:
                             args = {}
                         if fn.name == "calculator":
                             result = run_calculator(args)
                         else:
                             result = {"error": f"unknown tool {fn.name}"}
                         records.append(result)
-                        messages.append(
-                            {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result)}
-                        )
-                    logger.debug("complete_with_tools round={} tool_calls={} records={}", round_idx, len(tool_calls), len(records))
+                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result)})
+                    logger.debug(
+                        "complete_with_tools round={} tool_calls={} records={}",
+                        round_idx,
+                        len(tool_calls),
+                        len(records),
+                    )
                     continue
                 content = msg.content or ""
                 self.last_worker = (provider, model)
                 try:
                     parsed = json.loads(self._extract_json(content))
-                    logger.debug("complete_with_tools success provider={} model={} records={}", provider, model, len(records))
+                    logger.debug(
+                        "complete_with_tools success provider={} model={} records={}", provider, model, len(records)
+                    )
                     return parsed, records
-                except Exception:  # noqa: BLE001
+                except Exception:
                     return {"raw": content}, records
         logger.error(f"[LLM] All tool-calling providers failed for {role}")
         self.last_worker = ("fallback", "heuristic")
