@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from agentic_tour_planner.domain.models import (
     BudgetGuidance,
     PlanningInsights,
@@ -25,7 +27,12 @@ class RoutePlannerWorker:
         context: RetrievedContext,
         provider_override: str | None = None,
     ) -> RouteGuidance:
-        logger.info("RoutePlannerWorker.build start destination={} days={} provider_override={}", request.destination, request.trip_length_days, provider_override)
+        logger.info(
+            "RoutePlannerWorker.build start destination={} days={} provider_override={}",
+            request.destination,
+            request.trip_length_days,
+            provider_override,
+        )
 
         days = request.trip_length_days
         if days <= 3:
@@ -35,8 +42,7 @@ class RoutePlannerWorker:
             )
         elif days <= 6:
             routing_directive = (
-                "Cover the main sights AND include 1-2 offbeat / lesser-known places "
-                "in addition to the popular ones."
+                "Cover the main sights AND include 1-2 offbeat / lesser-known places in addition to the popular ones."
             )
         elif days >= 11:
             routing_directive = (
@@ -53,8 +59,8 @@ class RoutePlannerWorker:
         # Generate route guidance using LLM
         prompt = f"""
 Generate route guidance for a {days}-day trip to {request.destination}.
-Origin: {request.origin or 'Not specified'}
-Interests: {', '.join(request.interests) or 'General sightseeing'}
+Origin: {request.origin or "Not specified"}
+Interests: {", ".join(request.interests) or "General sightseeing"}
 
 MANDATORY ROUTING DIRECTIVE (you MUST follow this exactly):
 {routing_directive}
@@ -66,7 +72,9 @@ Based on the available documents and context, provide:
 
 Return JSON with keys: strategy, cluster_advice (list), transit_notes (list)
 """
-        result = await self.llm.complete_structured(prompt, "route", provider_override=provider_override, model_override=request.worker_model)
+        result = await self.llm.complete_structured(
+            prompt, "route", provider_override=provider_override, model_override=request.worker_model
+        )
 
         if "error" in result or not result:
             # Fallback to basic guidance
@@ -75,7 +83,9 @@ Return JSON with keys: strategy, cluster_advice (list), transit_notes (list)
                 strategy=routing_directive,
                 cluster_advice=[f"Group major sights in {request.destination} by neighborhood."],
                 transit_notes=[
-                    "Start from transport hub first when arriving." if request.origin else "Anchor day one near city center.",
+                    "Start from transport hub first when arriving."
+                    if request.origin
+                    else "Anchor day one near city center.",
                     "Group nearby attractions into walkable or single-transit corridors.",
                 ],
             )
@@ -99,16 +109,23 @@ class BudgetPlannerWorker:
         context: RetrievedContext,
         provider_override: str | None = None,
     ) -> BudgetGuidance:
-        logger.info("BudgetPlannerWorker.build start destination={} budget_level={} provider_override={}", request.destination, request.budget_level, provider_override)
+        logger.info(
+            "BudgetPlannerWorker.build start destination={} budget_level={} provider_override={}",
+            request.destination,
+            request.budget_level,
+            provider_override,
+        )
         prompt = f"""
 Generate budget guidance for a {request.trip_length_days}-day {request.budget_level} trip to {request.destination}.
-Interests: {', '.join(request.interests) or 'General sightseeing'}
-Travel month: {request.travel_month or 'Flexible'}
-Weather: {context.weather.summary if context.weather else 'Not available'}
+Interests: {", ".join(request.interests) or "General sightseeing"}
+Travel month: {request.travel_month or "Flexible"}
+Weather: {context.weather.summary if context.weather else "Not available"}
 
 Return JSON with keys: estimated_daily_budget, estimated_total_budget, assumptions (list), saving_tips (list)
 """
-        result = await self.llm.complete_structured(prompt, "budget", provider_override=provider_override, model_override=request.worker_model)
+        result = await self.llm.complete_structured(
+            prompt, "budget", provider_override=provider_override, model_override=request.worker_model
+        )
 
         if "error" in result or not result:
             # Fallback to calculated guidance
@@ -132,7 +149,11 @@ Return JSON with keys: estimated_daily_budget, estimated_total_budget, assumptio
                 ],
             )
 
-        logger.debug("BudgetPlannerWorker.build done daily={} total={}", result.get("estimated_daily_budget"), result.get("estimated_total_budget"))
+        logger.debug(
+            "BudgetPlannerWorker.build done daily={} total={}",
+            result.get("estimated_daily_budget"),
+            result.get("estimated_total_budget"),
+        )
         return BudgetGuidance(
             estimated_daily_budget=result.get("estimated_daily_budget", 160.0),
             estimated_total_budget=result.get("estimated_total_budget", 640.0),
@@ -143,7 +164,10 @@ Return JSON with keys: estimated_daily_budget, estimated_total_budget, assumptio
 
 class TimingPlannerWorker:
     HIGH_SEASON_MONTHS = {
-        "june", "july", "august", "december",
+        "june",
+        "july",
+        "august",
+        "december",
     }
 
     def __init__(self) -> None:
@@ -158,16 +182,23 @@ class TimingPlannerWorker:
     ) -> TimingGuidance:
         month = (request.travel_month or "").strip().lower()
         high_season = month in self.HIGH_SEASON_MONTHS
-        logger.info("TimingPlannerWorker.build start destination={} travel_month={} provider_override={}", request.destination, request.travel_month, provider_override)
+        logger.info(
+            "TimingPlannerWorker.build start destination={} travel_month={} provider_override={}",
+            request.destination,
+            request.travel_month,
+            provider_override,
+        )
 
         prompt = f"""
-Generate timing guidance for a {request.trip_length_days}-day trip to {request.destination} in {request.travel_month or 'Flexible'}.
-Weather: {context.weather.summary if context.weather else 'Not available'}
+Generate timing guidance for a {request.trip_length_days}-day trip to {request.destination} in {request.travel_month or "Flexible"}.
+Weather: {context.weather.summary if context.weather else "Not available"}
 Place hours: {len(context.place_hours)} locations with opening hours available
 
 Return JSON with keys: season_summary, booking_window, day_planning_notes (list)
 """
-        result = await self.llm.complete_structured(prompt, "timing", provider_override=provider_override, model_override=request.worker_model)
+        result = await self.llm.complete_structured(
+            prompt, "timing", provider_override=provider_override, model_override=request.worker_model
+        )
 
         if "error" in result or not result:
             # Fallback to calculated guidance
@@ -188,16 +219,18 @@ Return JSON with keys: season_summary, booking_window, day_planning_notes (list)
             ]
             if context.place_hours:
                 notes.append("Validate venue opening windows again 24 hours before the visit.")
-            
+
             return TimingGuidance(
                 season_summary=season_summary,
                 booking_window=booking_window,
                 day_planning_notes=notes,
             )
-        
+
         logger.debug("TimingPlannerWorker.build done season_summary_len={}", len(result.get("season_summary", "")))
         return TimingGuidance(
-            season_summary=result.get("season_summary", f"Plan for {request.travel_month or 'optimal timing'} in {request.destination}."),
+            season_summary=result.get(
+                "season_summary", f"Plan for {request.travel_month or 'optimal timing'} in {request.destination}."
+            ),
             booking_window=result.get("booking_window", "Book 4-8 weeks ahead."),
             day_planning_notes=result.get("day_planning_notes", []),
         )
@@ -218,10 +251,17 @@ class PlanningInsightsBuilder:
         context: RetrievedContext,
         provider_override: str | None = None,
     ) -> PlanningInsights:
-        logger.info("PlanningInsightsBuilder.build start destination={} provider_override={}", request.destination, provider_override)
-        route = await self.route_worker.build(request, context, provider_override=provider_override)
-        budget = await self.budget_worker.build(request, context, provider_override=provider_override)
-        timing = await self.timing_worker.build(request, context, provider_override=provider_override)
+        logger.info(
+            "PlanningInsightsBuilder.build start destination={} provider_override={}",
+            request.destination,
+            provider_override,
+        )
+        results = await asyncio.gather(
+            self.route_worker.build(request, context, provider_override=provider_override),
+            self.budget_worker.build(request, context, provider_override=provider_override),
+            self.timing_worker.build(request, context, provider_override=provider_override),
+        )
+        route, budget, timing = results
 
         self.last_worker_used = {
             "route": self.route_worker.llm.last_worker_used(),

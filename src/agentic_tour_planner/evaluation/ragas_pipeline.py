@@ -6,15 +6,20 @@ from pathlib import Path
 from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import PlanningRequest, RagEvaluationCase, RagEvaluationReport
 from agentic_tour_planner.pipeline.agentic_pipeline import AgenticTourPlannerPipeline
+from agentic_tour_planner.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class RagasEvaluationPipeline:
     def __init__(self) -> None:
+        logger.debug("Initializing RagasEvaluationPipeline")
         self.settings = get_settings()
         self.pipeline = AgenticTourPlannerPipeline()
 
     @staticmethod
     def load_cases(path: str | Path) -> list[RagEvaluationCase]:
+        logger.debug(f"Loading evaluation cases from {path}")
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
         if isinstance(payload, dict):
             payload = payload.get("cases", [])
@@ -28,11 +33,14 @@ class RagasEvaluationPipeline:
                     "metadata": item["request"],
                 }
             normalized.append(RagEvaluationCase.model_validate(item))
+        logger.info(f"Loaded {len(normalized)} evaluation cases")
         return normalized
 
     async def build_dataset_rows(self, cases_path: str | Path) -> list[dict]:
+        logger.info(f"Building dataset rows from {cases_path}")
         rows = []
         for case in self.load_cases(cases_path):
+            logger.debug(f"Running pipeline for case destination={case.metadata.get('destination', 'Unknown')}")
             response = await self.pipeline.run(
                 PlanningRequest(
                     destination=case.metadata.get("destination", "Unknown"),
@@ -51,15 +59,21 @@ class RagasEvaluationPipeline:
                     "reference_contexts": case.reference_contexts,
                 }
             )
+        logger.info(f"Built {len(rows)} dataset rows")
         return rows
 
-    async def export_dataset(self, cases_path: str | Path, output_path: str | Path | None = None) -> RagEvaluationReport:
+    async def export_dataset(
+        self, cases_path: str | Path, output_path: str | Path | None = None
+    ) -> RagEvaluationReport:
+        logger.info(f"Exporting dataset from {cases_path}")
         output = Path(output_path or self.settings.evaluation_dir / "ragas_dataset.json")
         rows = await self.build_dataset_rows(cases_path)
         output.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+        logger.info(f"Dataset exported to {output} ({len(rows)} rows)")
         return RagEvaluationReport(metrics={"rows": len(rows)}, output_path=str(output))
 
     async def run_ragas(self, cases_path: str | Path, output_path: str | Path | None = None) -> RagEvaluationReport:
+        logger.info(f"Running RAGAS evaluation on {cases_path}")
         rows = await self.build_dataset_rows(cases_path)
         output = Path(output_path or self.settings.evaluation_dir / "ragas_report.json")
         metrics = {
@@ -73,6 +87,7 @@ class RagasEvaluationPipeline:
             from ragas import evaluate
             from ragas.metrics import answer_relevancy, context_recall, faithfulness
 
+            logger.debug("RAGAS runtime dependencies available; running evaluator")
             dataset = Dataset.from_list(
                 [
                     {
@@ -91,11 +106,14 @@ class RagasEvaluationPipeline:
                 metrics.update(result._repr_dict)
             else:
                 metrics.update(dict(result))
+            logger.info("RAGAS evaluation completed with evaluator runtime")
         except Exception:
             # Keep evaluation pipeline operational even without optional evaluator runtime dependencies.
+            logger.warning("RAGAS evaluator runtime unavailable; using fallback heuristic metrics")
             grounded = sum(1 for row in rows if row["reference_contexts"])
             metrics["context_recall"] = grounded / len(rows) if rows else 0.0
             metrics["answer_relevancy"] = 0.75 if rows else 0.0
             metrics["faithfulness"] = 0.7 if rows else 0.0
         output.write_text(json.dumps({"metrics": metrics, "rows": rows}, indent=2), encoding="utf-8")
+        logger.info(f"RAGAS report written to {output} (rows={len(rows)})")
         return RagEvaluationReport(metrics=metrics, output_path=str(output))

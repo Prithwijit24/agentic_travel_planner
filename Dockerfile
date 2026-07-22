@@ -14,10 +14,13 @@ RUN apt-get update \
 COPY pyproject.toml README.md QUICKSTART.md /app/
 COPY src /app/src
 COPY examples /app/examples
-COPY data /app/data
+RUN mkdir -p /app/data/chroma /app/data/knowledge /app/data/operations /app/data/evaluation /app/cache
 
+ENV UV_CONCURRENT_BUILDS=1
+ENV UV_LINK_MODE=copy
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir .
+    && pip install --no-cache-dir uv \
+    && uv pip install --system --no-cache .
 
 EXPOSE 8000 8501
 

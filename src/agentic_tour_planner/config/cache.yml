@@ -1,0 +1,5 @@
+redis_url: redis://localhost:6379/0
+redis_cache_enabled: false
+redis_cache_namespace: agentic-travel-planner
+redis_cache_ttl_seconds: 3600
+redis_socket_timeout_seconds: 1.0

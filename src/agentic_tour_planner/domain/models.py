@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-
 from datetime import datetime
 from typing import Any, Literal
 from uuid import uuid4
@@ -209,6 +208,7 @@ class DayPlan(BaseModel):
     day: int
     theme: str
     summary: str | None = None
+    rationale: str | None = None
     transport: str | None = None
     morning: list[str] = Field(default_factory=list)
     afternoon: list[str] = Field(default_factory=list)
@@ -353,6 +353,7 @@ class RagEvaluationReport(BaseModel):
 
 class LogEvent(BaseModel):
     """A single event in the SSE stream."""
+
     event: Literal["step", "debug", "metric", "error", "done"]
     step: str | None = None
     message: str
@@ -362,9 +363,10 @@ class LogEvent(BaseModel):
 
 class PlanAPIResponse(BaseModel):
     """Validated response the UI maps from."""
+
     request_id: str
     plan: PlanningResponse | None = None
-    status: Literal["completed", "error"]
+    status: Literal["pending", "completed", "error"]
     error: str | None = None
 
 

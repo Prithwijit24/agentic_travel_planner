@@ -1,0 +1,3 @@
+api_base_url: http://localhost:8000
+streamlit_server_port: 8501
+enable_prometheus_metrics: true

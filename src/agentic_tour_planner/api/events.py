@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from agentic_tour_planner.domain.models import LogEvent
 from agentic_tour_planner.utils.logging import get_logger
@@ -18,18 +18,28 @@ class EventEmitter:
         self._queue: asyncio.Queue[LogEvent] = asyncio.Queue()
 
     def emit(self, event: LogEvent) -> None:
-        self._queue.put_nowait(event)
+        try:
+            self._queue.put_nowait(event)
+        except asyncio.QueueFull:
+            logger.warning("EventEmitter queue full, dropping event={}", event.event)
         logger.debug("EventEmitter.emit event={} message={}", event.event, event.message)
 
     async def stream(self) -> AsyncIterator[LogEvent]:
         while True:
-            event = await self._queue.get()
+            try:
+                event = await asyncio.wait_for(self._queue.get(), timeout=PLAN_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                logger.warning("EventEmitter stream timed out")
+                break
             yield event
             if event.event == "done":
                 break
 
 
-def register_emitter(request_id: str, emitter: EventEmitter) -> None:
+PLAN_TIMEOUT_SECONDS = 600
+
+
+def register_emitter(request_id: str, emitter: EventEmitter, ttl_seconds: int = PLAN_TIMEOUT_SECONDS) -> None:
     _emitters[request_id] = emitter
     logger.debug("register_emitter request_id={}", request_id)
 

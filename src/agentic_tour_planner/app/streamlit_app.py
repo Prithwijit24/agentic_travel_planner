@@ -554,7 +554,7 @@
 #     <style>
 #     /* --- Base Typography & Layout (Apple Style) --- */
 #     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
+
 #     html, body, [class*="css"] {
 #         font-family: 'SF Pro Display', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 #         color: #1d1d1f;
@@ -600,7 +600,7 @@
 #         box-shadow: 0 4px 12px rgba(0,0,0,0.03);
 #         transition: transform 0.2s ease, box-shadow 0.2s ease;
 #     }
-    
+
 #     .card:hover {
 #         box-shadow: 0 8px 24px rgba(0,0,0,0.06);
 #     }
@@ -681,7 +681,7 @@
 #         color: #1d1d1f !important;
 #         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 #     }
-    
+
 #     code {
 #         font-family: 'SF Mono', monospace !important;
 #         background-color: #fbfbfd !important;
@@ -720,7 +720,7 @@
 #         "purple": "bg-purple text-purple"
 #     }
 #     bar_cls, text_cls = color_map.get(color, "bg-blue text-blue").split()
-    
+
 #     return f"""
 #     <div class="card">
 #         <div class="accent-bar {bar_cls}"></div>
@@ -741,7 +741,7 @@
 # with col1:
 #     st.markdown("### Trip Overview")
 #     st.markdown(f"<p style='font-size: 17px; line-height: 1.6; color: #3a3a3c;'>{plan['overview']}</p>", unsafe_allow_html=True)
-    
+
 #     st.markdown("### Practical Tips")
 #     tips_html = "<ul class='custom-list'>"
 #     for tip in plan['practical_tips'][:3]:
@@ -752,7 +752,7 @@
 # with col2:
 #     weather_html = f"<p style='font-size: 15px; color: #3a3a3c; line-height: 1.6;'>{plan['monthly_weather']}</p>"
 #     st.markdown(fluent_card("Monthly Weather", "cyan", weather_html), unsafe_allow_html=True)
-    
+
 #     budget_html = f"""
 #         <div style='font-size: 32px; font-weight: 700; color: var(--ms-teal);'>{plan['cost_estimate']['overall']['grand_total']}</div>
 #         <div style='color: #6e6e73; margin-bottom: 12px;'>Estimated Total (for {plan['cost_estimate']['overall']['members']} traveler{'s' if plan['cost_estimate']['overall']['members'] > 1 else ''})</div>
@@ -774,22 +774,22 @@
 #     for day in plan['itinerary']:
 #         with st.expander(day['theme'], expanded=(day['day'] == 1)):
 #             st.markdown(f"<p style='font-size: 17px; color: #3a3a3c; margin-bottom: 24px;'>{day['summary']}</p>", unsafe_allow_html=True)
-            
+
 #             c1, c2 = st.columns([1, 2])
-            
+
 #             # Left Column: Logistics
 #             with c1:
 #                 st.markdown(fluent_card("Weather", "cyan", f"<p style='font-size: 14px; color: #3a3a3c; line-height: 1.5;'>{plan['monthly_weather']}</p>"), unsafe_allow_html=True)
-                
+
 #                 # Transport
 #                 t_html = f"<p style='font-size: 14px; color: #3a3a3c; line-height: 1.5;'>{day['transport']}</p>"
 #                 st.markdown(fluent_card("Transport", "blue", t_html), unsafe_allow_html=True)
-                
+
 #                 # Hotel
 #                 if day.get('hotel_recommendation'):
 #                     h_html = f"<p style='font-size: 14px; font-weight: 500;'>{day['hotel_recommendation']}</p>"
 #                     st.markdown(fluent_card("Accommodation", "purple", h_html), unsafe_allow_html=True)
-                    
+
 #                 # Logistics
 #                 if day['logistics']:
 #                     log_html = "<ul class='custom-list' style='font-size: 14px;'>"
@@ -797,7 +797,7 @@
 #                         log_html += f"<li style='color: var(--ms-gold);'>{l}</li>"
 #                     log_html += "</ul>"
 #                     st.markdown(fluent_card("Logistics", "gold", log_html), unsafe_allow_html=True)
-            
+
 #             # Right Column: Activities & Meals
 #             with c2:
 #                 # Activities Grid
@@ -807,7 +807,7 @@
 #                     ("Afternoon", "blue", day['afternoon']),
 #                     ("Evening", "purple", day['evening'])
 #                 ]
-                
+
 #                 for col, (slot_name, color, activities) in zip(act_cols, slots):
 #                     with col:
 #                         if activities:
@@ -818,7 +818,7 @@
 #                                 act_html += f"<li style='font-size: 13px; color: {text_color};'>{act}</li>"
 #                             act_html += "</ul>"
 #                             st.markdown(f"<div style='background: #fbfbfd; border: 1px solid #d2d2d7; border-radius: 12px; padding: 16px; margin-bottom: 16px;'>{act_html}</div>", unsafe_allow_html=True)
-                
+
 #                 # Spots to Visit
 #                 if day['spots']:
 #                     st.markdown("#### 📍 Spots to Visit")
@@ -832,7 +832,7 @@
 #                                 <div style='font-size: 13px; color: #3a3a3c; line-height: 1.4;'>{spot['description'][:80]}...</div>
 #                             """
 #                             st.markdown(fluent_card(spot['slot'].title(), spot_color, spot_html), unsafe_allow_html=True)
-                
+
 #                 # Meals
 #                 if day['meals']:
 #                     meals_html = "<div style='display: flex; gap: 12px; flex-wrap: wrap;'>"
@@ -844,7 +844,7 @@
 # # --- TAB 2: INSIGHTS & BUDGET ---
 # with tab2:
 #     st.markdown("### 💰 Cost Breakdown")
-    
+
 #     # Overall Budget Cards
 #     bc1, bc2, bc3 = st.columns(3)
 #     with bc1:
@@ -858,7 +858,7 @@
 
 #     # Insights Columns
 #     ins1, ins2, ins3 = st.columns(3)
-    
+
 #     with ins1:
 #         route = plan['insights']['route']
 #         html = f"<p style='font-size:14px; margin-bottom:12px;'>{route['strategy']}</p>"
@@ -867,7 +867,7 @@
 #             html += f"<li style='color: var(--ms-blue); font-size: 13px;'>{c}</li>"
 #         html += "</ul>"
 #         st.markdown(fluent_card("Route Strategy", "blue", html), unsafe_allow_html=True)
-        
+
 #     with ins2:
 #         budget = plan['insights']['budget']
 #         html = "<ul class='custom-list'>"
@@ -875,7 +875,7 @@
 #             html += f"<li style='color: var(--ms-teal); font-size: 13px;'>{s}</li>"
 #         html += "</ul>"
 #         st.markdown(fluent_card("Saving Tips", "teal", html), unsafe_allow_html=True)
-        
+
 #     with ins3:
 #         timing = plan['insights']['timing']
 #         html = f"<p style='font-size:14px; margin-bottom:12px;'>{timing['season_summary']}</p>"
@@ -918,14 +918,14 @@
 
 #     st.markdown("### 📌 Practical Tips & Live Web Brief")
 #     pt1, pt2 = st.columns(2)
-    
+
 #     with pt1:
 #         tips_html = "<ul class='custom-list'>"
 #         for tip in plan['practical_tips']:
 #             tips_html += f"<li style='color: var(--ms-purple);'>{tip}</li>"
 #         tips_html += "</ul>"
 #         st.markdown(fluent_card("General Tips", "purple", tips_html), unsafe_allow_html=True)
-        
+
 #     with pt2:
 #         lwb = plan['live_web_brief']
 #         lwb_html = f"""
@@ -967,48 +967,58 @@
 #     )
 
 
-import os
-import streamlit as st
-import streamlit.components.v1 as components
+import asyncio
 import json
-import re
+import os
+import threading
+import time
+from uuid import uuid4
+
 import httpx
+import streamlit as st
+
 from agentic_tour_planner.domain.models import PlanningRequest
-from agentic_tour_planner.llm.provider import LLMProvider
-from streamlit_searchbox import st_searchbox
 from agentic_tour_planner.geonames.index import search_places
+from agentic_tour_planner.llm.provider import LLMProvider
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
+
+@st.cache_resource
+def _get_ui_jobs() -> dict[str, dict]:
+    return {}
+
+
+_UI_JOBS = _get_ui_jobs()
+
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="Agentic Tour Planner · Sikkim",
-    page_icon="🗺️",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="Agentic Tour Planner · Sikkim", page_icon="🗺️", layout="wide", initial_sidebar_state="expanded"
 )
 
 # --- STATE MANAGEMENT ---
-if 'form_submitted' not in st.session_state:
+if "form_submitted" not in st.session_state:
     st.session_state.form_submitted = False
-if 'is_loading' not in st.session_state:
+if "is_loading" not in st.session_state:
     st.session_state.is_loading = False
-if 'plan' not in st.session_state:
+if "plan" not in st.session_state:
     st.session_state.plan = None
-if 'images' not in st.session_state:
+if "images" not in st.session_state:
     st.session_state.images = []
-if 'provider' not in st.session_state:
+if "provider" not in st.session_state:
     st.session_state.provider = "agnes"
-if 'planner_model' not in st.session_state:
+if "planner_model" not in st.session_state:
     st.session_state.planner_model = "agnes-2.0-flash"
-if 'worker_model' not in st.session_state:
+if "worker_model" not in st.session_state:
     st.session_state.worker_model = "agnes-2.0-flash"
+
 
 # --- HELPER FUNCTIONS ---
 def clean_html(html_str):
-    lines = html_str.split('\n')
+    lines = html_str.split("\n")
     cleaned_lines = [line.lstrip() for line in lines]
-    return '\n'.join(cleaned_lines).strip()
+    return "\n".join(cleaned_lines).strip()
+
 
 def _search_suggestions(query: str) -> list[str]:
     if len(query) < 1:
@@ -1021,10 +1031,7 @@ def _search_suggestions(query: str) -> list[str]:
 
 
 def fluent_card(title, color, content_html):
-    color_map = {
-        "blue": "bg-blue", "cyan": "bg-cyan", "teal": "bg-teal", 
-        "gold": "bg-gold", "purple": "bg-purple"
-    }
+    color_map = {"blue": "bg-blue", "cyan": "bg-cyan", "teal": "bg-teal", "gold": "bg-gold", "purple": "bg-purple"}
     bar_cls = color_map.get(color, "bg-blue")
     html = f"""
 <div class="card">
@@ -1079,7 +1086,7 @@ def _build_request_from_form(
 
 async def _call_plans_api(request: PlanningRequest) -> dict:
     """POST to /plans and return the response."""
-    async with httpx.AsyncClient(timeout=120) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
         r = await client.post(f"{API_BASE_URL}/plans", json=request.model_dump(mode="json"))
         r.raise_for_status()
         return r.json()
@@ -1087,7 +1094,7 @@ async def _call_plans_api(request: PlanningRequest) -> dict:
 
 async def _stream_logs(request_id: str, callback) -> None:
     """Connect to SSE stream and call callback for each event."""
-    async with httpx.AsyncClient(timeout=120) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
         async with client.stream("GET", f"{API_BASE_URL}/plans/stream/{request_id}") as response:
             async for line in response.aiter_lines():
                 if line.startswith("data: "):
@@ -1103,6 +1110,89 @@ async def _fetch_images(plan_id: str) -> dict:
         return r.json()
 
 
+def _start_generation_job(
+    form_data: dict,
+    provider: str | None,
+    planner_model: str | None,
+    worker_model: str | None,
+) -> str:
+    job_id = str(uuid4())
+    _UI_JOBS[job_id] = {
+        "status": "running",
+        "progress": 0.05,
+        "message": "Sending request to API server...",
+        "plan": None,
+        "images": {},
+        "error": None,
+    }
+
+    def run_job() -> None:
+        job = _UI_JOBS[job_id]
+        request_obj = _build_request_from_form(
+            destination=form_data.get("destination", ""),
+            origin=form_data.get("origin"),
+            days=form_data.get("days", 3),
+            interests=form_data.get("interests", []),
+            budget=form_data.get("budget", "Midrange"),
+            month=form_data.get("month", ""),
+            notes=None,
+            provider=provider,
+            planner_model=planner_model,
+            worker_model=worker_model,
+            places_per_day="3-5",
+            transport=form_data.get("transport", "Public Transport"),
+            travelers=form_data.get("travelers", 1),
+        )
+
+        try:
+            response_data = asyncio.run(_call_plans_api(request_obj))
+            if response_data.get("status") == "error":
+                raise RuntimeError(response_data.get("error") or "Unknown error")
+
+            stream_result = {"plan": response_data.get("plan"), "error": None}
+            step_counter = [0]
+            total_steps = 4
+
+            def on_event(event_data):
+                event_type = event_data.get("event", "")
+                message = event_data.get("message", "")
+                if event_type == "step":
+                    step_counter[0] += 1
+                    job["progress"] = min(step_counter[0] / total_steps, 0.95)
+                    job["message"] = message
+                elif event_type == "error":
+                    stream_result["error"] = message
+                    job["message"] = f"Error: {message}"
+                elif event_type == "done":
+                    detail = event_data.get("detail") or {}
+                    if detail.get("status") == "error":
+                        stream_result["error"] = detail.get("error") or message
+                    if detail.get("plan"):
+                        stream_result["plan"] = detail["plan"]
+                    job["progress"] = 1.0
+                    job["message"] = "Complete!"
+
+            asyncio.run(_stream_logs(response_data["request_id"], on_event))
+
+            if stream_result["error"] or not stream_result["plan"]:
+                raise RuntimeError(stream_result["error"] or "No plan returned by API")
+
+            plan_data = stream_result["plan"]
+            try:
+                job["images"] = asyncio.run(_fetch_images(plan_data["plan_id"]))
+            except Exception:
+                job["images"] = {}
+
+            job["plan"] = plan_data
+            job["status"] = "done"
+        except Exception as e:
+            job["error"] = str(e)
+            job["status"] = "error"
+
+    threading.Thread(target=run_job, daemon=True).start()
+    return job_id
+
+
 def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
     """Convert API PlanningResponse JSON + original request into the flat dict format the UI expects."""
     itinerary = plan_data.get("itinerary", [])
@@ -1111,17 +1201,20 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
     for day in itinerary:
         spots = []
         for spot in day.get("spots", []):
-            spots.append({
-                "name": spot.get("name", ""),
-                "description": spot.get("description", ""),
-                "hours": f"{spot.get('opening_hours', '')} – {spot.get('closing_hours', '')}".strip(" –") or "Not available",
-                "best_time": spot.get("best_time", ""),
-                "transport": spot.get("description", "")[:80] if not spot.get("best_time") else "",
-                "key_note": spot.get("history", "") or spot.get("description", "")[:120],
-                "lat": 0,
-                "lon": 0,
-                "image_query": spot.get("image_query", spot.get("name", "")),
-            })
+            spots.append(
+                {
+                    "name": spot.get("name", ""),
+                    "description": spot.get("description", ""),
+                    "hours": f"{spot.get('opening_hours', '')} – {spot.get('closing_hours', '')}".strip(" –")
+                    or "Not available",
+                    "best_time": spot.get("best_time", ""),
+                    "transport": spot.get("description", "")[:80] if not spot.get("best_time") else "",
+                    "key_note": spot.get("history", "") or spot.get("description", "")[:120],
+                    "lat": 0,
+                    "lon": 0,
+                    "image_query": spot.get("image_query", spot.get("name", "")),
+                }
+            )
 
         w = day.get("weather") or {}
         display_day = {
@@ -1131,11 +1224,15 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
             "hotel": day.get("hotel_recommendation", ""),
             "weather": {
                 "day_temp": f"{w.get('temperature_c', 'N/A')}°C" if w.get("temperature_c") is not None else "N/A",
-                "night_temp": f"{w.get('temperature_night_c', 'N/A')}°C" if w.get("temperature_night_c") is not None else "N/A",
+                "night_temp": f"{w.get('temperature_night_c', 'N/A')}°C"
+                if w.get("temperature_night_c") is not None
+                else "N/A",
                 "sunrise": w.get("sunrise", "N/A"),
                 "sunset": w.get("sunset", "N/A"),
                 "humidity": f"{w.get('humidity_percent', 'N/A')}%" if w.get("humidity_percent") is not None else "N/A",
-                "rain": f"{w.get('rainfall_chance_percent', 'N/A')}%" if w.get("rainfall_chance_percent") is not None else "N/A",
+                "rain": f"{w.get('rainfall_chance_percent', 'N/A')}%"
+                if w.get("rainfall_chance_percent") is not None
+                else "N/A",
             },
             "spots": spots,
             "morning": day.get("morning", []),
@@ -1156,34 +1253,37 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
             {
                 "day": d.get("day", 0),
                 "breakdown": " | ".join(
-                    f'{item.get("label", "")}: {item.get("amount", 0)}'
-                    for item in d.get("items", [])
+                    f"{item.get('label', '')}: {item.get('amount', 0)}" for item in d.get("items", [])
                 ),
-                "subtotal": f'{d.get("subtotal", 0)} INR' if d.get("subtotal") else "N/A",
+                "subtotal": f"{d.get('subtotal', 0)} INR" if d.get("subtotal") else "N/A",
             }
             for d in daily
         ],
         "overall": {
-            "per_person": f'{overall.get("per_person_total", "N/A")} INR' if overall.get("per_person_total") else "N/A",
+            "per_person": f"{overall.get('per_person_total', 'N/A')} INR" if overall.get("per_person_total") else "N/A",
             "members": overall.get("members", 1),
-            "grand_total": f'{overall.get("grand_total", "N/A")} INR' if overall.get("grand_total") else "N/A",
+            "grand_total": f"{overall.get('grand_total', 'N/A')} INR" if overall.get("grand_total") else "N/A",
         },
     }
 
     transport_options = []
     for t in plan_data.get("transport_options", []):
-        transport_options.append({
-            "mode": t.get("mode", ""),
-            "cost": t.get("fare", ""),
-            "description": t.get("description", ""),
-        })
+        transport_options.append(
+            {
+                "mode": t.get("mode", ""),
+                "cost": t.get("fare", ""),
+                "description": t.get("description", ""),
+            }
+        )
 
     citations = []
     for c in plan_data.get("citations", []):
-        citations.append({
-            "title": c.get("title", ""),
-            "url": c.get("url", "#"),
-        })
+        citations.append(
+            {
+                "title": c.get("title", ""),
+                "url": c.get("url", "#"),
+            }
+        )
 
     return {
         "destination": request.get("destination", ""),
@@ -1209,7 +1309,8 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
 
 # --- CUSTOM CSS (APPLE UI + MICROSOFT FLUENT COLORS) ---
 def load_css():
-    st.markdown("""
+    st.markdown(
+        """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
@@ -1316,6 +1417,7 @@ section[data-testid="stSidebar"] [data-checked="true"] span {
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
+/* General Sidebar/Button Styling */
 .stButton > button {
     background-color: var(--ms-blue);
     color: white;
@@ -1331,6 +1433,27 @@ section[data-testid="stSidebar"] [data-checked="true"] span {
     color: white;
 }
 .stButton > button:active {
+    transform: scale(0.98);
+}
+
+/* Form Submit Button (Light Reddish Color) */
+div[data-testid="stFormSubmitButton"] > button {
+    background-color: #FF6B6B !important;
+    border-color: #FF6B6B !important;
+    color: white !important;
+    border-radius: 980px;
+    padding: 12px 24px;
+    font-weight: 600;
+    border: none;
+    width: 100%;
+    transition: transform 0.1s, background-color 0.2s;
+}
+div[data-testid="stFormSubmitButton"] > button:hover {
+    background-color: #FF5252 !important;
+    border-color: #FF5252 !important;
+    color: white !important;
+}
+div[data-testid="stFormSubmitButton"] > button:active {
     transform: scale(0.98);
 }
 
@@ -1401,9 +1524,13 @@ div[data-baseweb="select"] > div > div {
     display: block;
 }
 </style>
-""", unsafe_allow_html=True)
+""",
+        unsafe_allow_html=True,
+    )
+
 
 load_css()
+
 
 def _build_provider_models() -> tuple[list[str], dict[str, list[str]], dict[str, list[str]]]:
     """Pull providers and their planner/worker models from llm.yml via LLMProvider."""
@@ -1425,301 +1552,334 @@ def _build_provider_models() -> tuple[list[str], dict[str, list[str]], dict[str,
 
 PROVIDERS, PLANNER_MODELS, WORKER_MODELS = _build_provider_models()
 
-# Fixed pixel height that the input form card renders at (measured empirically
-# with this exact field set). The loading terminal is locked to this same
-# height/width footprint so the transition between "form" -> "loading" never
-# leaves a gap where the old form can peek through or fade in behind it.
-FORM_CARD_HEIGHT = 706
-
-# Main placeholder ensures we can completely wipe the form when loading
-main_area = st.empty()
-
 # --- INPUT PAGE ---
 if not st.session_state.form_submitted and not st.session_state.is_loading:
-    with main_area.container():
-        st.markdown(clean_html("""
+    # Hide sidebar on input page for a cleaner look
+    st.markdown(
+        '<style>[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {display: none !important;}</style>',
+        unsafe_allow_html=True,
+    )
+    st.markdown("<style>.main .block-container {max-width: 800px;}</style>", unsafe_allow_html=True)
+
+    st.markdown(
+        clean_html("""
 <h1 style="font-size: 48px; text-align: center; margin-bottom: 0;">Agentic Tour Planner 🗺️</h1>
 <p style="font-size: 20px; color: #6e6e73; text-align: center; margin-bottom: 40px;">Design your perfect trip with AI-powered insights</p>
-"""), unsafe_allow_html=True)
-        
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            destination = st_searchbox(
-                _search_suggestions,
-                placeholder="e.g. Sikkim, Kyoto, Paris... (click to select)",
-                label="🌍 Destination *",
-                default="",
-                default_use_searchterm=True,
-                clear_on_submit=False,
-                edit_after_submit="option",
-                debounce=200,
-                key="dest_searchbox",
+"""),
+        unsafe_allow_html=True,
+    )
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("trip_planner_form"):
+            destination = st.text_input(
+                "🌍 Destination *",
+                placeholder="e.g. Sikkim, Kyoto, Paris",
             )
-            origin = st_searchbox(
-                _search_suggestions,
-                placeholder="e.g. Kolkata, Mumbai... (click to select)",
-                label="📍 Origin",
-                default="",
-                default_use_searchterm=True,
-                clear_on_submit=False,
-                edit_after_submit="option",
-                debounce=200,
-                key="origin_searchbox",
+            origin = st.text_input(
+                "📍 Origin",
+                placeholder="e.g. Kolkata, Mumbai",
+            )
+            st.markdown("### Trip Details")
+            c3, c4 = st.columns(2)
+            with c3:
+                days = st.slider("📅 Duration (Days)", 1, 40, 4)
+            with c4:
+                month = st.selectbox(
+                    "🌤️ Travel Month",
+                    [
+                        "January",
+                        "February",
+                        "March",
+                        "April",
+                        "May",
+                        "June",
+                        "July",
+                        "August",
+                        "September",
+                        "October",
+                        "November",
+                        "December",
+                    ],
+                    index=8,
+                )
+
+            c5, c6 = st.columns(2)
+            with c5:
+                budget = st.selectbox("💰 Budget", ["Budget", "Midrange", "Luxury"], index=1)
+            with c6:
+                travelers = st.number_input("👥 Travelers", 1, 10, 4)
+
+            transport = st.selectbox("🚇 Transport Mode", ["Public Transport", "Private Cab", "Rental Car"], index=0)
+            interests = st.multiselect(
+                "🎯 Interests", ["Nature", "Monasteries", "Adventure", "Culture"], ["Nature", "Monasteries"]
             )
 
-            with st.form("trip_planner_form"):
-                st.markdown("### Trip Details")
-                c3, c4 = st.columns(2)
-                with c3: days = st.slider("📅 Duration (Days)", 1, 40, 4)
-                with c4: month = st.selectbox("🌤️ Travel Month", ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"], index=8)
-                
-                c5, c6 = st.columns(2)
-                with c5: budget = st.selectbox("💰 Budget", ["Budget", "Midrange", "Luxury"], index=1)
-                with c6: travelers = st.number_input("👥 Travelers", 1, 10, 4)
-                
-                transport = st.selectbox("🚇 Transport Mode", ["Public Transport", "Private Cab", "Rental Car"], index=0)
-                interests = st.multiselect("🎯 Interests", ["Nature", "Monasteries", "Adventure", "Culture"], ["Nature", "Monasteries"])
-                
-                st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
-                submit = st.form_submit_button("Generate Itinerary ✨")
-            
-            with st.container():
-                st.markdown("### Configuration")
-                conf_c1, conf_c2, conf_c3 = st.columns(3)
-                with conf_c1: provider = st.selectbox("🤖 Model Provider", PROVIDERS, index=PROVIDERS.index(st.session_state.provider) if st.session_state.provider in PROVIDERS else 0)
-                with conf_c2:
-                    current_planner = PLANNER_MODELS.get(provider, ["default"])
-                    planner_index = current_planner.index(st.session_state.planner_model) if st.session_state.planner_model in current_planner else 0
-                    planner_model = st.selectbox("🧠 Planner Model", current_planner, index=planner_index)
-                with conf_c3:
-                    current_worker = WORKER_MODELS.get(provider, ["default"])
-                    worker_index = current_worker.index(st.session_state.worker_model) if st.session_state.worker_model in current_worker else 0
-                    worker_model = st.selectbox("🛠️ Worker Model", current_worker, index=worker_index)
-                
-                if submit:
-                    dest_clean = destination.split(",")[0].strip() if destination else ""
-                    if not dest_clean or len(dest_clean) < 2:
-                        st.error("Please enter a valid destination (at least 2 characters)")
-                    else:
-                        st.session_state.provider = provider
-                        st.session_state.planner_model = planner_model
-                        st.session_state.worker_model = worker_model
-                        st.session_state.form_data = {
-                            "destination": dest_clean,
-                            "origin": origin.split(",")[0].strip() if origin else None,
-                            "days": int(days),
-                            "month": month,
-                            "budget": budget,
-                            "travelers": int(travelers),
-                            "transport": transport,
-                            "interests": interests,
-                        }
-                        st.session_state.form_submitted = True
-                        st.session_state.is_loading = True
-                        main_area.empty()
-                        st.rerun()
+            st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+            st.markdown("### Configuration")
+            conf_c1, conf_c2, conf_c3 = st.columns(3)
+            with conf_c1:
+                provider = st.selectbox(
+                    "🤖 Model Provider",
+                    PROVIDERS,
+                    index=PROVIDERS.index(st.session_state.provider) if st.session_state.provider in PROVIDERS else 0,
+                )
+            with conf_c2:
+                current_planner = PLANNER_MODELS.get(provider, ["default"])
+                planner_index = (
+                    current_planner.index(st.session_state.planner_model)
+                    if st.session_state.planner_model in current_planner
+                    else 0
+                )
+                planner_model = st.selectbox("🧠 Planner Model", current_planner, index=planner_index)
+            with conf_c3:
+                current_worker = WORKER_MODELS.get(provider, ["default"])
+                worker_index = (
+                    current_worker.index(st.session_state.worker_model)
+                    if st.session_state.worker_model in current_worker
+                    else 0
+                )
+                worker_model = st.selectbox("🛠️ Worker Model", current_worker, index=worker_index)
+
+            st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
+
+            # Right-aligned button using columns
+            btn_col1, btn_col2 = st.columns([4, 1])
+            with btn_col2:
+                submit = st.form_submit_button("Generate Itinerary ✨", use_container_width=True)
+
+            if submit:
+                dest_clean = destination.split(",")[0].strip() if destination else ""
+                if not dest_clean or len(dest_clean) < 2:
+                    st.error("Please enter a valid destination (at least 2 characters)")
+                else:
+                    st.session_state.provider = provider
+                    st.session_state.planner_model = planner_model
+                    st.session_state.worker_model = worker_model
+                    st.session_state.form_data = {
+                        "destination": dest_clean,
+                        "origin": origin.split(",")[0].strip() if origin else None,
+                        "days": int(days),
+                        "month": month,
+                        "budget": budget,
+                        "travelers": int(travelers),
+                        "transport": transport,
+                        "interests": interests,
+                    }
+                    st.session_state.form_submitted = True
+                    st.session_state.is_loading = True
+                    st.rerun()
 
 # --- LOADING PAGE ---
 elif st.session_state.is_loading:
-    main_area.empty()
-    with main_area.container():
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            loading_html = f"""
-            <html>
-            <head>
-                <style>
-                    html, body {{
-                        margin: 0;
-                        padding: 0;
-                        font-family: 'Inter', sans-serif;
-                        background: transparent;
-                        height: 100%;
-                        overflow: hidden;
-                    }}
-                    .terminal-window {{
-                        background: #ffffff;
-                        border: 1px solid #d2d2d7;
-                        border-radius: 12px;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-                        width: 100%;
-                        height: {FORM_CARD_HEIGHT}px;
-                        overflow: hidden;
-                        text-align: left;
-                        box-sizing: border-box;
-                        display: flex;
-                        flex-direction: column;
-                    }}
-                    .terminal-header {{
-                        background: #f5f5f7;
-                        padding: 12px 16px;
-                        border-bottom: 1px solid #d2d2d7;
-                        display: flex;
-                        align-items: center;
-                        gap: 8px;
-                        flex: 0 0 auto;
-                    }}
-                    .terminal-dot {{ width: 12px; height: 12px; border-radius: 50%; }}
-                    .dot-red {{ background: #ff5f56; }}
-                    .dot-yellow {{ background: #ffbd2e; }}
-                    .dot-green {{ background: #27c93f; }}
-                    .terminal-clock {{
-                        margin-left: auto;
-                        font-family: 'SF Mono', monospace;
-                        font-size: 13px;
-                        color: #6e6e73;
-                        font-weight: 600;
-                    }}
-                    .terminal-body {{
-                        padding: 24px;
-                        font-family: 'SF Mono', 'Courier New', monospace;
-                        font-size: 14px;
-                        color: #3a3a3c;
-                        flex: 1 1 auto;
-                        overflow-y: auto;
-                        background: #fbfbfd;
-                    }}
-                    .log-line {{ margin-bottom: 12px; line-height: 1.4; opacity: 0; animation: fadeIn 0.3s forwards; }}
-                    .log-time {{ color: #8e8e93; margin-right: 8px; }}
-                    .log-success {{ color: #00B294; }}
-                    .log-info {{ color: #0078D4; }}
-                    .log-warn {{ color: #FFB900; }}
-                    @keyframes fadeIn {{ to {{ opacity: 1; }} }}
-                </style>
-            </head>
-            <body>
-                <div class="terminal-window">
-                    <div class="terminal-header">
-                        <div class="terminal-dot dot-red"></div>
-                        <div class="terminal-dot dot-yellow"></div>
-                        <div class="terminal-dot dot-green"></div>
-                        <div class="terminal-clock" id="clock">00:00:00</div>
-                    </div>
-                    <div class="terminal-body" id="term-body"></div>
+    # Hide sidebar on loading page
+    st.markdown(
+        '<style>[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {display: none !important;}</style>',
+        unsafe_allow_html=True,
+    )
+    st.markdown("<style>.main .block-container {max-width: 800px; padding-top: 5rem;}</style>", unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        loading_html = f"""
+        <html>
+        <head>
+            <style>
+                body {{
+                    margin: 0; padding: 0; font-family: 'Inter', sans-serif; background: transparent;
+                    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+                }}
+                .loader-container {{
+                    text-align: center;
+                    margin-bottom: 30px;
+                }}
+                .spinner-wrap {{
+                    position: relative;
+                    width: 64px;
+                    height: 64px;
+                    margin: 0 auto 24px auto;
+                }}
+                .spinner-ring {{
+                    width: 64px;
+                    height: 64px;
+                    border: 5px solid #f3f3f3;
+                    border-top-color: #0078D4;
+                    border-right-color: #00BCF2;
+                    border-radius: 50%;
+                    animation: spin 1s linear infinite;
+                    box-sizing: border-box;
+                }}
+                .spinner-pin {{
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    font-size: 24px;
+                }}
+                @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
+                h3 {{ margin: 0; color: #1d1d1f; font-size: 20px; font-weight: 600; }}
+                p {{ color: #6e6e73; margin-top: 8px; font-size: 14px; }}
+
+                .terminal-window {{
+                    background: #ffffff;
+                    border: 1px solid #d2d2d7;
+                    border-radius: 12px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+                    width: 100%;
+                    overflow: hidden;
+                    text-align: left;
+                    box-sizing: border-box;
+                    display: flex;
+                    flex-direction: column;
+                }}
+                .terminal-header {{
+                    background: #f5f5f7;
+                    padding: 12px 16px;
+                    border-bottom: 1px solid #d2d2d7;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    flex: 0 0 auto;
+                }}
+                .terminal-dot {{ width: 12px; height: 12px; border-radius: 50%; }}
+                .dot-red {{ background: #ff5f56; }}
+                .dot-yellow {{ background: #ffbd2e; }}
+                .dot-green {{ background: #27c93f; }}
+                .terminal-clock {{
+                    margin-left: auto;
+                    font-family: 'SF Mono', monospace;
+                    font-size: 13px;
+                    color: #6e6e73;
+                    font-weight: 600;
+                }}
+                .terminal-body {{
+                    padding: 24px;
+                    font-family: 'SF Mono', 'Courier New', monospace;
+                    font-size: 14px;
+                    color: #3a3a3c;
+                    flex: 1 1 auto;
+                    overflow-y: auto;
+                    background: #fbfbfd;
+                    min-height: 300px;
+                }}
+                .log-line {{ margin-bottom: 12px; line-height: 1.4; opacity: 0; animation: fadeIn 0.3s forwards; }}
+                .log-time {{ color: #8e8e93; margin-right: 8px; }}
+                .log-success {{ color: #00B294; }}
+                .log-info {{ color: #0078D4; }}
+                .log-warn {{ color: #FFB900; }}
+                @keyframes fadeIn {{ to {{ opacity: 1; }} }}
+            </style>
+        </head>
+        <body>
+            <div class="loader-container">
+                <div class="spinner-wrap">
+                    <div class="spinner-ring"></div>
+                    <div class="spinner-pin">🗺️</div>
                 </div>
+                <h3>Crafting your perfect trip...</h3>
+                <p>Our AI agents are analyzing routes, weather, and local insights. This may take 10-15 minutes.</p>
+            </div>
 
-                <script>
-                    function updateClock() {{
-                        const now = new Date();
-                        const h = String(now.getHours()).padStart(2, '0');
-                        const m = String(now.getMinutes()).padStart(2, '0');
-                        const s = String(now.getSeconds()).padStart(2, '0');
-                        document.getElementById('clock').innerText = h + ":" + m + ":" + s;
+            <div class="terminal-window">
+                <div class="terminal-header">
+                    <div class="terminal-dot dot-red"></div>
+                    <div class="terminal-dot dot-yellow"></div>
+                    <div class="terminal-dot dot-green"></div>
+                    <div class="terminal-clock" id="clock">00:00:00</div>
+                </div>
+                <div class="terminal-body" id="term-body"></div>
+            </div>
+
+            <script>
+                function updateClock() {{
+                    const now = new Date();
+                    const h = String(now.getHours()).padStart(2, '0');
+                    const m = String(now.getMinutes()).padStart(2, '0');
+                    const s = String(now.getSeconds()).padStart(2, '0');
+                    document.getElementById('clock').innerText = h + ":" + m + ":" + s;
+                }}
+                setInterval(updateClock, 1000);
+                updateClock();
+
+                const logs = [
+                    {{time: "00:01", text: "🚀 Initializing Agentic Tour Planner...", class: "info"}},
+                    {{time: "00:03", text: "🤖 Connecting to {st.session_state.planner_model} via {st.session_state.provider}...", class: "info"}},
+                    {{time: "00:06", text: "📡 Sending request to API server...", class: "info"}},
+                    {{time: "00:09", text: "🔄 Waiting for plan generation to begin...", class: "info"}},
+                    {{time: "00:12", text: "⏳ This may take 10-15 minutes. Please keep this window open.", class: "warn"}}
+                ];
+
+                const termBody = document.getElementById('term-body');
+                let i = 0;
+
+                function addLog() {{
+                    if (i < logs.length) {{
+                        const log = logs[i];
+                        const div = document.createElement('div');
+                        div.className = 'log-line log-' + log.class;
+                        div.innerHTML = '<span class="log-time">[' + log.time + ']</span>' + log.text;
+                        termBody.appendChild(div);
+                        termBody.scrollTop = termBody.scrollHeight;
+                        i++;
+                        setTimeout(addLog, 800);
                     }}
-                    setInterval(updateClock, 1000);
-                    updateClock();
+                }}
+                setTimeout(addLog, 500);
+            </script>
+        </body>
+        </html>
+        """
+        st.iframe(loading_html, height=600)
 
-                    const logs = [
-                        {{time: "00:01", text: "🚀 Initializing Agentic Tour Planner...", class: "info"}},
-                        {{time: "00:03", text: "🤖 Connecting to {st.session_state.provider} via {st.session_state.provider}...", class: "info"}},
-                        {{time: "00:06", text: "📡 Sending request to API server...", class: "info"}},
-                        {{time: "00:09", text: "🔄 Waiting for plan generation to begin...", class: "info"}}
-                    ];
-
-                    const termBody = document.getElementById('term-body');
-                    let i = 0;
-
-                    function addLog() {{
-                        if (i < logs.length) {{
-                            const log = logs[i];
-                            const div = document.createElement('div');
-                            div.className = 'log-line log-' + log.class;
-                            div.innerHTML = '<span class="log-time">[' + log.time + ']</span>' + log.text;
-                            termBody.appendChild(div);
-                            termBody.scrollTop = termBody.scrollHeight;
-                            i++;
-                            setTimeout(addLog, 800);
-                        }}
-                    }}
-                    setTimeout(addLog, 500);
-                </script>
-            </body>
-            </html>
-            """
-            components.html(loading_html, height=FORM_CARD_HEIGHT)
-
-            import asyncio
-
-            form_data = st.session_state.get("form_data", {})
-            request_obj = _build_request_from_form(
-                destination=form_data.get("destination", ""),
-                origin=form_data.get("origin"),
-                days=form_data.get("days", 3),
-                interests=form_data.get("interests", []),
-                budget=form_data.get("budget", "Midrange"),
-                month=form_data.get("month", ""),
-                notes=None,
-                provider=st.session_state.provider,
-                planner_model=st.session_state.planner_model,
-                worker_model=st.session_state.worker_model,
-                places_per_day="3-5",
-                transport=form_data.get("transport", "Public Transport"),
-                travelers=form_data.get("travelers", 1),
+        form_data = st.session_state.get("form_data", {})
+        if "generation_job_id" not in st.session_state:
+            st.session_state.generation_job_id = _start_generation_job(
+                form_data,
+                st.session_state.provider,
+                st.session_state.planner_model,
+                st.session_state.worker_model,
             )
 
-            try:
-                response_data = asyncio.run(_call_plans_api(request_obj))
-            except Exception as e:
-                st.error(f"Failed to connect to API server: {e}")
-                st.session_state.is_loading = False
-                main_area.empty()
-                st.rerun()
+        job = _UI_JOBS.get(st.session_state.generation_job_id)
+        if job is None:
+            st.error("Plan generation failed: job state was lost")
+            st.session_state.is_loading = False
+            st.session_state.form_submitted = False
+            st.session_state.pop("generation_job_id", None)
+            st.rerun()
 
-            if response_data.get("status") == "error":
-                st.error(f"Plan generation failed: {response_data.get('error', 'Unknown error')}")
-                st.session_state.is_loading = False
-                main_area.empty()
-                st.rerun()
-            else:
-                request_id = response_data["request_id"]
-                plan_data = response_data["plan"]
+        st.progress(job.get("progress", 0.05), text=job.get("message", "Generating itinerary..."))
 
-                progress = st.progress(0, text="Streaming logs...")
-                step_counter = [0]  # mutable container for nonlocal-like behavior
-                total_steps = 4
+        if job["status"] == "error":
+            st.error(f"Plan generation failed: {job.get('error') or 'Unknown error'}")
+            st.session_state.is_loading = False
+            st.session_state.form_submitted = False
+            st.session_state.pop("generation_job_id", None)
+            st.rerun()
 
-                def on_event(event_data):
-                    event_type = event_data.get("event", "")
-                    message = event_data.get("message", "")
-                    if event_type == "step":
-                        step_counter[0] += 1
-                        progress.progress(min(step_counter[0] / total_steps, 0.95), text=message)
-                    elif event_type == "debug":
-                        pass
-                    elif event_type == "metric":
-                        pass
-                    elif event_type == "error":
-                        progress.progress(step_counter[0] / total_steps, text=f"Error: {message}")
-                    elif event_type == "done":
-                        progress.progress(1.0, text="Complete!")
+        if job["status"] == "done":
+            plan_data = job["plan"]
+            images_data = job.get("images") or {}
 
-                try:
-                    asyncio.run(_stream_logs(request_id, on_event))
-                except Exception:
-                    pass
+            request_dict = {
+                "destination": form_data.get("destination", ""),
+                "origin": form_data.get("origin", ""),
+                "days": form_data.get("days", 3),
+                "month": form_data.get("month", ""),
+                "budget": form_data.get("budget", "Midrange"),
+                "travelers": form_data.get("travelers", 1),
+            }
 
-                progress.empty()
+            st.session_state.plan = _plan_to_display_dict(plan_data, request_dict)
+            st.session_state.images = images_data.get("images", [])
+            st.session_state.is_loading = False
+            finished_job_id = st.session_state.pop("generation_job_id", None)
+            if finished_job_id:
+                _UI_JOBS.pop(finished_job_id, None)
+            st.rerun()
 
-                images_data = {}
-                try:
-                    images_data = asyncio.run(_fetch_images(plan_data["plan_id"]))
-                except Exception:
-                    pass
-
-                request_dict = {
-                    "destination": form_data.get("destination", ""),
-                    "origin": form_data.get("origin", ""),
-                    "days": form_data.get("days", 3),
-                    "month": form_data.get("month", ""),
-                    "budget": form_data.get("budget", "Midrange"),
-                    "travelers": form_data.get("travelers", 1),
-                }
-
-                st.session_state.plan = _plan_to_display_dict(plan_data, request_dict)
-                st.session_state.images = images_data.get("images", [])
-                st.session_state.is_loading = False
-                main_area.empty()
-                st.rerun()
+        time.sleep(0.5)
+        st.rerun()
 
 # --- RESULTS PAGE ---
 elif st.session_state.plan is not None:
@@ -1731,169 +1891,213 @@ elif st.session_state.plan is not None:
         st.markdown(f"**Duration:** {plan['duration']} Days · {plan['month']}")
         st.markdown(f"**Budget:** {plan['budget']} · {plan['travelers']} Travelers")
         st.markdown("<hr style='border: 0; border-top: 1px solid #d2d2d7; margin: 16px 0;'>", unsafe_allow_html=True)
-        
+
         menu_options = ["🗓️ Daily Itinerary", "💡 Budget & Tips", "🚇 Transport & Sources", "🗺️ Maps"]
         menu_choice = st.radio("Navigation", menu_options, label_visibility="collapsed")
-        
+
         st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
         st.markdown("#### Configuration")
-        
+
         p_idx = PROVIDERS.index(st.session_state.provider) if st.session_state.provider in PROVIDERS else 0
         st.selectbox("🤖 Model Provider", PROVIDERS, disabled=True, index=p_idx, key="sidebar_provider_disabled")
-        
+
         current_planner = PLANNER_MODELS.get(st.session_state.provider, ["default"])
-        pl_idx = current_planner.index(st.session_state.planner_model) if st.session_state.planner_model in current_planner else 0
+        pl_idx = (
+            current_planner.index(st.session_state.planner_model)
+            if st.session_state.planner_model in current_planner
+            else 0
+        )
         st.selectbox("🧠 Planner Model", current_planner, disabled=True, index=pl_idx, key="sidebar_planner_disabled")
-        
+
         current_worker = WORKER_MODELS.get(st.session_state.provider, ["default"])
-        w_idx = current_worker.index(st.session_state.worker_model) if st.session_state.worker_model in current_worker else 0
+        w_idx = (
+            current_worker.index(st.session_state.worker_model)
+            if st.session_state.worker_model in current_worker
+            else 0
+        )
         st.selectbox("🛠️ Worker Model", current_worker, disabled=True, index=w_idx, key="sidebar_worker_disabled")
-        
+
         st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
         if st.button("← Start New Trip"):
             st.session_state.form_submitted = False
             st.session_state.is_loading = False
             st.session_state.plan = None
             st.session_state.images = []
-            main_area.empty()
             st.rerun()
 
-    st.markdown(clean_html(f"""
-<h1 style="font-size: 40px; margin-bottom: 0;">{plan['destination']} 🏔️</h1>
-<p style="font-size: 18px; color: #6e6e73; margin-top: 0;">{plan['duration']}-Day Itinerary · {plan['month']} · Origin: {plan['origin']}</p>
-"""), unsafe_allow_html=True)
-    
+    st.markdown(
+        clean_html(f"""
+<h1 style="font-size: 40px; margin-bottom: 0;">{plan["destination"]} 🏔️</h1>
+<p style="font-size: 18px; color: #6e6e73; margin-top: 0;">{plan["duration"]}-Day Itinerary · {plan["month"]} · Origin: {plan["origin"]}</p>
+"""),
+        unsafe_allow_html=True,
+    )
+
     st.markdown("### Trip Overview")
-    st.markdown(clean_html(f"""
-<p style="font-size: 16px; line-height: 1.6; color: #3a3a3c;">{plan['overview']}</p>
-"""), unsafe_allow_html=True)
-    
+    st.markdown(
+        clean_html(f"""
+<p style="font-size: 16px; line-height: 1.6; color: #3a3a3c;">{plan["overview"]}</p>
+"""),
+        unsafe_allow_html=True,
+    )
+
     res_html = f"""
 <div style="font-size: 15px; line-height: 1.8; color: #3a3a3c;">
-<div style="margin-bottom: 8px;">✈️ <b>Train/Flight:</b> {', '.join(plan['booking_resources']['flights'])}</div>
-<div style="margin-bottom: 8px;">🏨 <b>Hotel booking:</b> {', '.join(plan['booking_resources']['hotels'])}</div>
-<div>🛍️ <b>Accessories:</b> {', '.join(plan['booking_resources']['accessories'])}</div>
+<div style="margin-bottom: 8px;">✈️ <b>Train/Flight:</b> {", ".join(plan["booking_resources"]["flights"])}</div>
+<div style="margin-bottom: 8px;">🏨 <b>Hotel booking:</b> {", ".join(plan["booking_resources"]["hotels"])}</div>
+<div>🛍️ <b>Accessories:</b> {", ".join(plan["booking_resources"]["accessories"])}</div>
 </div>
 """
     st.markdown(fluent_card("Booking & Resources", "purple", clean_html(res_html)), unsafe_allow_html=True)
-    
+
     weather_html = f"<p style='font-size:14px; color:#3a3a3c;'>{plan['monthly_weather']}</p>"
     st.markdown(fluent_card(f"Estimated Weather ({plan['month']})", "cyan", weather_html), unsafe_allow_html=True)
 
     st.markdown("---")
 
     if menu_choice == "🗓️ Daily Itinerary":
-        day_tabs = st.tabs([f"Day {d['day']}" for d in plan['itinerary']])
-        
-        for i, day in enumerate(plan['itinerary']):
+        day_tabs = st.tabs([f"Day {d['day']}" for d in plan["itinerary"]])
+
+        for i, day in enumerate(plan["itinerary"]):
             with day_tabs[i]:
                 st.markdown(f"#### Day {day['day']} — {day['theme']}")
-                st.markdown(clean_html(f"""
-<p style="font-size: 15px; color: #3a3a3c; margin-bottom: 24px;">{day['plan']}</p>
-"""), unsafe_allow_html=True)
-                
-                w = day['weather']
+                st.markdown(
+                    clean_html(f"""
+<p style="font-size: 15px; color: #3a3a3c; margin-bottom: 24px;">{day["plan"]}</p>
+"""),
+                    unsafe_allow_html=True,
+                )
+
+                w = day["weather"]
                 w_html = f"""
 <div class="weather-strip">
-<span class="weather-item">🌡️ <b>Day Temp:</b> <span class="w-day">{w['day_temp']}</span></span>
-<span class="weather-item">🌙 <b>Night Temp:</b> <span class="w-night">{w['night_temp']}</span></span>
-<span class="weather-item">🌅 <b>Sunrise:</b> <span class="w-sunrise">{w['sunrise']}</span></span>
-<span class="weather-item">🌇 <b>Sunset:</b> <span class="w-sunset">{w['sunset']}</span></span>
-<span class="weather-item">💧 <b>Humidity:</b> <span class="w-humidity">{w['humidity']}</span></span>
-<span class="weather-item">🌧️ <b>Rain:</b> <span class="w-rain">{w['rain']}</span></span>
+<span class="weather-item">🌡️ <b>Day Temp:</b> <span class="w-day">{w["day_temp"]}</span></span>
+<span class="weather-item">🌙 <b>Night Temp:</b> <span class="w-night">{w["night_temp"]}</span></span>
+<span class="weather-item">🌅 <b>Sunrise:</b> <span class="w-sunrise">{w["sunrise"]}</span></span>
+<span class="weather-item">🌇 <b>Sunset:</b> <span class="w-sunset">{w["sunset"]}</span></span>
+<span class="weather-item">💧 <b>Humidity:</b> <span class="w-humidity">{w["humidity"]}</span></span>
+<span class="weather-item">🌧️ <b>Rain:</b> <span class="w-rain">{w["rain"]}</span></span>
 </div>
 """
                 st.markdown(clean_html(w_html), unsafe_allow_html=True)
-                
+
                 st.markdown("##### 📍 Spots to Visit")
-                for spot in day['spots']:
+                for spot in day["spots"]:
                     images = st.session_state.get("images", [])
                     spot_image = next((img for img in images if img.get("place_name") == spot["name"]), None)
                     if spot_image and spot_image.get("image_url"):
                         img_url = spot_image["image_url"]
                     else:
-                        img_query = spot['name'].replace(" ", ",")
+                        img_query = spot["name"].replace(" ", ",")
                         img_url = f"https://source.unsplash.com/600x400/?{img_query}"
                     spot_html = f"""
 <div class="spot-wrapper">
 <div class="spot-text-card">
 <div class="accent-bar bg-blue" style="width: 60px; margin-bottom: 16px;"></div>
-<div style="font-weight: 600; font-size: 18px; margin-bottom: 8px; color: #1d1d1f;">{spot['name']}</div>
-<div style="font-size: 15px; color: #3a3a3c; margin-bottom: 12px; line-height: 1.5;">{spot['description']}</div>
-<div style="font-size: 14px; margin-bottom: 6px; color: #3a3a3c;"><b style="color: #1d1d1f;">🕒 Hours:</b> {spot['hours']}</div>
-<div style="font-size: 14px; margin-bottom: 6px; color: #3a3a3c;"><b style="color: #1d1d1f;">⏳ Best Time:</b> {spot['best_time']}</div>
-<div style="font-size: 14px; margin-bottom: 6px; color: #3a3a3c;"><b style="color: #1d1d1f;">🚕 Transport:</b> {spot['transport']}</div>
-<div style="font-size: 14px; background: #f5f5f7; padding: 12px; border-radius: 8px; margin-top: 12px; color: #3a3a3c; border-left: 4px solid var(--ms-gold);"><b style="color: #1d1d1f;">🔑 Note:</b> {spot['key_note']}</div>
+<div style="font-weight: 600; font-size: 18px; margin-bottom: 8px; color: #1d1d1f;">{spot["name"]}</div>
+<div style="font-size: 15px; color: #3a3a3c; margin-bottom: 12px; line-height: 1.5;">{spot["description"]}</div>
+<div style="font-size: 14px; margin-bottom: 6px; color: #3a3a3c;"><b style="color: #1d1d1f;">🕒 Hours:</b> {spot["hours"]}</div>
+<div style="font-size: 14px; margin-bottom: 6px; color: #3a3a3c;"><b style="color: #1d1d1f;">⏳ Best Time:</b> {spot["best_time"]}</div>
+<div style="font-size: 14px; margin-bottom: 6px; color: #3a3a3c;"><b style="color: #1d1d1f;">🚕 Transport:</b> {spot["transport"]}</div>
+<div style="font-size: 14px; background: #f5f5f7; padding: 12px; border-radius: 8px; margin-top: 12px; color: #3a3a3c; border-left: 4px solid var(--ms-gold);"><b style="color: #1d1d1f;">🔑 Note:</b> {spot["key_note"]}</div>
 </div>
 <div class="spot-image-card">
-<img src="{img_url}" alt="{spot['name']}">
+<img src="{img_url}" alt="{spot["name"]}">
 </div>
 </div>
 """
                     st.markdown(clean_html(spot_html), unsafe_allow_html=True)
-                
+
                 hotel_html = f"<p style='font-size:14px; color:#3a3a3c;'>🏨 {day['hotel']}</p>"
                 st.markdown(fluent_card("Accommodation", "teal", clean_html(hotel_html)), unsafe_allow_html=True)
 
     elif menu_choice == "💡 Budget & Tips":
         st.markdown("### 💰 Cost Estimate")
-        overall = plan.get('cost_estimate', {}).get('overall', {})
+        overall = plan.get("cost_estimate", {}).get("overall", {})
         bc1, bc2, bc3 = st.columns(3)
-        with bc1: st.markdown(fluent_card("Per Person", "teal", f"<div style='font-size: 24px; font-weight: 700;'>{overall.get('per_person', 'N/A')}</div>"), unsafe_allow_html=True)
-        with bc2: st.markdown(fluent_card("Grand Total", "blue", f"<div style='font-size: 24px; font-weight: 700;'>{overall.get('grand_total', 'N/A')}</div>"), unsafe_allow_html=True)
-        with bc3: st.markdown(fluent_card("Travelers", "purple", f"<div style='font-size: 24px; font-weight: 700;'>{overall.get('members', 1)}</div>"), unsafe_allow_html=True)
+        with bc1:
+            st.markdown(
+                fluent_card(
+                    "Per Person",
+                    "teal",
+                    f"<div style='font-size: 24px; font-weight: 700;'>{overall.get('per_person', 'N/A')}</div>",
+                ),
+                unsafe_allow_html=True,
+            )
+        with bc2:
+            st.markdown(
+                fluent_card(
+                    "Grand Total",
+                    "blue",
+                    f"<div style='font-size: 24px; font-weight: 700;'>{overall.get('grand_total', 'N/A')}</div>",
+                ),
+                unsafe_allow_html=True,
+            )
+        with bc3:
+            st.markdown(
+                fluent_card(
+                    "Travelers",
+                    "purple",
+                    f"<div style='font-size: 24px; font-weight: 700;'>{overall.get('members', 1)}</div>",
+                ),
+                unsafe_allow_html=True,
+            )
 
         st.markdown("#### Daily Breakdown")
-        for daily in plan['cost_estimate'].get('daily', []):
+        for daily in plan["cost_estimate"].get("daily", []):
             d_html = f"""
 <div style="display: flex; justify-content: space-between; align-items: center;">
-<span style="font-size: 14px; color: #3a3a3c;">{daily['breakdown']}</span>
-<span style="font-size: 16px; font-weight: 700; color: var(--ms-teal); white-space: nowrap; margin-left: 16px;">{daily['subtotal']}</span>
+<span style="font-size: 14px; color: #3a3a3c;">{daily["breakdown"]}</span>
+<span style="font-size: 16px; font-weight: 700; color: var(--ms-teal); white-space: nowrap; margin-left: 16px;">{daily["subtotal"]}</span>
 </div>
 """
             st.markdown(fluent_card(f"Day {daily['day']} Costs", "gold", clean_html(d_html)), unsafe_allow_html=True)
 
         st.markdown("### 💡 Practical Tips")
         tips_html = "<ul style='padding-left: 20px; margin: 0;'>"
-        for tip in plan['practical_tips']: tips_html += f"<li style='font-size: 14px; color: #3a3a3c; margin-bottom: 10px;'>{tip}</li>"
+        for tip in plan["practical_tips"]:
+            tips_html += f"<li style='font-size: 14px; color: #3a3a3c; margin-bottom: 10px;'>{tip}</li>"
         tips_html += "</ul>"
-        st.markdown(fluent_card(f"Tips for {plan['destination']}", "purple", clean_html(tips_html)), unsafe_allow_html=True)
+        st.markdown(
+            fluent_card(f"Tips for {plan['destination']}", "purple", clean_html(tips_html)), unsafe_allow_html=True
+        )
 
     elif menu_choice == "🚇 Transport & Sources":
         st.markdown("### 🚆 Transport Options")
-        transport_opts = plan.get('transport_options', [])
+        transport_opts = plan.get("transport_options", [])
         if transport_opts:
             tcols = st.columns(min(len(transport_opts), 3))
             for idx, opt in enumerate(transport_opts):
                 with tcols[idx % len(tcols)]:
                     html = f"""
-<div style="font-weight: 600; margin-bottom: 4px;">{opt['mode']}</div>
-<div style="font-size: 13px; color: var(--ms-blue); font-weight: 600; margin-bottom: 8px;">💵 {opt['cost']}</div>
-<div style="font-size: 13px; color: #3a3a3c; line-height: 1.5;">{opt['description']}</div>
+<div style="font-weight: 600; margin-bottom: 4px;">{opt["mode"]}</div>
+<div style="font-size: 13px; color: var(--ms-blue); font-weight: 600; margin-bottom: 8px;">💵 {opt["cost"]}</div>
+<div style="font-size: 13px; color: #3a3a3c; line-height: 1.5;">{opt["description"]}</div>
 """
                     st.markdown(fluent_card("Option", "cyan", clean_html(html)), unsafe_allow_html=True)
         else:
             st.info("No transport options available.")
-        
+
         st.markdown("<div style='margin-bottom: 32px;'></div>", unsafe_allow_html=True)
-        
+
         st.markdown("### 📚 Sources & Citations")
         cit_html = "<div style='display: flex; flex-direction: column; gap: 12px;'>"
-        for cit in plan['sources']: cit_html += f"<a href='{cit['url']}' target='_blank' style='text-decoration: none; color: var(--ms-blue); background: #f5f5f7; padding: 12px; border-radius: 8px; font-size: 14px; font-weight: 500;'>🔗 {cit['title']}</a>"
+        for cit in plan["sources"]:
+            cit_html += f"<a href='{cit['url']}' target='_blank' style='text-decoration: none; color: var(--ms-blue); background: #f5f5f7; padding: 12px; border-radius: 8px; font-size: 14px; font-weight: 500;'>🔗 {cit['title']}</a>"
         cit_html += "</div>"
         st.markdown(fluent_card("Citations", "teal", clean_html(cit_html)), unsafe_allow_html=True)
 
     elif menu_choice == "🗺️ Maps":
         st.markdown("### 📍 Trip Route Map")
-        
+
         map_spots = []
-        for day in plan['itinerary']:
-            for spot in day['spots']:
+        for day in plan["itinerary"]:
+            for spot in day["spots"]:
                 if "lat" in spot and "lon" in spot:
-                    map_spots.append({"name": spot['name'], "lat": spot['lat'], "lon": spot['lon'], "day": day['day']})
-        
+                    map_spots.append({"name": spot["name"], "lat": spot["lat"], "lon": spot["lon"], "day": day["day"]})
+
         spots_json = json.dumps(map_spots)
-        
+
         html_map = f"""
         <html>
         <head>
@@ -1923,7 +2127,7 @@ elif st.session_state.plan is not None:
 
                     const spots = {spots_json};
                     const bounds = new google.maps.LatLngBounds();
-                    const colors = ['#FFB900', '#0078D4', '#5C2D91', '#00B294']; 
+                    const colors = ['#FFB900', '#0078D4', '#5C2D91', '#00B294'];
 
                     spots.forEach((spot, index) => {{
                         const marker = new google.maps.Marker {{
@@ -1966,7 +2170,31 @@ elif st.session_state.plan is not None:
         </body>
         </html>
         """
-        components.html(html_map, height=620)
-        
+        st.iframe(html_map, height=620)
+
         st.markdown("<div style='margin-bottom: 16px;'></div>", unsafe_allow_html=True)
-        st.info("ⓘ Markers are color-coded by day (Day 1: Gold, Day 2: Blue, Day 3: Purple, Day 4: Teal). Click on a marker to see the spot name.")
+        st.info(
+            "ⓘ Markers are color-coded by day (Day 1: Gold, Day 2: Blue, Day 3: Purple, Day 4: Teal). Click on a marker to see the spot name."
+        )
+
+
+def run() -> None:
+    import sys
+    from pathlib import Path
+    app_path = Path(__file__).resolve()
+    os.execvp(
+        sys.executable,
+        [
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            str(app_path),
+            "--server.port",
+            "8501",
+            "--server.address",
+            "0.0.0.0",
+            "--theme.base",
+            "light",
+        ],
+    )

@@ -11,4 +11,13 @@ data/chroma/*
 data/operations/*.db
 data/evaluation/*
 src/project_folder/notebooks
+src/agentic_tour_planner/data
 
+# Heavy / non-runtime dirs kept out of the build context
+cache
+.codegraph
+.kilo
+tests
+notebooks
+*.log
+jlab.log

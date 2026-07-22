@@ -7,4 +7,3 @@ def test_chunk_text_returns_multiple_chunks():
 
     assert len(chunks) == 4
     assert chunks[0] == "a" * 100
-

@@ -1,0 +1,7 @@
+app_env: development
+app_name: Agentic Travel Planner
+log_level: INFO
+enable_trace_logs: false
+
+# Graph store backend: neo4j, memory, or disabled
+graph_store_backend: memory

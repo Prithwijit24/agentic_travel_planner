@@ -1,26 +1,35 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from uuid import uuid4
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Response
-from sse_starlette.sse import EventSourceResponse
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import Counter, Histogram, generate_latest
+from sse_starlette.sse import EventSourceResponse
 
 from agentic_tour_planner.api.events import EventEmitter, get_emitter, register_emitter, remove_emitter
 from agentic_tour_planner.api.images import resolve_images
 from agentic_tour_planner.config.settings import Settings, get_settings
-from agentic_tour_planner.domain.models import ImageResponse, IngestedSourceRecord, LogEvent, PlanAPIResponse, PlanFeedback, PlanningRequest, PlanningResponse, StoredPlanRecord
+from agentic_tour_planner.domain.models import (
+    ImageResponse,
+    IngestedSourceRecord,
+    LogEvent,
+    PlanAPIResponse,
+    PlanFeedback,
+    PlanningRequest,
+    StoredPlanRecord,
+)
 from agentic_tour_planner.ingestion.service import IngestionService
-from agentic_tour_planner.pipeline.agentic_pipeline import AgenticTourPlannerPipeline
 from agentic_tour_planner.storage.sqlite_store import SQLitePlanStore
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 settings: Settings = get_settings()
+_plan_tasks: set[asyncio.Task] = set()
 
 REQUEST_COUNT = Counter(
     "tour_planner_requests_total",
@@ -39,20 +48,29 @@ def _export_metrics() -> bytes:
     return generate_latest()
 
 
+def _make_pipeline():
+    from agentic_tour_planner.pipeline.agentic_pipeline import AgenticTourPlannerPipeline
+
+    return AgenticTourPlannerPipeline()
+
+
 app = FastAPI(title=settings.app_name, version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
 @app.get("/health")
-def health() -> dict:
+async def health() -> dict:
     logger.debug("Health check requested")
     return {"status": "ok", "env": settings.app_env}
+
+
+PLAN_TIMEOUT_SECONDS = 600
 
 
 @app.post("/plans", response_model=PlanAPIResponse)
@@ -60,40 +78,56 @@ async def create_plan(request: PlanningRequest) -> PlanAPIResponse:
     logger.info(f"POST /plans destination={request.destination} provider={request.provider or 'default'}")
     request_id = str(uuid4())
     emitter = EventEmitter()
-    register_emitter(request_id, emitter)
-    pipeline = AgenticTourPlannerPipeline()
+    register_emitter(request_id, emitter, ttl_seconds=PLAN_TIMEOUT_SECONDS)
+    task = asyncio.create_task(_run_plan_job(request_id, request, emitter))
+    _plan_tasks.add(task)
+    task.add_done_callback(_plan_tasks.discard)
+    return PlanAPIResponse(request_id=request_id, plan=None, status="pending")
+
+
+async def _run_plan_job(request_id: str, request: PlanningRequest, emitter: EventEmitter) -> None:
+    pipeline = _make_pipeline()
     store = SQLitePlanStore()
     provider = (request.provider or settings.default_llm_provider) or "unknown"
     REQUEST_COUNT.labels(endpoint="/plans", provider=provider).inc()
     start = time.perf_counter()
     try:
-        response = await pipeline.run(request, emitter=emitter)
+        response = await asyncio.wait_for(
+            pipeline.run(request, emitter=emitter),
+            timeout=PLAN_TIMEOUT_SECONDS,
+        )
         store.save_plan(request, response)
         elapsed = time.perf_counter() - start
         REQUEST_LATENCY.labels(endpoint="/plans").observe(elapsed)
         logger.info(f"POST /plans completed plan_id={response.plan_id} in {elapsed:.2f}s")
-        emitter.emit(LogEvent(event="done", message="Plan complete", detail={"plan_id": response.plan_id, "status": "completed"}))
-        return PlanAPIResponse(
-            request_id=request_id,
-            plan=response,
-            status="completed",
+        emitter.emit(
+            LogEvent(
+                event="done",
+                message="Plan complete",
+                detail={
+                    "plan_id": response.plan_id,
+                    "request_id": request_id,
+                    "status": "completed",
+                    "plan": response.model_dump(mode="json"),
+                },
+            )
         )
     except Exception as e:
         elapsed = time.perf_counter() - start
         REQUEST_LATENCY.labels(endpoint="/plans").observe(elapsed)
         logger.error(f"POST /plans failed in {elapsed:.2f}s: {e}")
         emitter.emit(LogEvent(event="error", message=str(e)))
-        emitter.emit(LogEvent(event="done", message="Plan failed", detail={"status": "error"}))
-        return PlanAPIResponse(
-            request_id=request_id,
-            plan=None,
-            status="error",
-            error=str(e),
+        emitter.emit(
+            LogEvent(
+                event="done",
+                message="Plan failed",
+                detail={"request_id": request_id, "status": "error", "error": str(e)},
+            )
         )
 
 
 @app.get("/plans", response_model=list[StoredPlanRecord])
-def list_plans(limit: int = 20) -> list[StoredPlanRecord]:
+async def list_plans(limit: int = 20) -> list[StoredPlanRecord]:
     logger.info(f"GET /plans limit={limit}")
     return SQLitePlanStore().list_plans(limit)
 
@@ -117,20 +151,20 @@ async def get_plan_images(plan_id: str) -> ImageResponse:
 
 
 @app.get("/sources", response_model=list[IngestedSourceRecord])
-def list_sources(limit: int = 100) -> list[IngestedSourceRecord]:
+async def list_sources(limit: int = 100) -> list[IngestedSourceRecord]:
     logger.info(f"GET /sources limit={limit}")
     return IngestionService().list_sources(limit)
 
 
 @app.post("/feedback")
-def create_feedback(feedback: PlanFeedback) -> dict:
+async def create_feedback(feedback: PlanFeedback) -> dict:
     logger.info(f"POST /feedback plan_id={feedback.plan_id}")
     SQLitePlanStore().save_feedback(feedback)
     return {"status": "recorded"}
 
 
 @app.get("/metrics")
-def metrics() -> Response:
+async def metrics() -> Response:
     logger.debug("GET /metrics")
     if not settings.enable_prometheus_metrics:
         logger.debug("Prometheus metrics disabled, returning 404")
@@ -160,5 +194,6 @@ async def stream_plan(request_id: str):
 
 def run() -> None:
     logger.info(f"Starting API server on 0.0.0.0:8000 (env={settings.app_env})")
-    uvicorn.run("agentic_tour_planner.api.main:app", host="0.0.0.0", port=8000, reload=settings.app_env == "development")
-
+    uvicorn.run(
+        "agentic_tour_planner.api.main:app", host="0.0.0.0", port=8000, reload=settings.app_env == "development"
+    )

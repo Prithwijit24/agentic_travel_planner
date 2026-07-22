@@ -1,6 +1,6 @@
 import json
 
-from agentic_tour_planner.ingestion.manifest import load_manifest
+from agentic_tour_planner.ingestion.service import _load_manifest
 
 
 def test_load_manifest_reads_seed_defaults(tmp_path):
@@ -26,9 +26,8 @@ def test_load_manifest_reads_seed_defaults(tmp_path):
         encoding="utf-8",
     )
 
-    manifest = load_manifest(manifest_path)
+    manifest = _load_manifest(manifest_path)
 
     assert manifest.description == "sample"
     assert manifest.defaults.refresh_days == 14
     assert manifest.seeds[0].title == "Kyoto"
-

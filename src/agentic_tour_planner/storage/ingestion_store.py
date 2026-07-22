@@ -6,14 +6,19 @@ from datetime import UTC, datetime, timedelta
 
 from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import IngestedSourceRecord, IngestionRunRecord, SourceSeed
+from agentic_tour_planner.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class SQLiteIngestionStore:
     def __init__(self) -> None:
+        logger.debug("Initializing SQLiteIngestionStore")
         self.settings = get_settings()
         self._initialize()
         self._source_columns = self._table_columns("ingested_sources")
         self._run_columns = self._table_columns("ingestion_runs")
+        logger.debug("SQLiteIngestionStore ready")
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.settings.operations_db_path)
@@ -21,6 +26,7 @@ class SQLiteIngestionStore:
         return conn
 
     def _initialize(self) -> None:
+        logger.debug("Creating ingestion tables if not present")
         with self._connect() as conn:
             conn.execute(
                 """
@@ -56,11 +62,13 @@ class SQLiteIngestionStore:
             )
 
     def _table_columns(self, table_name: str) -> list[str]:
+        logger.debug(f"Reading columns for table {table_name}")
         with self._connect() as conn:
             rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
         return [row[1] for row in rows]
 
     def start_run(self, run: IngestionRunRecord) -> None:
+        logger.info(f"Starting ingestion run {run.run_id} (total_sources={run.total_sources})")
         with self._connect() as conn:
             if "manifest_name" in self._run_columns:
                 conn.execute(
@@ -102,6 +110,10 @@ class SQLiteIngestionStore:
                 )
 
     def finish_run(self, run: IngestionRunRecord) -> None:
+        logger.info(
+            f"Finishing ingestion run {run.run_id} "
+            f"(indexed={run.indexed_sources}, skipped={run.skipped_sources}, failed={run.failed_sources})"
+        )
         with self._connect() as conn:
             if "status" in self._run_columns:
                 conn.execute(
@@ -142,6 +154,7 @@ class SQLiteIngestionStore:
                 )
 
     def get_source(self, source_key: str) -> IngestedSourceRecord | None:
+        logger.debug(f"Fetching source for key={source_key}")
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM ingested_sources WHERE source_key = ?",
@@ -181,6 +194,7 @@ class SQLiteIngestionStore:
         )
 
     def upsert_source(self, record: IngestedSourceRecord) -> None:
+        logger.info(f"Upserting source {record.source_key} (type={record.source_type}, chunks={record.chunk_count})")
         with self._connect() as conn:
             if "source_id" in self._source_columns:
                 conn.execute(
@@ -229,6 +243,7 @@ class SQLiteIngestionStore:
                 )
 
     def should_refresh(self, seed: SourceSeed, force: bool = False) -> bool:
+        logger.debug(f"Checking refresh for {self.source_key(seed)} (force={force})")
         if force:
             return True
         existing = self.get_source(self.source_key(seed))
@@ -238,6 +253,7 @@ class SQLiteIngestionStore:
         return age >= timedelta(days=seed.refresh_days)
 
     def list_sources(self, limit: int = 100) -> list[IngestedSourceRecord]:
+        logger.debug(f"Listing up to {limit} ingested sources")
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -257,4 +273,6 @@ class SQLiteIngestionStore:
     @staticmethod
     def source_key(seed: SourceSeed) -> str:
         destination = (seed.destination or "").strip().lower()
-        return f"{seed.source_type}:{destination}:{str(seed.url).strip().lower()}"
+        key = f"{seed.source_type}:{destination}:{str(seed.url).strip().lower()}"
+        logger.debug(f"Computed source key {key}")
+        return key

@@ -4,11 +4,10 @@ import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
-from dotenv import dotenv_values
-
-from loguru import logger
 
 import yaml
+from dotenv import dotenv_values
+from loguru import logger
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -77,15 +76,21 @@ def _load_yaml_configs() -> dict[str, Any]:
     config_dir = Path(__file__).parent
     merged: dict[str, Any] = {}
     for yaml_file in sorted(config_dir.glob("*.yml")):
-        with open(yaml_file) as f:
-            data = yaml.safe_load(f)
-            if data:
-                merged.update(data)
+        try:
+            with open(yaml_file) as f:
+                data = yaml.safe_load(f)
+                if data:
+                    merged.update(data)
+        except yaml.YAMLError as e:
+            logger.error(f"Failed to parse YAML file {yaml_file}: {e}")
+            raise
     return merged
 
 
 def _load_env_variables() -> dict[str, Any]:
-    env_dict = {**dotenv_values(), **os.environ}
+    env_file = PROJECT_ROOT / ".env"
+    env_values = dotenv_values(dotenv_path=env_file) if env_file.exists() else {}
+    env_dict = {**env_values, **os.environ}
 
     overrides: dict[str, Any] = {}
     for env_key in env_dict:
@@ -102,16 +107,20 @@ def _coerce_env_overrides(yaml_data: dict[str, Any], env_data: dict[str, Any]) -
             coerced[key] = value
             continue
         default = yaml_data[key]
-        if isinstance(default, bool):
-            coerced[key] = str(value).strip().lower() in {"1", "true", "yes", "on"}
-        elif isinstance(default, int) and not isinstance(default, bool):
-            coerced[key] = int(value)
-        elif isinstance(default, float):
-            coerced[key] = float(value)
-        elif isinstance(default, list) and isinstance(value, str):
-            coerced[key] = [item.strip() for item in value.split(",") if item.strip()]
-        else:
-            coerced[key] = value
+        try:
+            if isinstance(default, bool):
+                coerced[key] = str(value).strip().lower() in {"1", "true", "yes", "on"}
+            elif isinstance(default, int) and not isinstance(default, bool):
+                coerced[key] = int(value)
+            elif isinstance(default, float):
+                coerced[key] = float(value)
+            elif isinstance(default, list) and isinstance(value, str):
+                coerced[key] = [item.strip() for item in value.split(",") if item.strip()]
+            else:
+                coerced[key] = value
+        except (ValueError, TypeError):
+            logger.warning(f"Failed to coerce env var {key}={value!r} to type {type(default).__name__}, using default")
+            coerced[key] = default
     return coerced
 
 
@@ -127,7 +136,8 @@ def get_settings() -> Settings:
     merged.setdefault("image_provider", "unsplash")
 
     applied_overrides = [
-        key for key in env_data
+        key
+        for key in env_data
         if key in yaml_data
         and key not in _API_KEY_FIELDS
         and not _is_secret_field(key)
@@ -143,12 +153,19 @@ def get_settings() -> Settings:
         f"default_llm_provider={getattr(settings, 'default_llm_provider', '<unset>')}"
     )
 
-    settings.vector_store_dir.mkdir(parents=True, exist_ok=True)
-    settings.knowledge_base_dir.mkdir(parents=True, exist_ok=True)
-    (settings.knowledge_base_dir / "raw").mkdir(parents=True, exist_ok=True)
-    (settings.knowledge_base_dir / "processed").mkdir(parents=True, exist_ok=True)
-    settings.operations_db_path.parent.mkdir(parents=True, exist_ok=True)
-    settings.evaluation_dir.mkdir(parents=True, exist_ok=True)
+    for attr in ("vector_store_dir", "knowledge_base_dir", "evaluation_dir"):
+        path: Path | None = getattr(settings, attr, None)
+        if path is not None:
+            path.mkdir(parents=True, exist_ok=True)
+
+    kb_dir: Path | None = getattr(settings, "knowledge_base_dir", None)
+    if kb_dir is not None:
+        (kb_dir / "raw").mkdir(parents=True, exist_ok=True)
+        (kb_dir / "processed").mkdir(parents=True, exist_ok=True)
+
+    db_path: Path | None = getattr(settings, "operations_db_path", None)
+    if db_path is not None:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
 
     return settings
 

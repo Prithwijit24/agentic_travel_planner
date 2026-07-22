@@ -65,10 +65,12 @@ async def resolve_images(places: list[dict]) -> list[PlaceImage]:
             url = await _fetch_unsplash(query)
             source = "unsplash"
 
-        results.append(PlaceImage(
-            place_name=name,
-            image_query=query,
-            image_url=url,
-            source=source if url else None,
-        ))
+        results.append(
+            PlaceImage(
+                place_name=name,
+                image_query=query,
+                image_url=url,
+                source=source if url else None,
+            )
+        )
     return results

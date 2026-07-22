@@ -31,11 +31,33 @@ def file(path: str) -> None:
 
 @app.command()
 def manifest(path: str, force: bool = False, limit: int | None = None) -> None:
-    typer.echo(asyncio.run(IngestionService().ingest_manifest(path, force=force, limit=limit)).model_dump_json(indent=2))
+    typer.echo(
+        asyncio.run(IngestionService().ingest_manifest(path, force=force, limit=limit)).model_dump_json(indent=2)
+    )
+
+
+@app.command("wikivoyage-dump")
+def wikivoyage_dump(
+    raw_dir: str | None = None,
+    force: bool = False,
+    limit: int | None = None,
+    batch_size: int | None = None,
+) -> None:
+    run = IngestionService().ingest_wikivoyage_dump(raw_dir, force=force, limit=limit, batch_size=batch_size)
+    typer.echo(run.model_dump_json(indent=2))
+
+
+@app.command("insert-or-update")
+def insert_or_update_dump(
+    raw_dir: str | None = None,
+    limit: int | None = None,
+    batch_size: int | None = None,
+) -> None:
+    run = IngestionService().insert_or_update_dump(raw_dir, limit=limit, batch_size=batch_size)
+    typer.echo(run.model_dump_json(indent=2))
 
 
 @app.command()
 def sources(limit: int = 20) -> None:
     for record in IngestionService().list_sources(limit):
         typer.echo(record.model_dump_json(indent=2))
-

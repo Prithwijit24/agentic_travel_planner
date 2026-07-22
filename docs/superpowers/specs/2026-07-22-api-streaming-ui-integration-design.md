@@ -88,10 +88,10 @@ class EventEmitter:
     """Collects log events during pipeline execution."""
     def __init__(self):
         self._queue: asyncio.Queue[LogEvent] = asyncio.Queue()
-    
+
     def emit(self, event: LogEvent):
         self._queue.put_nowait(event)
-    
+
     async def stream(self):
         while True:
             event = await self._queue.get()

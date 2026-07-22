@@ -5,8 +5,8 @@ from agentic_tour_planner.domain.models import (
     BudgetGuidance,
     ImageResponse,
     LogEvent,
-    PlanAPIResponse,
     PlaceImage,
+    PlanAPIResponse,
     PlanningInsights,
     PlanningResponse,
     RouteGuidance,
@@ -104,7 +104,7 @@ def test_plan_api_response_error():
 def test_plan_api_response_invalid_status():
     plan = _make_planning_response()
     with pytest.raises(ValidationError):
-        PlanAPIResponse(request_id="x", plan=plan, status="pending")
+        PlanAPIResponse(request_id="x", plan=plan, status="running")
 
 
 def test_place_image_minimal():

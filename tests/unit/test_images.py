@@ -1,5 +1,7 @@
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock
+
 from agentic_tour_planner.api.images import resolve_images
 from agentic_tour_planner.domain.models import PlaceImage
 

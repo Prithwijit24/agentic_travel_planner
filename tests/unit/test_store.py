@@ -49,4 +49,3 @@ def test_store_saves_and_lists_plans(monkeypatch, tmp_path):
 
     assert len(plans) == 1
     assert plans[0].destination == "Kyoto"
-

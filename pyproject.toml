@@ -76,4 +76,76 @@ dev = [
     "pytest>=9.1.1",
     "pytest-anyio>=0.0.0",
     "pytest-asyncio>=1.4.0",
+    "ruff>=0.11.13",
+    "mypy>=1.17.0",
+    "bandit[toml]>=1.8.3",
+    "detect-secrets>=1.5.0",
 ]
+
+# ── Ruff (linter + formatter) ────────────────────────────────────────
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "A",    # flake8-builtins
+    "C4",   # flake8-comprehensions
+    "DTZ",  # flake8-datetimez
+    "T20",  # flake8-print
+    "RET",  # flake8-return
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "ARG",  # flake8-unused-arguments
+    "PTH",  # flake8-use-pathlib
+    "RUF",  # ruff-specific rules
+    "S",    # flake8-bandit (security)
+    "BLE",  # flake8-blind-except
+    "ICN",  # flake8-import-conventions
+    "PIE",  # flake8-pie
+    "PT",   # flake8-pytest-style
+    "TID",  # flake8-tidy-imports
+    "SLF",  # flake8-self
+]
+ignore = [
+    "E501",    # line too long (handled by formatter)
+    "S101",    # use of assert (fine in tests)
+    "S324",    # insecure hash (sha1 used for non-crypto hashing)
+    "B008",    # function call in default argument (FastAPI Depends)
+    "T201",    # print found (allowed in CLI tools)
+    "RET504",  # unnecessary assignment before return
+    "BLE001",  # blind except (many fallback handlers need this)
+    "FBT",     # boolean trap (too noisy for existing codebase)
+    "ARG002",  # unused method argument (interfaces/callbacks)
+    "TC",      # type-checking imports (pre-existing pattern)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101"]
+"**/__init__.py" = ["F401"]
+"scripts/**/*.py" = ["T20"]
+"src/agentic_tour_planner/cli/**/*.py" = ["T20"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agentic_tour_planner"]
+
+# ── Mypy ─────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+disallow_untyped_defs = false
+
+# ── Bandit (security SAST) ───────────────────────────────────────────
+[tool.bandit]
+exclude_dirs = ["tests", "notebooks", "examples"]
+skips = ["B101"]  # allow assert in non-test code

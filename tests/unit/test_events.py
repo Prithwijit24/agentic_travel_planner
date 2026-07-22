@@ -1,5 +1,6 @@
 import pytest
-from agentic_tour_planner.api.events import EventEmitter, register_emitter, get_emitter, remove_emitter
+
+from agentic_tour_planner.api.events import EventEmitter, get_emitter, register_emitter, remove_emitter
 from agentic_tour_planner.domain.models import LogEvent
 
 

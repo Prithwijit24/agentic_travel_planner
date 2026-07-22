@@ -9,7 +9,8 @@ from agentic_tour_planner.domain.models import (
     OverallCost,
     PlanningRequest,
 )
-from agentic_tour_planner.llm.provider import CALCULATOR_TOOL, LLMProvider
+from agentic_tour_planner.llm.provider import LLMProvider
+from agentic_tour_planner.tools.calculator import CALCULATOR_TOOL
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -30,10 +31,10 @@ COST_SYSTEM_PROMPT = (
     "- Local sites: ₹100, Popular attractions: ₹300, Major sites: ₹600\n"
     "MAXIMUM DAILY TOTAL: ₹8000 per person (even premium)\n"
     "OUTPUT: Every amount must be a string like '3500 rupees'.\n"
-    "JSON: {\"daily\": [{\"day\": int, \"items\": [{\"label\": str, \"amount\": str}], "
-    "\"subtotal\": str, \"steps\": [str]}], "
-    "\"overall\": {\"per_person_total\": str, \"members\": int, "
-    "\"grand_total\": str, \"steps\": [str]}}."
+    'JSON: {"daily": [{"day": int, "items": [{"label": str, "amount": str}], '
+    '"subtotal": str, "steps": [str]}], '
+    '"overall": {"per_person_total": str, "members": int, '
+    '"grand_total": str, "steps": [str]}}.'
 )
 
 
@@ -43,7 +44,12 @@ class CostEstimator:
         logger.debug("CostEstimator initialized")
 
     def _build_prompt(self, request: PlanningRequest, plan_json: dict[str, Any]) -> str:
-        logger.debug("_build_prompt destination={} members={} days={}", request.destination, request.travelers, len(plan_json.get("itinerary", []) or []))
+        logger.debug(
+            "_build_prompt destination={} members={} days={}",
+            request.destination,
+            request.travelers,
+            len(plan_json.get("itinerary", []) or []),
+        )
         members = request.travelers
         transport = request.transport_mode or "unspecified"
         days = plan_json.get("itinerary", []) or []
@@ -51,13 +57,9 @@ class CostEstimator:
         day_summaries = []
         for d in days:
             spots = d.get("spots") or []
-            activities = (
-                (d.get("morning") or [])
-                + (d.get("afternoon") or [])
-                + (d.get("evening") or [])
-            )
+            activities = (d.get("morning") or []) + (d.get("afternoon") or []) + (d.get("evening") or [])
             day_summaries.append(
-                f"Day {d.get('day')} ({d.get('theme','')}): "
+                f"Day {d.get('day')} ({d.get('theme', '')}): "
                 f"{len(activities)} activities, notable places: {[s.get('name') for s in spots]}"
             )
         plan_text = "\n".join(day_summaries)
@@ -93,13 +95,22 @@ class CostEstimator:
 
     @staticmethod
     def _parse(data: dict[str, Any], records: list[dict[str, Any]], request: PlanningRequest) -> CostEstimate:
-        logger.debug("_parse daily_count={} has_error={}", len(data.get("daily", []) or []), ("error" in data or "raw" in data))
+        logger.debug(
+            "_parse daily_count={} has_error={}", len(data.get("daily", []) or []), ("error" in data or "raw" in data)
+        )
         if "error" in data or "raw" in data:
             return CostEstimate(calculations=records)
         daily: list[DailyCost] = []
         for d in data.get("daily", []) or []:
             items = [
-                CostLineItem(label=i.get("label", ""), amount=float(i.get("amount", 0) if not isinstance(i.get("amount"), str) else _amount_to_num(i.get("amount", "0"))))
+                CostLineItem(
+                    label=i.get("label", ""),
+                    amount=float(
+                        i.get("amount", 0)
+                        if not isinstance(i.get("amount"), str)
+                        else _amount_to_num(i.get("amount", "0"))
+                    ),
+                )
                 for i in (d.get("items") or [])
             ]
             subtotal = d.get("subtotal")
@@ -155,6 +166,7 @@ class CostEstimator:
 def _amount_to_num(text: str) -> float:
     """Extract numeric value from a string like '3500 rupees' or '₹5,000'."""
     import re
+
     cleaned = re.sub(r"[₹$€£,]", "", str(text))
     nums = re.findall(r"\d+(?:\.\d+)?", cleaned)
     return float(nums[0]) if nums else 0.0

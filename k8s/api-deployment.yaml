@@ -66,4 +66,3 @@ spec:
       volumes:
         - name: app-data
           emptyDir: {}
-

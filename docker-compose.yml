@@ -1,0 +1,53 @@
+# Run the Agentic Travel Planner (API + Streamlit UI) with Docker.
+#
+#   docker compose up -d --build
+#
+#   • API  -> http://localhost:8000  (Swagger at /docs)
+#   • UI   -> http://localhost:8501
+#
+# Secrets (API keys) come from the local .env file via `env_file`.
+
+services:
+  api:
+    build: .
+    image: agentic-travel-planner:latest
+    environment:
+      APP_TARGET: "api"
+      APP_ENV: "production"
+      LOG_LEVEL: "INFO"
+      API_BASE_URL: "http://api:8000"
+      VECTOR_STORE_DIR: "/app/data/chroma"
+      KNOWLEDGE_BASE_DIR: "/app/data/knowledge"
+      OPERATIONS_DB_PATH: "/app/data/operations/plans.db"
+      EVALUATION_DIR: "/app/data/evaluation"
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - app-data:/app/data
+      - ./cache:/app/cache
+    restart: unless-stopped
+
+  ui:
+    build: .
+    image: agentic-travel-planner:latest
+    environment:
+      APP_TARGET: "ui"
+      APP_ENV: "production"
+      LOG_LEVEL: "INFO"
+      STREAMLIT_SERVER_PORT: "8501"
+      API_BASE_URL: "http://api:8000"
+      VECTOR_STORE_DIR: "/app/data/chroma"
+      KNOWLEDGE_BASE_DIR: "/app/data/knowledge"
+      OPERATIONS_DB_PATH: "/app/data/operations/plans.db"
+    env_file: .env
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+    volumes:
+      - app-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  app-data:

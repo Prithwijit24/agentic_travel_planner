@@ -27,4 +27,3 @@ def test_load_cases_supports_cases_wrapper(tmp_path):
 
     assert len(cases) == 1
     assert cases[0].metadata["destination"] == "Kyoto"
-

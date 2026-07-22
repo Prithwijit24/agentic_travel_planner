@@ -1,5 +1,5 @@
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 from agentic_tour_planner.api.events import EventEmitter, register_emitter
 from agentic_tour_planner.api.main import app
