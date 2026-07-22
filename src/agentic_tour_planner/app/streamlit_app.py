@@ -1430,7 +1430,7 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
                 with c2: destination = st.text_input("🌍 Destination", "Sikkim")
                 
                 c3, c4 = st.columns(2)
-                with c3: days = st.slider("📅 Duration (Days)", 1, 7, 4)
+                with c3: days = st.slider("📅 Duration (Days)", 1, 40, 4)
                 with c4: month = st.selectbox("🌤️ Travel Month", ["September", "October", "November"], index=0)
                 
                 c5, c6 = st.columns(2)
