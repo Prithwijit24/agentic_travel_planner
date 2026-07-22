@@ -1484,19 +1484,6 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
                 submit = st.form_submit_button("Generate Itinerary ✨")
             
             with st.container():
-                st.markdown("""
-                <style>
-                .config-card {
-                    background: #ffffff;
-                    border: 1px solid var(--apple-border);
-                    border-radius: 12px;
-                    padding: 24px;
-                    margin-bottom: 16px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-                }
-                </style>
-                <div class="config-card">
-                """, unsafe_allow_html=True)
                 st.markdown("### Configuration")
                 conf_c1, conf_c2, conf_c3 = st.columns(3)
                 with conf_c1: provider = st.selectbox("🤖 Model Provider", PROVIDERS, index=PROVIDERS.index(st.session_state.provider) if st.session_state.provider in PROVIDERS else 0)
@@ -1508,26 +1495,25 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
                     current_worker = WORKER_MODELS.get(provider, ["default"])
                     worker_index = current_worker.index(st.session_state.worker_model) if st.session_state.worker_model in current_worker else 0
                     worker_model = st.selectbox("🛠️ Worker Model", current_worker, index=worker_index)
-                st.markdown("</div>", unsafe_allow_html=True)
                 
-            if submit:
-                st.session_state.provider = provider
-                st.session_state.planner_model = planner_model
-                st.session_state.worker_model = worker_model
-                st.session_state.form_data = {
-                    "destination": destination.split(",")[0].strip() if destination else "",
-                    "origin": origin.split(",")[0].strip() if origin else None,
-                    "days": int(days),
-                    "month": month,
-                    "budget": budget,
-                    "travelers": int(travelers),
-                    "transport": transport,
-                    "interests": interests,
-                }
-                st.session_state.form_submitted = True
-                st.session_state.is_loading = True
-                main_area.empty()
-                st.rerun()
+                if submit:
+                    st.session_state.provider = provider
+                    st.session_state.planner_model = planner_model
+                    st.session_state.worker_model = worker_model
+                    st.session_state.form_data = {
+                        "destination": destination.split(",")[0].strip() if destination else "",
+                        "origin": origin.split(",")[0].strip() if origin else None,
+                        "days": int(days),
+                        "month": month,
+                        "budget": budget,
+                        "travelers": int(travelers),
+                        "transport": transport,
+                        "interests": interests,
+                    }
+                    st.session_state.form_submitted = True
+                    st.session_state.is_loading = True
+                    main_area.empty()
+                    st.rerun()
 
 # --- LOADING PAGE ---
 elif st.session_state.is_loading:
