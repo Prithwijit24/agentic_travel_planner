@@ -102,7 +102,7 @@ async def test_run_plan_job_streams_completed_plan(mock_make_pipeline, mock_stor
 
     assert events[-1].event == "done"
     assert events[-1].detail["status"] == "completed"
-    assert events[-1].detail["plan"]["overview"] == "Test plan"
+    assert events[-1].detail["response"]["overview"] == "Test plan"
     mock_store.save_plan.assert_called_once()
 
 
