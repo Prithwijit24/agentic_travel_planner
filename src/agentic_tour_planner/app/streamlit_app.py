@@ -984,32 +984,33 @@ from agentic_tour_planner.llm.provider import LLMProvider
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 
+@st.cache_resource
 def _get_ui_jobs() -> dict[str, dict]:
-    """Return empty jobs dict — wrapped in st.cache_resource below to persist across reruns."""
     return {}
 
 
-_UI_JOBS: dict[str, dict] = {}
+_UI_JOBS = _get_ui_jobs()
 
+# --- PAGE CONFIGURATION ---
+st.set_page_config(
+    page_title="Agentic Tour Planner · Sikkim", page_icon="🗺️", layout="wide", initial_sidebar_state="expanded"
+)
 
-def _init_app() -> None:
-    st.set_page_config(
-        page_title="Agentic Tour Planner · Sikkim", page_icon="🗺️", layout="wide", initial_sidebar_state="expanded"
-    )
-    if "form_submitted" not in st.session_state:
-        st.session_state.form_submitted = False
-    if "is_loading" not in st.session_state:
-        st.session_state.is_loading = False
-    if "plan" not in st.session_state:
-        st.session_state.plan = None
-    if "images" not in st.session_state:
-        st.session_state.images = []
-    if "provider" not in st.session_state:
-        st.session_state.provider = "agnes"
-    if "planner_model" not in st.session_state:
-        st.session_state.planner_model = "agnes-2.0-flash"
-    if "worker_model" not in st.session_state:
-        st.session_state.worker_model = "agnes-2.0-flash"
+# --- STATE MANAGEMENT ---
+if "form_submitted" not in st.session_state:
+    st.session_state.form_submitted = False
+if "is_loading" not in st.session_state:
+    st.session_state.is_loading = False
+if "plan" not in st.session_state:
+    st.session_state.plan = None
+if "images" not in st.session_state:
+    st.session_state.images = []
+if "provider" not in st.session_state:
+    st.session_state.provider = "agnes"
+if "planner_model" not in st.session_state:
+    st.session_state.planner_model = "agnes-2.0-flash"
+if "worker_model" not in st.session_state:
+    st.session_state.worker_model = "agnes-2.0-flash"
 
 
 # --- HELPER FUNCTIONS ---
@@ -1093,14 +1094,12 @@ async def _call_plans_api(request: PlanningRequest) -> dict:
 
 async def _stream_logs(request_id: str, callback) -> None:
     """Connect to SSE stream and call callback for each event."""
-    async with (
-        httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client,
-        client.stream("GET", f"{API_BASE_URL}/plans/stream/{request_id}") as response,
-    ):
-        async for line in response.aiter_lines():
-            if line.startswith("data: "):
-                event_data = json.loads(line[6:])
-                callback(event_data)
+    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
+        async with client.stream("GET", f"{API_BASE_URL}/plans/stream/{request_id}") as response:
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    event_data = json.loads(line[6:])
+                    callback(event_data)
 
 
 async def _fetch_images(plan_id: str) -> dict:
@@ -1109,43 +1108,6 @@ async def _fetch_images(plan_id: str) -> dict:
         r = await client.get(f"{API_BASE_URL}/plans/{plan_id}/images")
         r.raise_for_status()
         return r.json()
-
-
-async def _geocode_spot(name: str, destination: str) -> tuple[float, float] | None:
-    """Geocode a spot name via Nominatim (OSM, free, rate-limited to 1 req/s)."""
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(
-                "https://nominatim.openstreetmap.org/search",
-                params={"q": f"{name}, {destination}", "format": "json", "limit": 1},
-                headers={"User-Agent": "AgenticTourPlanner/0.1"},
-            )
-            r.raise_for_status()
-            results = r.json()
-            if results:
-                return (float(results[0]["lat"]), float(results[0]["lon"]))
-    except Exception:
-        pass
-    return None
-
-
-def _resolve_images_sync(images_data: dict, spots: list[dict]) -> list[dict[str, str]]:
-    """Build list of {place_name, image_url} using API data + picsum fallback."""
-    result: list[dict[str, str]] = []
-    api_images = images_data.get("images", [])
-    seen: set[str] = set()
-    for spot in spots:
-        name = spot.get("name", "")
-        if not name or name in seen:
-            continue
-        seen.add(name)
-        matched = next((img for img in api_images if img.get("place_name") == name), None)
-        if matched and matched.get("image_url"):
-            result.append({"place_name": name, "image_url": matched["image_url"]})
-        else:
-            seed = name.replace(" ", "-").lower()
-            result.append({"place_name": name, "image_url": f"https://picsum.photos/seed/{seed}/600/400"})
-    return result
 
 
 def _start_generation_job(
@@ -1217,37 +1179,10 @@ def _start_generation_job(
 
             plan_data = stream_result["plan"]
             try:
-                images_data = asyncio.run(_fetch_images(plan_data["plan_id"]))
+                job["images"] = asyncio.run(_fetch_images(plan_data["plan_id"]))
             except Exception:
-                images_data = {}
+                job["images"] = {}
 
-            dest = form_data.get("destination", "")
-            all_spots = []
-            for day in plan_data.get("itinerary", []):
-                for spot in day.get("spots", []):
-                    all_spots.append(spot)
-            resolved_images = _resolve_images_sync(images_data, all_spots)
-
-            coords_map: dict[str, tuple[float, float]] = {}
-            if all_spots:
-                import asyncio as _aio
-
-                async def _geo_all():
-                    tasks = {}
-                    for s in all_spots:
-                        n = s.get("name", "")
-                        if n:
-                            tasks[n] = _geocode_spot(n, dest)
-                    results = await _aio.gather(*tasks.values())
-                    return dict(zip(tasks.keys(), results, strict=False))
-
-                geo_results = asyncio.run(_geo_all())
-                for name, coord in geo_results.items():
-                    if coord:
-                        coords_map[name] = coord
-
-            job["images"] = resolved_images
-            job["coords"] = coords_map
             job["plan"] = plan_data
             job["status"] = "done"
         except Exception as e:
@@ -1258,53 +1193,25 @@ def _start_generation_job(
     return job_id
 
 
-def _plan_to_display_dict(
-    plan_data: dict, request: dict, coords_map: dict[str, tuple[float, float]] | None = None
-) -> dict:
+def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
     """Convert API PlanningResponse JSON + original request into the flat dict format the UI expects."""
-    coords_map = coords_map or {}
     itinerary = plan_data.get("itinerary", [])
 
     display_itinerary = []
-    # Build a lookup of detailed place data by name when available
-    detailed_places_by_day: list[dict] = []
-    if plan_data.get("detailed_plan") and plan_data["detailed_plan"].get("days"):
-        detailed_places_by_day = plan_data["detailed_plan"]["days"]
     for day in itinerary:
         spots = []
-        day_num = day.get("day", 0)
-        # Find matching detailed day for this day number
-        det_day = None
-        for dd in detailed_places_by_day:
-            if dd.get("day") == day_num:
-                det_day = dd
-                break
-        det_places = {}
-        if det_day:
-            for dp in det_day.get("places", []):
-                det_places[dp.get("name", "")] = dp
-
         for spot in day.get("spots", []):
-            spot_name = spot.get("name", "")
-            desc = spot.get("description", "") or ""
-            history = spot.get("history", "") or ""
-            best_time = spot.get("best_time", "") or ""
-            # Use detailed place data when available for richer content
-            det = det_places.get(spot_name, {})
-            rich_desc = det.get("description") or desc
-            rich_note = det.get("key_note") or spot.get("key_note") or history
-            rich_transport = det.get("transport") or spot.get("transport") or ""
             spots.append(
                 {
-                    "name": spot_name,
-                    "description": rich_desc,
-                    "hours": f"{spot.get('opening_hours', '')} - {spot.get('closing_hours', '')}".strip(" -")
+                    "name": spot.get("name", ""),
+                    "description": spot.get("description", ""),
+                    "hours": f"{spot.get('opening_hours', '')} – {spot.get('closing_hours', '')}".strip(" –")
                     or "Not available",
-                    "best_time": best_time,
-                    "transport": rich_transport,
-                    "key_note": rich_note,
-                    "lat": coords_map.get(spot_name, (0, 0))[0],
-                    "lon": coords_map.get(spot_name, (0, 0))[1],
+                    "best_time": spot.get("best_time", ""),
+                    "transport": spot.get("description", "")[:80] if not spot.get("best_time") else "",
+                    "key_note": spot.get("history", "") or spot.get("description", "")[:120],
+                    "lat": 0,
+                    "lon": 0,
                     "image_query": spot.get("image_query", spot.get("name", "")),
                 }
             )
@@ -1622,6 +1529,9 @@ div[data-baseweb="select"] > div > div {
     )
 
 
+load_css()
+
+
 def _build_provider_models() -> tuple[list[str], dict[str, list[str]], dict[str, list[str]]]:
     """Pull providers and their planner/worker models from llm.yml via LLMProvider."""
     try:
@@ -1642,15 +1552,8 @@ def _build_provider_models() -> tuple[list[str], dict[str, list[str]], dict[str,
 
 PROVIDERS, PLANNER_MODELS, WORKER_MODELS = _build_provider_models()
 
-_IN_STREAMLIT = __name__ == "__main__"
-
-if _IN_STREAMLIT:
-    _UI_JOBS = st.cache_resource(_get_ui_jobs)()
-    _init_app()
-    load_css()
-
 # --- INPUT PAGE ---
-if _IN_STREAMLIT and not st.session_state.form_submitted and not st.session_state.is_loading:
+if not st.session_state.form_submitted and not st.session_state.is_loading:
     # Hide sidebar on input page for a cleaner look
     st.markdown(
         '<style>[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {display: none !important;}</style>',
@@ -1768,7 +1671,7 @@ if _IN_STREAMLIT and not st.session_state.form_submitted and not st.session_stat
                     st.rerun()
 
 # --- LOADING PAGE ---
-elif _IN_STREAMLIT and st.session_state.is_loading:
+elif st.session_state.is_loading:
     # Hide sidebar on loading page
     st.markdown(
         '<style>[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {display: none !important;}</style>',
@@ -1956,7 +1859,7 @@ elif _IN_STREAMLIT and st.session_state.is_loading:
 
         if job["status"] == "done":
             plan_data = job["plan"]
-            images_data = job.get("images") or []
+            images_data = job.get("images") or {}
 
             request_dict = {
                 "destination": form_data.get("destination", ""),
@@ -1967,9 +1870,8 @@ elif _IN_STREAMLIT and st.session_state.is_loading:
                 "travelers": form_data.get("travelers", 1),
             }
 
-            coords_map = job.get("coords") or {}
-            st.session_state.plan = _plan_to_display_dict(plan_data, request_dict, coords_map)
-            st.session_state.images = images_data
+            st.session_state.plan = _plan_to_display_dict(plan_data, request_dict)
+            st.session_state.images = images_data.get("images", [])
             st.session_state.is_loading = False
             finished_job_id = st.session_state.pop("generation_job_id", None)
             if finished_job_id:
@@ -1980,7 +1882,7 @@ elif _IN_STREAMLIT and st.session_state.is_loading:
         st.rerun()
 
 # --- RESULTS PAGE ---
-elif _IN_STREAMLIT and st.session_state.plan is not None:
+elif st.session_state.plan is not None:
     plan = st.session_state.plan
 
     with st.sidebar:
@@ -2086,8 +1988,8 @@ elif _IN_STREAMLIT and st.session_state.plan is not None:
                     if spot_image and spot_image.get("image_url"):
                         img_url = spot_image["image_url"]
                     else:
-                        seed = spot["name"].replace(" ", "-").lower()
-                        img_url = f"https://picsum.photos/seed/{seed}/600/400"
+                        img_query = spot["name"].replace(" ", ",")
+                        img_url = f"https://source.unsplash.com/600x400/?{img_query}"
                     spot_html = f"""
 <div class="spot-wrapper">
 <div class="spot-text-card">
@@ -2191,68 +2093,80 @@ elif _IN_STREAMLIT and st.session_state.plan is not None:
         map_spots = []
         for day in plan["itinerary"]:
             for spot in day["spots"]:
-                lat, lon = spot.get("lat", 0), spot.get("lon", 0)
-                if lat and lon:
-                    map_spots.append({"name": spot["name"], "lat": lat, "lon": lon, "day": day["day"]})
+                if "lat" in spot and "lon" in spot:
+                    map_spots.append({"name": spot["name"], "lat": spot["lat"], "lon": spot["lon"], "day": day["day"]})
 
         spots_json = json.dumps(map_spots)
-        dest_name = plan.get("destination", "")
 
         html_map = f"""
         <html>
         <head>
-            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
             <style>
-                #map {{ height: 600px; width: 100%; border-radius: 12px; border: 1px solid #d2d2d7; }}
-                html, body {{ margin: 0; padding: 0; height: 100%; }}
-                .leaflet-popup-content {{ font-family: 'Inter', sans-serif; font-size: 14px; }}
+                #map {{
+                    height: 600px;
+                    width: 100%;
+                    border-radius: 12px;
+                    border: 1px solid #d2d2d7;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+                }}
             </style>
         </head>
         <body>
             <div id="map"></div>
             <script>
-                const map = L.map('map').setView([20, 78], 4);
-                L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-                    attribution: '&copy; OpenStreetMap contributors',
-                    maxZoom: 18,
-                }}).addTo(map);
-
-                const spots = {spots_json};
-                const colors = ['#FFB900', '#0078D4', '#5C2D91', '#00B294'];
-                const bounds = L.latLngBounds();
-
-                if (spots.length === 0) {{
-                    fetch('https://nominatim.openstreetmap.org/search?q={{encodeURIComponent("{dest_name}")}}&format=json&limit=1', {{
-                        headers: {{ 'User-Agent': 'AgenticTourPlanner/0.1' }}
-                    }})
-                    .then(r => r.json())
-                    .then(data => {{
-                        if (data.length > 0) {{
-                            map.setView([data[0].lat, data[0].lon], 10);
-                        }}
+                function initMap() {{
+                    const map = new google.maps.Map(document.getElementById("map"), {{
+                        zoom: 8,
+                        center: {{ lat: 27.3, lng: 88.6 }},
+                        mapTypeId: 'roadmap',
+                        styles: [
+                            {{ featureType: "poi", stylers: [{{ visibility: "off" }}] }},
+                            {{ featureType: "transit", stylers: [{{ visibility: "off" }}] }}
+                        ]
                     }});
-                }}
 
-                spots.forEach(spot => {{
-                    const color = colors[(spot.day - 1) % colors.length];
-                    const marker = L.circleMarker([spot.lat, spot.lon], {{
-                        radius: 12,
-                        fillColor: color,
-                        color: '#fff',
-                        weight: 2,
-                        opacity: 1,
-                        fillOpacity: 0.9,
-                    }}).addTo(map);
+                    const spots = {spots_json};
+                    const bounds = new google.maps.LatLngBounds();
+                    const colors = ['#FFB900', '#0078D4', '#5C2D91', '#00B294'];
 
-                    marker.bindPopup(`<b style="color: #1d1d1f;">Day ${{spot.day}} - ${{spot.name}}</b>`);
-                    bounds.extend([spot.lat, spot.lon]);
-                }});
+                    spots.forEach((spot, index) => {{
+                        const marker = new google.maps.Marker {{
+                            position: {{ lat: spot.lat, lng: spot.lon }},
+                            map: map,
+                            title: spot.name,
+                            label: {{
+                                text: String(spot.day),
+                                color: "white",
+                                fontWeight: "bold"
+                            }}
+                        }};
 
-                if (spots.length > 0) {{
-                    map.fitBounds(bounds, {{ padding: [30, 30] }});
+                        if (spot.day <= colors.length) {{
+                            marker.setIcon({{
+                                path: google.maps.SymbolPath.CIRCLE,
+                                scale: 15,
+                                fillColor: colors[spot.day - 1],
+                                fillOpacity: 1,
+                                strokeColor: 'white',
+                                strokeWeight: 2
+                            }});
+                        }}
+
+                        const infowindow = new google.maps.InfoWindow({{
+                            content: `<div style="font-family: 'Inter', sans-serif; padding: 4px;"><b style="color: #1d1d1f; font-size: 14px;">Day ${{spot.day}} - ${{spot.name}}</b></div>`
+                        }});
+
+                        marker.addListener("click", () => {{
+                            infowindow.open(map, marker);
+                        }});
+
+                        bounds.extend(marker.position);
+                    }});
+
+                    map.fitBounds(bounds);
                 }}
             </script>
+            <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&callback=initMap"></script>
         </body>
         </html>
         """
@@ -2260,14 +2174,13 @@ elif _IN_STREAMLIT and st.session_state.plan is not None:
 
         st.markdown("<div style='margin-bottom: 16px;'></div>", unsafe_allow_html=True)
         st.info(
-            "ⓘ Markers are color-coded by day (Day 1: Gold, Day 2: Blue, Day 3: Purple, Day 4: Teal). Click on a marker to see the spot name. Map powered by OpenStreetMap (free, no API key needed)."
+            "ⓘ Markers are color-coded by day (Day 1: Gold, Day 2: Blue, Day 3: Purple, Day 4: Teal). Click on a marker to see the spot name."
         )
 
 
 def run() -> None:
     import sys
     from pathlib import Path
-
     app_path = Path(__file__).resolve()
     os.execvp(
         sys.executable,
