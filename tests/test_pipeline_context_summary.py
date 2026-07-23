@@ -15,10 +15,13 @@ def _mock_heavy_deps():
     with (
         patch("agentic_tour_planner.pipeline.agentic_pipeline.HybridRetriever") as mock_retriever_cls,
         patch("agentic_tour_planner.pipeline.agentic_pipeline.rerank_documents", side_effect=lambda _q, d, **_kw: d),
+        patch("agentic_tour_planner.pipeline.agentic_pipeline.LLMProvider") as mock_llm_cls,
     ):
         mock_retriever = MagicMock()
         mock_retriever.retrieve.return_value = []
         mock_retriever_cls.return_value = mock_retriever
+        mock_llm_instance = mock_llm_cls.return_value
+        mock_llm_instance.get_planner_model.return_value = ("test", "test-model")
         yield
 
 
