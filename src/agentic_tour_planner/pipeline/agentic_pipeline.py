@@ -50,10 +50,15 @@ class AgenticTourPlannerPipeline:
         self.cost_estimator = CostEstimator()
         self.live_collector = LiveWebCollector(self.llm_provider)
         self.profiler = StageTimer()
+        self._context_summary: dict | None = None
 
         # Use planner model for main itinerary generation
         self.planner_provider, self.planner_model = self.llm_provider.get_planner_model()
         logger.info(f"Initialized pipeline with planner model: {self.planner_provider}/{self.planner_model}")
+
+    @property
+    def context_summary(self) -> dict | None:
+        return self._context_summary
 
     async def gather_context(self, request: PlanningRequest) -> RetrievedContext:
         logger.debug(
@@ -70,6 +75,12 @@ class AgenticTourPlannerPipeline:
         place_hours: list = []
         weather = await self.weather_tool.current_weather(request.destination) if request.include_live_data else None
         logger.debug(f"Retrieved {len(docs)} documents; weather={'present' if weather else 'none'}")
+        self._context_summary = {
+            "documents_count": len(docs),
+            "search_results_count": len(search_results),
+            "place_hours_count": len(place_hours),
+            "weather": weather.summary if weather else None,
+        }
         return RetrievedContext(documents=docs, search_results=search_results, place_hours=place_hours, weather=weather)
 
     async def run(
@@ -142,7 +153,9 @@ class AgenticTourPlannerPipeline:
                             step="Build Insights",
                             message="Insights built",
                             detail={
-                                "route_strategy_preview": insights.route.strategy[:80] if insights.route.strategy else "",
+                                "route_strategy_preview": insights.route.strategy[:80]
+                                if insights.route.strategy
+                                else "",
                                 "budget_estimate": insights.budget.estimated_daily_budget if insights.budget else None,
                             },
                         )
