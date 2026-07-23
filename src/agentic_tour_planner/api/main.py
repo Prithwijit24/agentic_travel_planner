@@ -96,22 +96,36 @@ async def _run_plan_job(request_id: str, request: PlanningRequest, emitter: Even
             pipeline.run(request, emitter=emitter),
             timeout=PLAN_TIMEOUT_SECONDS,
         )
+        detailed = None
+        # Generate detailed places (rich guidebook-style descriptions) for the UI
+        try:
+            emitter.emit(
+                LogEvent(event="step", step="Detailed Places", message="Generating detailed place descriptions...")
+            )
+            detailed = await pipeline.run_detailed_places(request, response, insights=response.insights)
+            if detailed is not None:
+                response.detailed_plan = detailed
+                logger.info(f"Detailed places generated for plan_id={response.plan_id}")
+        except Exception as det_err:
+            logger.warning(f"Detailed places generation skipped (non-fatal): {det_err}")
+            # Non-fatal — UI will fall back to standard spot data
+
         store.save_plan(request, response)
         elapsed = time.perf_counter() - start
         REQUEST_LATENCY.labels(endpoint="/plans").observe(elapsed)
         logger.info(f"POST /plans completed plan_id={response.plan_id} in {elapsed:.2f}s")
-        emitter.emit(
-            LogEvent(
-                event="done",
-                message="Plan complete",
-                detail={
-                    "plan_id": response.plan_id,
-                    "request_id": request_id,
-                    "status": "completed",
-                    "plan": response.model_dump(mode="json"),
-                },
-            )
-        )
+        full_result = {
+            "plan_id": response.plan_id,
+            "request_id": request_id,
+            "status": "completed",
+            "request": request.model_dump(mode="json"),
+            "context": pipeline.context_summary,
+            "insights": response.insights.model_dump(mode="json") if response.insights else None,
+            "response": response.model_dump(mode="json"),
+            "detailed": detailed.model_dump(mode="json") if detailed else None,
+            "profile": pipeline.profiler.as_table(),
+        }
+        emitter.emit(LogEvent(event="done", message="Plan complete", detail=full_result))
     except Exception as e:
         elapsed = time.perf_counter() - start
         REQUEST_LATENCY.labels(endpoint="/plans").observe(elapsed)
