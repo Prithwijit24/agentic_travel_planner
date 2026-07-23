@@ -86,12 +86,12 @@ async def create_plan(request: PlanningRequest) -> PlanAPIResponse:
 
 
 async def _run_plan_job(request_id: str, request: PlanningRequest, emitter: EventEmitter) -> None:
-    pipeline = _make_pipeline()
     store = SQLitePlanStore()
     provider = (request.provider or settings.default_llm_provider) or "unknown"
     REQUEST_COUNT.labels(endpoint="/plans", provider=provider).inc()
     start = time.perf_counter()
     try:
+        pipeline = _make_pipeline()
         response = await asyncio.wait_for(
             pipeline.run(request, emitter=emitter),
             timeout=PLAN_TIMEOUT_SECONDS,
