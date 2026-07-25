@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """Interactive CLI for the Agentic Travel Planner pipeline."""
+
 from __future__ import annotations
 
 import asyncio
@@ -9,24 +10,23 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-import typer
 import click
+import typer
 from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
 from rich.text import Text
-
-from agentic_tour_planner.utils.logging import configure_logging, get_logger
-
-console = Console()
-logger = get_logger(__name__)
 
 from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import PlanningRequest, parse_place_range
 from agentic_tour_planner.llm.hooks import metrics_bus
 from agentic_tour_planner.llm.provider import LLMProvider
 from agentic_tour_planner.pipeline.agentic_pipeline import AgenticTourPlannerPipeline
-from agentic_tour_planner.utils.profiler import StageTimer
+from agentic_tour_planner.pipeline.output_builder import build_output
+from agentic_tour_planner.utils.logging import configure_logging, get_logger
+
+console = Console()
+logger = get_logger(__name__)
 
 app = typer.Typer(help="Agentic Travel Planner - Interactive CLI")
 
@@ -51,16 +51,11 @@ def print_section(title: str) -> None:
 
 def print_step(step: int, name: str, description: str) -> None:
     icon = _STEP_ICONS.get(step, "▶️")
-    console.print(
-        f"{icon} [bold yellow]Step {step}:[/bold yellow] "
-        f"[bold]{escape(name)}[/bold] — {escape(description)}"
-    )
+    console.print(f"{icon} [bold yellow]Step {step}:[/bold yellow] [bold]{escape(name)}[/bold] — {escape(description)}")
 
 
 def print_step_done(name: str, elapsed: float) -> None:
-    console.print(
-        f"  [green]✅ {escape(name)} complete[/green]  [dim]⏱️ {elapsed:.2f}s[/dim]"
-    )
+    console.print(f"  [green]✅ {escape(name)} complete[/green]  [dim]⏱️ {elapsed:.2f}s[/dim]")
 
 
 def _select_provider_interactive() -> str | None:
@@ -163,9 +158,7 @@ def _render_weather(w: dict | None) -> str:
     night = w.get("temperature_night_c")
     if day is not None or night is not None:
         if day is not None and night is not None:
-            parts.append(
-                f"🌡️ Temp (day [orange]{day}°C[/orange] / night [bright_blue]{night}°C[/bright_blue])"
-            )
+            parts.append(f"🌡️ Temp (day [orange]{day}°C[/orange] / night [bright_blue]{night}°C[/bright_blue])")
         elif day is not None:
             parts.append(f"🌡️ Temp (day [orange]{day}°C[/orange])")
         else:
@@ -225,8 +218,8 @@ def _render_cost(cost: dict) -> str:
         items = day.get("items") or []
         item_strs = []
         for i in items:
-            label = escape(i.get('label', ''))
-            amt = i.get('amount')
+            label = escape(i.get("label", ""))
+            amt = i.get("amount")
             if isinstance(amt, str):
                 amt_display = f"[bright_green]{amt}[/bright_green]"
             else:
@@ -300,8 +293,7 @@ def _render_metrics(metrics: dict | None) -> str:
     if failed:
         lines.append(f"  ⚠️ [yellow]{failed} call(s) failed[/yellow]")
     lines.append(
-        f"  ⏱️ [bold]Time (estimate):[/bold] {tm.get('total_llm_s', 0):.2f}s LLM time "
-        f"over {tm.get('calls', 0)} calls"
+        f"  ⏱️ [bold]Time (estimate):[/bold] {tm.get('total_llm_s', 0):.2f}s LLM time over {tm.get('calls', 0)} calls"
     )
     per = tm.get("per_provider_s") or {}
     if per:
@@ -326,9 +318,7 @@ def render_plan(response: dict) -> None:
     monthly = response.get("monthly_weather")
     month_label = response.get("travel_month") or "this month"
     if monthly:
-        console.print(
-            f"🌤️ [bold]Estimated weather ({escape(month_label)}):[/bold] {escape(monthly)}"
-        )
+        console.print(f"🌤️ [bold]Estimated weather ({escape(month_label)}):[/bold] {escape(monthly)}")
 
     console.print(
         f"🤖 [bold]Planner Provider:[/bold] {escape(response.get('provider_used', ''))}    "
@@ -376,9 +366,7 @@ def render_plan(response: dict) -> None:
 
         timeline: list[str] = []
         if breakfast:
-            timeline.append(
-                f"  🍳 [bold bright_green]Breakfast:[/bold bright_green] {escape(_clean_meal(breakfast))}"
-            )
+            timeline.append(f"  🍳 [bold bright_green]Breakfast:[/bold bright_green] {escape(_clean_meal(breakfast))}")
 
         spot_counter = 0
 
@@ -389,40 +377,28 @@ def render_plan(response: dict) -> None:
                 is_full = spot_counter % 3 == 1  # 1st, 4th, 7th, 10th spot
                 spot = _match_spot(act, spot_by_name) if is_full else None
                 if spot:
-                    timeline.append(
-                        f"  📍 [bold bright_green]{escape(act)}[/bold bright_green]"
-                    )
+                    timeline.append(f"  📍 [bold bright_green]{escape(act)}[/bold bright_green]")
                     name = escape(spot.get("name", "?"))
                     timeline.append(f"     🏛️ [bold cyan]{name}[/bold cyan]")
                     if spot.get("history"):
                         timeline.append(f"     📜 {escape(spot['history'])}")
                     oh, ch = spot.get("opening_hours"), spot.get("closing_hours")
                     if oh or ch:
-                        timeline.append(
-                            f"     🕒 {escape(oh or '?')} – {escape(ch or '?')}"
-                        )
+                        timeline.append(f"     🕒 {escape(oh or '?')} – {escape(ch or '?')}")
                     if spot.get("best_time"):
-                        timeline.append(
-                            f"     ⏰ [green]Best time: {escape(spot['best_time'])}[/green]"
-                        )
+                        timeline.append(f"     ⏰ [green]Best time: {escape(spot['best_time'])}[/green]")
                     if spot.get("description"):
                         timeline.append(f"     🌄 {escape(spot['description'])}")
                 else:
-                    timeline.append(
-                        f"  📍 {_highlight_names(escape(act), spot_names)}"
-                    )
+                    timeline.append(f"  📍 {_highlight_names(escape(act), spot_names)}")
 
         _render_acts(morning_acts)
         if lunch:
-            timeline.append(
-                f"  🍴 [bold bright_green]Lunch:[/bold bright_green] {escape(_clean_meal(lunch))}"
-            )
+            timeline.append(f"  🍴 [bold bright_green]Lunch:[/bold bright_green] {escape(_clean_meal(lunch))}")
         _render_acts(afternoon_acts)
         _render_acts(evening_acts)
         if dinner and dinner is not lunch:
-            timeline.append(
-                f"  🍽️ [bold bright_green]Dinner:[/bold bright_green] {escape(_clean_meal(dinner))}"
-            )
+            timeline.append(f"  🍽️ [bold bright_green]Dinner:[/bold bright_green] {escape(_clean_meal(dinner))}")
 
         content_parts: list[str] = []
         if day.get("summary"):
@@ -436,9 +412,7 @@ def render_plan(response: dict) -> None:
 
         hotel_rec = day.get("hotel_recommendation")
         if hotel_rec:
-            content_parts.append(
-                f"  🏨 [bold bright_green]Hotel:[/bold bright_green] {escape(hotel_rec)}"
-            )
+            content_parts.append(f"  🏨 [bold bright_green]Hotel:[/bold bright_green] {escape(hotel_rec)}")
 
         weather_line = _render_weather(day.get("weather"))
         if weather_line:
@@ -511,8 +485,7 @@ def _render_detailed_day(day: dict, std_day: dict | None = None) -> None:
     # --- Day plan (≈50-100 words) from the standard itinerary day ---
     if std_day and std_day.get("summary"):
         content += (
-            f"[bold yellow]📝 Day Plan:[/bold yellow] "
-            f"{_highlight_names(_md_emphasis(std_day["summary"]), all_names)}\n"
+            f"[bold yellow]📝 Day Plan:[/bold yellow] {_highlight_names(_md_emphasis(std_day['summary']), all_names)}\n"
         )
 
     for place in places:
@@ -548,9 +521,7 @@ def _render_detailed_day(day: dict, std_day: dict | None = None) -> None:
 
     # --- Hotel (label yellow; the hotel text itself is bold) ---
     if std_day and std_day.get("hotel_recommendation"):
-        content += (
-            f"\n[yellow]🏨 Hotel:[/yellow] [bold]{escape(std_day['hotel_recommendation'])}[/bold]\n"
-        )
+        content += f"\n[yellow]🏨 Hotel:[/yellow] [bold]{escape(std_day['hotel_recommendation'])}[/bold]\n"
 
     # --- Weather (last line, unchanged) ---
     weather_line = _render_weather(std_day.get("weather") if std_day else None)
@@ -575,10 +546,7 @@ def _resources_block() -> str:
         "[link=https://www.goibibo.com]goibibo[/link]"
     )
     hotel = f"{travel}, [link=https://www.booking.com]booking[/link]"
-    accessories = (
-        "[link=https://www.amazon.com]Amazon[/link], "
-        "[link=https://www.flipkart.com]flipkart[/link]"
-    )
+    accessories = "[link=https://www.amazon.com]Amazon[/link], [link=https://www.flipkart.com]flipkart[/link]"
     return (
         "[bold yellow]🧳 Booking & Resources[/bold yellow]\n"
         f"  ✈️ Train/Flight: {travel}\n"
@@ -605,9 +573,7 @@ def render_combined(standard: dict, detailed: dict) -> None:
     monthly = standard.get("monthly_weather")
     month_label = standard.get("travel_month") or "this month"
     if monthly:
-        console.print(
-            f"🌤️ [bold]Estimated weather ({escape(month_label)}):[/bold] {escape(monthly)}"
-        )
+        console.print(f"🌤️ [bold]Estimated weather ({escape(month_label)}):[/bold] {escape(monthly)}")
     console.print(
         f"🤖 [bold]Planner:[/bold] {escape(standard.get('provider_used', ''))}    "
         f"⚙️ [bold]Model:[/bold] {escape(standard.get('model_used', ''))}"
@@ -637,15 +603,11 @@ def render_combined(standard: dict, detailed: dict) -> None:
 
     transport = standard.get("transport_options") or []
     if transport:
-        console.print(
-            Panel(_render_transport(transport), title="🚆 Transport", border_style="blue", expand=False)
-        )
+        console.print(Panel(_render_transport(transport), title="🚆 Transport", border_style="blue", expand=False))
 
     cost = standard.get("cost_estimate")
     if cost:
-        console.print(
-            Panel(_render_cost(cost), title="💰 Cost Estimate", border_style="green", expand=False)
-        )
+        console.print(Panel(_render_cost(cost), title="💰 Cost Estimate", border_style="green", expand=False))
 
     cites = standard.get("citations") or []
     if cites:
@@ -666,17 +628,15 @@ def _render_profile(profile_rows: list[dict]) -> str:
         elapsed = row["elapsed_s"]
         pct = row["pct"]
         if is_total:
-            lines.append(
-                f"  [bold bright_green]{bar}[/bold bright_green]  [bold]TOTAL:[/bold] {elapsed:.2f}s"
-            )
+            lines.append(f"  [bold bright_green]{bar}[/bold bright_green]  [bold]TOTAL:[/bold] {elapsed:.2f}s")
         else:
-            lines.append(
-                f"  [bold]{escape(name):<32}[/bold] {bar:<16}  {elapsed:>7.2f}s  ({pct:>5.1f}%)"
-            )
+            lines.append(f"  [bold]{escape(name):<32}[/bold] {bar:<16}  {elapsed:>7.2f}s  ({pct:>5.1f}%)")
     return "\n".join(lines)
 
 
-async def run_pipeline(request: PlanningRequest, verbose: bool = True, mode: str = "standard", profile: bool = False) -> dict[str, Any]:
+async def run_pipeline(
+    request: PlanningRequest, verbose: bool = True, mode: str = "standard", profile: bool = False
+) -> dict[str, Any]:
     """Run the full pipeline with detailed logging.
 
     ``mode`` is either ``"standard"`` (structured itinerary) or ``"places"``
@@ -686,72 +646,72 @@ async def run_pipeline(request: PlanningRequest, verbose: bool = True, mode: str
     metrics_bus.reset()
     if verbose:
         console.rule("[bold cyan]🚀 AGENTIC TRAVEL PLANNER PIPELINE[/bold cyan]")
-    
+
     # Initialize components
     if verbose:
         logger.info("Initializing pipeline components...")
-    
-    settings = get_settings()
+
     pipeline = AgenticTourPlannerPipeline()
-    
+
     if verbose:
         logger.info(f"Planner model: {pipeline.planner_provider}/{pipeline.planner_model}")
         worker_provider, worker_model = pipeline.llm_provider.get_worker_model()
         logger.info(f"Worker model: {worker_provider}/{worker_model}")
         if request.provider:
             logger.info(f"Selected provider override: {request.provider}")
-    
+
     # Step 1: Gather Context
     if verbose:
         print_step(1, "Gather Context", "Retrieving relevant information...")
         logger.info(f"Destination: {request.destination}")
         logger.info(f"Trip length: {request.trip_length_days} days")
         logger.info(f"Interests: {request.interests}")
-    
+
     with pipeline.profiler.track("CLI: Gather Context"):
         context = await pipeline.gather_context(request)
     elapsed = pipeline.profiler.summary().get("CLI: Gather Context", 0.0)
-    
+
     if verbose:
         print_step_done("Gather Context", elapsed)
         logger.debug(f"Documents retrieved: {len(context.documents)}")
         logger.debug(f"Search results: {len(context.search_results)}")
         logger.debug(f"Place hours: {len(context.place_hours)}")
         logger.debug(f"Weather: {context.weather.summary if context.weather else 'N/A'}")
-    
+
     # Step 2: Build Insights
     if verbose:
         print_step(2, "Build Insights", "Generating route, budget, and timing guidance...")
-    
+
     with pipeline.profiler.track("CLI: Build Insights"):
         insights = await pipeline.insights_builder.build(request, context, provider_override=request.provider)
     elapsed = pipeline.profiler.summary().get("CLI: Build Insights", 0.0)
-    
+
     if verbose:
         print_step_done("Build Insights", elapsed)
         logger.debug(f"Route strategy: {insights.route.strategy[:80]}...")
         logger.debug(f"Budget: ${insights.budget.estimated_daily_budget:.0f}/day")
         logger.debug(f"Booking: {insights.timing.booking_window}")
-    
+
     # Step 3: Build Prompt
     if verbose:
         print_step(3, "Build Prompt", "Constructing planning prompt...")
-    
+
     from agentic_tour_planner.pipeline.prompts import build_itinerary_prompt
+
     prompt = build_itinerary_prompt(request, context, insights)
-    
+
     if verbose:
         print_step_done("Build Prompt", 0.0)
         logger.debug(f"Prompt length: {len(prompt)} characters")
-    
+
     # Step 4: Generate Plan
     if verbose:
         print_step(4, "Generate Plan", "Creating itinerary with LLM...")
-    
+
     start_time = datetime.now()
     response = await pipeline.run(request, context=context, insights=insights)
     elapsed = (datetime.now() - start_time).total_seconds()
-    
+
     if verbose:
         print_step_done("Generate Plan", elapsed)
         logger.info(f"Planner: {response.provider_used}/{response.model_used}")
@@ -770,58 +730,19 @@ async def run_pipeline(request: PlanningRequest, verbose: bool = True, mode: str
         elapsed = (datetime.now() - start_time).total_seconds()
         if verbose:
             print_step_done("Detailed Places", elapsed)
-        detailed = detailed_obj.model_dump() if detailed_obj else None
         if profile:
             profile_rows = pipeline.profiler.as_table()
 
-    return {
-        "request": request.model_dump(mode="json"),
-        "context": {
-            "documents_count": len(context.documents),
-            "search_results_count": len(context.search_results),
-            "place_hours_count": len(context.place_hours),
-            "weather": context.weather.summary if context.weather else None,
-        },
-        "insights": {
-            "route": {
-                "strategy": insights.route.strategy,
-                "cluster_advice": insights.route.cluster_advice,
-                "transit_notes": insights.route.transit_notes,
-            },
-            "budget": {
-                "estimated_daily_budget": insights.budget.estimated_daily_budget,
-                "estimated_total_budget": insights.budget.estimated_total_budget,
-                "assumptions": insights.budget.assumptions,
-                "saving_tips": insights.budget.saving_tips,
-            },
-            "timing": {
-                "season_summary": insights.timing.season_summary,
-                "booking_window": insights.timing.booking_window,
-                "day_planning_notes": insights.timing.day_planning_notes,
-            },
-        },
-            "response": {
-                "plan_id": response.plan_id,
-                "overview": response.overview,
-            "monthly_weather": response.monthly_weather,
-            "travel_month": request.travel_month,
-            "transport_options": [t.model_dump() for t in response.transport_options],
-            "cost_estimate": response.cost_estimate.model_dump() if response.cost_estimate else None,
-                "itinerary": [day.model_dump() for day in response.itinerary],
-                "practical_tips": response.practical_tips,
-                "citations": [c.model_dump() for c in response.citations],
-                "provider_used": response.provider_used,
-                "model_used": response.model_used,
-                "worker_provider_used": response.worker_provider_used,
-                "worker_model_used": response.worker_model_used,
-                "live_web_brief": response.live_web_brief.model_dump() if response.live_web_brief else None,
-                "worker_routing": pipeline.insights_builder.last_worker_used,
-                "generated_at": response.generated_at,
-                "metrics": metrics_bus.summary(),
-            },
-            "detailed": detailed,
-            "profile": profile_rows,
-    }
+    return build_output(
+        request=request,
+        context=context,
+        insights=insights,
+        response=response,
+        detailed=detailed_obj if mode == "places" else None,
+        pipeline=pipeline,
+        metrics=metrics_bus.summary(),
+        profile_rows=profile_rows,
+    )
 
 
 @app.command()
@@ -834,7 +755,9 @@ def plan(
     origin: str = typer.Option("", "--origin", help="Origin city"),
     notes: str = typer.Option("", "--notes", help="Additional notes"),
     live: bool = typer.Option(False, "--live", "-l", help="Include live web data"),
-    provider: str = typer.Option(None, "--provider", "-p", help="LLM provider to use (model is taken from llm.yml for that provider)"),
+    provider: str = typer.Option(
+        None, "--provider", "-p", help="LLM provider to use (model is taken from llm.yml for that provider)"
+    ),
     places_per_day: str = typer.Option("3-5", "--places-per-day", help="Places to visit per day, e.g. '3-5', '3 to 5'"),
     transport: str = typer.Option(None, "--transport", help="Transport mode: 'car' or 'public'"),
     members: int = typer.Option(1, "--members", help="Number of travellers (costs are multiplied by this)"),
@@ -843,14 +766,15 @@ def plan(
     log_level: LogLevel = typer.Option(LogLevel.INFO, "--log-level", help="Log level"),
     output_file: str = typer.Option("", "--output", "-f", help="Output file for JSON result"),
     mode: str = typer.Option(
-        "standard", "--mode",
+        "standard",
+        "--mode",
         help="Output mode: 'standard' (structured plan) or 'places' (detailed place-by-place Markdown).",
     ),
 ):
     """Generate a travel plan using the agentic pipeline."""
     setup_logging(log_level)
     logger.info(f"plan command invoked destination={destination} days={days} provider={provider or 'default'}")
-    
+
     request = PlanningRequest(
         destination=destination,
         origin=origin or None,
@@ -866,7 +790,7 @@ def plan(
         include_live_data=live,
         max_attractions_per_day=parse_place_range(places_per_day)[1],
     )
-    
+
     try:
         if mode not in ("standard", "places"):
             mode = "standard"
@@ -891,9 +815,9 @@ def plan(
                 with open(det_path, "w") as f:
                     json.dump(result["detailed"], f, indent=2, default=str)
                 print(f"Detailed places data saved to: {det_path}")
-        
+
         return 0
-        
+
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
         if verbose:
@@ -906,37 +830,37 @@ def interactive():
     """Run an interactive session with prompts."""
     setup_logging(LogLevel.INFO)
     logger.info("Starting interactive session")
-    
+
     print_section("AGENTIC TRAVEL PLANNER - INTERACTIVE MODE")
-    
+
     destination = typer.prompt("Destination city (e.g., Kyoto, Paris, Tokyo)")
-    
+
     try:
         days = int(typer.prompt("Number of trip days", default=4))
     except ValueError:
         days = 4
-    
-    interests_str = typer.prompt("Interests (comma-separated, e.g., temples,food,photography)", default="landmarks,food,walks")
+
+    interests_str = typer.prompt(
+        "Interests (comma-separated, e.g., temples,food,photography)", default="landmarks,food,walks"
+    )
     interests = [i.strip() for i in interests_str.split(",") if i.strip()]
-    
+
     budget = typer.prompt(
         "Budget level",
         default="midrange",
         type=click.Choice(["budget", "midrange", "luxury"]),
     )
     month = typer.prompt("Travel month", default=datetime.now().strftime("%B"))
-    
+
     origin = typer.prompt("Origin city (press Enter to skip)", default="")
     origin = origin if origin else None
-    
+
     notes = typer.prompt("Additional notes (press Enter to skip)", default="")
     notes = notes if notes else None
-    
+
     live = typer.confirm("Include live web data for up-to-date information?", default=False)
 
-    places_per_day = typer.prompt(
-        "How many places do you want to visit each day? (e.g. 3-5, '3 to 5')", default="3-5"
-    )
+    places_per_day = typer.prompt("How many places do you want to visit each day? (e.g. 3-5, '3 to 5')", default="3-5")
     transport_mode = typer.prompt(
         "Transport mode",
         default="public",
@@ -964,11 +888,11 @@ def interactive():
         include_live_data=live,
         max_attractions_per_day=parse_place_range(places_per_day)[1],
     )
-    
+
     try:
         result = asyncio.run(run_pipeline(request, verbose=True, mode=mode, profile=True))
         logger.info("Interactive plan generated successfully")
-        
+
         if result.get("detailed"):
             render_combined(result["response"], result["detailed"])
         else:
@@ -989,7 +913,7 @@ def test():
     """Run a quick test with default parameters."""
     setup_logging(LogLevel.INFO)
     logger.info("Running quick test pipeline")
-    
+
     request = PlanningRequest(
         destination="Kyoto",
         trip_length_days=2,
@@ -998,7 +922,7 @@ def test():
         travel_month="October",
         include_live_data=False,
     )
-    
+
     try:
         result = asyncio.run(run_pipeline(request, verbose=True))
         logger.info("Test pipeline completed")

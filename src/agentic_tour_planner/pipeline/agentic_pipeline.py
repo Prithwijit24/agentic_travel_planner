@@ -51,6 +51,7 @@ class AgenticTourPlannerPipeline:
         self.live_collector = LiveWebCollector(self.llm_provider)
         self.profiler = StageTimer()
         self._context_summary: dict | None = None
+        self._context: RetrievedContext | None = None
 
         # Use planner model for main itinerary generation
         self.planner_provider, self.planner_model = self.llm_provider.get_planner_model()
@@ -59,6 +60,10 @@ class AgenticTourPlannerPipeline:
     @property
     def context_summary(self) -> dict | None:
         return self._context_summary
+
+    @property
+    def context(self) -> RetrievedContext | None:
+        return self._context
 
     async def gather_context(self, request: PlanningRequest) -> RetrievedContext:
         logger.debug(
@@ -81,7 +86,9 @@ class AgenticTourPlannerPipeline:
             "place_hours_count": len(place_hours),
             "weather": weather.summary if weather else None,
         }
-        return RetrievedContext(documents=docs, search_results=search_results, place_hours=place_hours, weather=weather)
+        ctx = RetrievedContext(documents=docs, search_results=search_results, place_hours=place_hours, weather=weather)
+        self._context = ctx
+        return ctx
 
     async def run(
         self,

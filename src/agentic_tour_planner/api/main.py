@@ -23,6 +23,7 @@ from agentic_tour_planner.domain.models import (
     StoredPlanRecord,
 )
 from agentic_tour_planner.ingestion.service import IngestionService
+from agentic_tour_planner.pipeline.output_builder import build_output
 from agentic_tour_planner.storage.sqlite_store import SQLitePlanStore
 from agentic_tour_planner.utils.logging import get_logger
 
@@ -104,7 +105,6 @@ async def _run_plan_job(request_id: str, request: PlanningRequest, emitter: Even
             )
             detailed = await pipeline.run_detailed_places(request, response, insights=response.insights)
             if detailed is not None:
-                response.detailed_plan = detailed
                 logger.info(f"Detailed places generated for plan_id={response.plan_id}")
         except Exception as det_err:
             logger.warning(f"Detailed places generation skipped (non-fatal): {det_err}")
@@ -114,16 +114,22 @@ async def _run_plan_job(request_id: str, request: PlanningRequest, emitter: Even
         elapsed = time.perf_counter() - start
         REQUEST_LATENCY.labels(endpoint="/plans").observe(elapsed)
         logger.info(f"POST /plans completed plan_id={response.plan_id} in {elapsed:.2f}s")
+
+        base_result = build_output(
+            request=request,
+            context=pipeline.context,
+            insights=response.insights,
+            response=response,
+            detailed=detailed,
+            pipeline=pipeline,
+            metrics=None,
+            profile_rows=pipeline.profiler.as_table(),
+        )
         full_result = {
             "plan_id": response.plan_id,
             "request_id": request_id,
             "status": "completed",
-            "request": request.model_dump(mode="json"),
-            "context": pipeline.context_summary,
-            "insights": response.insights.model_dump(mode="json") if response.insights else None,
-            "response": response.model_dump(mode="json"),
-            "detailed": detailed.model_dump(mode="json") if detailed else None,
-            "profile": pipeline.profiler.as_table(),
+            **base_result,
         }
         emitter.emit(LogEvent(event="done", message="Plan complete", detail=full_result))
     except Exception as e:
@@ -138,6 +144,8 @@ async def _run_plan_job(request_id: str, request: PlanningRequest, emitter: Even
                 detail={"request_id": request_id, "status": "error", "error": str(e)},
             )
         )
+    finally:
+        remove_emitter(request_id)
 
 
 @app.get("/plans", response_model=list[StoredPlanRecord])
@@ -194,14 +202,11 @@ async def stream_plan(request_id: str):
         raise HTTPException(status_code=404, detail="Stream not found")
 
     async def event_generator():
-        try:
-            async for event in emitter.stream():
-                yield {
-                    "event": event.event,
-                    "data": event.model_dump_json(),
-                }
-        finally:
-            remove_emitter(request_id)
+        async for event in emitter.stream():
+            yield {
+                "event": event.event,
+                "data": event.model_dump_json(),
+            }
 
     return EventSourceResponse(event_generator())
 

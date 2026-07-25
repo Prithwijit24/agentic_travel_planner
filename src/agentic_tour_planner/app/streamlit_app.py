@@ -1168,7 +1168,10 @@ def _start_generation_job(
                     if detail.get("status") == "error":
                         stream_result["error"] = detail.get("error") or message
                     if detail.get("response"):
-                        stream_result["plan"] = detail["response"]
+                        plan_payload = {**detail["response"]}
+                        if detail.get("detailed"):
+                            plan_payload["detailed"] = detail["detailed"]
+                        stream_result["plan"] = plan_payload
                     job["progress"] = 1.0
                     job["message"] = "Complete!"
 
@@ -1197,19 +1200,44 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
     """Convert API PlanningResponse JSON + original request into the flat dict format the UI expects."""
     itinerary = plan_data.get("itinerary", [])
 
+    # Build lookup from detailed plan (richer descriptions, ~200 words)
+    detailed_lookup = {}
+    detailed_data = plan_data.get("detailed")
+    if detailed_data and isinstance(detailed_data, dict):
+        for dday in detailed_data.get("days", []):
+            day_num = dday.get("day")
+            places_by_name = {}
+            for place in dday.get("places", []):
+                pname = place.get("name", "")
+                if pname:
+                    places_by_name[pname] = place
+            detailed_lookup[day_num] = places_by_name
+
     display_itinerary = []
     for day in itinerary:
+        day_num = day.get("day")
+        day_detailed = detailed_lookup.get(day_num, {})
         spots = []
         for spot in day.get("spots", []):
+            spot_name = spot.get("name", "")
+            det = day_detailed.get(spot_name, {})
+            desc = det.get("description") or spot.get("description", "")
+            key_note = det.get("key_note") or spot.get("history", "") or spot.get("description", "")[:120]
+            opening_hours = (
+                det.get("opening_closing")
+                or f"{spot.get('opening_hours', '')} – {spot.get('closing_hours', '')}".strip(" –")
+                or "Not available"
+            )
             spots.append(
                 {
-                    "name": spot.get("name", ""),
-                    "description": spot.get("description", ""),
-                    "hours": f"{spot.get('opening_hours', '')} – {spot.get('closing_hours', '')}".strip(" –")
-                    or "Not available",
-                    "best_time": spot.get("best_time", ""),
-                    "transport": spot.get("description", "")[:80] if not spot.get("best_time") else "",
-                    "key_note": spot.get("history", "") or spot.get("description", "")[:120],
+                    "name": spot_name,
+                    "description": desc,
+                    "hours": opening_hours,
+                    "best_time": det.get("best_time") or spot.get("best_time", ""),
+                    "transport": det.get("transport") or spot.get("description", "")[:80]
+                    if not spot.get("best_time")
+                    else "",
+                    "key_note": key_note,
                     "lat": 0,
                     "lon": 0,
                     "image_query": spot.get("image_query", spot.get("name", "")),
@@ -2181,6 +2209,7 @@ elif st.session_state.plan is not None:
 def run() -> None:
     import sys
     from pathlib import Path
+
     app_path = Path(__file__).resolve()
     os.execvp(
         sys.executable,

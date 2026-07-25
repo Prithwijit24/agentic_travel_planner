@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 from pathlib import Path
 
 import typer
@@ -31,8 +30,8 @@ def _validate_destination(destination: str) -> str:
 
 def _validate_days(days: int) -> int:
     logger.debug(f"Validating trip length input (days={days})")
-    if days < 1 or days > 30:
-        console.print("[red]Trip length must be between 1 and 30 days.[/red]")
+    if days < 1 or days > 40:
+        console.print("[red]Trip length must be between 1 and 40 days.[/red]")
         raise typer.Exit(code=1)
     return days
 
@@ -69,8 +68,7 @@ def _print_plan(response) -> None:
 
     if response.citations:
         citations = "\n".join(
-            f"  • [{c.title}]({c.url})" + (f" — {c.note}" if c.note else "")
-            for c in response.citations
+            f"  • [{c.title}]({c.url})" + (f" — {c.note}" if c.note else "") for c in response.citations
         )
         console.print(Panel(citations, title="[bold dim]Citations[/bold dim]", border_style="dim"))
         console.print()
@@ -93,7 +91,11 @@ def plan(
     model: str | None = typer.Option(None, "--model", help="Model name override"),
     no_live: bool = typer.Option(False, "--no-live", help="Skip live web data"),
     output: Path | None = typer.Option(
-        None, "--output", "-O", help="Save plan as JSON to file", dir_okay=False,
+        None,
+        "--output",
+        "-O",
+        help="Save plan as JSON to file",
+        dir_okay=False,
     ),
 ) -> None:
     logger.info(f"plan command: destination={destination} days={days} budget={budget} provider={provider or 'default'}")

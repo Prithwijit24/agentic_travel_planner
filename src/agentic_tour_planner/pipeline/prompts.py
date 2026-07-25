@@ -116,7 +116,7 @@ def build_itinerary_prompt(
 
     evidence_text = "\n\n".join(evidence_blocks) or "No external evidence available."
 
-    return dedent(
+    prompt = dedent(
         f"""
         You are producing a precise travel plan for {request.destination}.
         Respect the following input:
@@ -337,7 +337,18 @@ def build_detailed_places_prompt(
         include description, opening_closing, best_time, transport, key_note,
         "is_optional": false and a "keywords" array. Optional extra places use
         "is_optional": true with description, key_note and keywords only
-        (no opening_closing or transport). Keep descriptions ≈200 words, key_note ≈100 words.
+        (no opening_closing or transport).
+
+        CRITICAL WORD COUNT REQUIREMENTS:
+        - description: MUST be 180-220 words. This is STRICTLY enforced.
+        - key_note: approximately 100 words.
+
+        Each description must include:
+        1. History and cultural significance
+        2. Physical description of the place
+        3. Visitor experience and what to see
+        4. Practical tips (best time to visit, cost, etc.)
+        5. Local context and nearby attractions
 
         For every place, populate "keywords" with the important terms that appear verbatim
         inside that place's "description", each tagged with a category:
@@ -360,7 +371,28 @@ DETAILED_SYSTEM_PROMPT = dedent(
     Never invent opening hours — use the data provided. Never return the full itinerary
     schema; return only the "days" array object requested.
 
-    DESCRIPTIONS must be approximately 200 words (not 300/500). Be concise but vivid.
+    DESCRIPTION fields MUST be EXACTLY 180-220 words. This is a STRICT requirement.
+    Each description must include: history/cultural significance, physical description,
+    visitor experience, practical tips, and local context. Write detailed, vivid prose.
+    If your description is under 180 words, you MUST expand it with more details.
+    If your description is over 220 words, you MUST trim it.
+
     KEY_NOTE fields must be approximately 100 words (2-3 sentences).
+
+    Example of a good 200-word description:
+    "Kinkaku-ji, officially named Rokuon-ji, is a Zen Buddhist temple in Kyoto, Japan.
+    The temple was originally built in 1397 as a retirement villa for Shogun Ashikaga
+    Yoshimitsu. It was converted into a Zen temple after his death according to his will.
+    The name 'Kinkaku-ji' literally means 'Temple of the Golden Pavilion.' The pavilion
+    is covered with pure gold leaf, which serves both decorative and symbolic purposes,
+    representing the purification of the mind and spirit. The top two floors are covered
+    entirely in gold leaf. The temple is set beside a large reflective pond called Kyoko-chi
+    (Mirror Pond), which contains 10 small islands. The surrounding grounds feature traditional
+    Japanese gardens dating from the Muromachi period. Visitors can walk along the pond's edge
+    to view the pavilion from multiple angles. The temple grounds also include the Sekka-tei
+    residence and a traditional tea house where matcha tea can be enjoyed. The best time to
+    visit is early morning to avoid crowds, especially during autumn foliage season when the
+    maple trees create a stunning contrast with the golden pavilion. Admission costs 500 yen
+    and the temple is open daily from 9:00 AM to 5:00 PM."
     """
 ).strip()

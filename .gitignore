@@ -8,7 +8,8 @@ __pycache__/
 .venv/
 venv/
 env/
-
+**__pycache__**
+**.pyc
 # Build and packaging
 build/
 dist/
@@ -27,14 +28,17 @@ htmlcov/
 .antrigravity/
 # Jupyter / notebooks
 .ipynb_checkpoints/
-
+.kimchi/
+.mimocode/
+.superpowers/
+.agents/
 # Streamlit
 .streamlit/secrets.toml
 
 # Environment files
 .env
 .env.*
-!.env.example
+.env.example
 
 # Local caches and fetched media (live web audio/video artifacts)
 cache/
