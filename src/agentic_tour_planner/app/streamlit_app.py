@@ -2118,92 +2118,30 @@ elif st.session_state.plan is not None:
     elif menu_choice == "🗺️ Maps":
         st.markdown("### 📍 Trip Route Map")
 
-        map_spots = []
-        for day in plan["itinerary"]:
-            for spot in day["spots"]:
-                if "lat" in spot and "lon" in spot:
-                    map_spots.append({"name": spot["name"], "lat": spot["lat"], "lon": spot["lon"], "day": day["day"]})
+        try:
+            from agentic_tour_planner.tools.map_tool import MapTool
+            from streamlit.components.v1 import html as st_html
+        except ImportError as imp_err:
+            st.error(f"Map dependencies not available: {imp_err}")
+        else:
+            try:
+                map_tool = MapTool()
+                folium_map = map_tool.render_itinerary_map(
+                    itinerary=plan.get("itinerary", []),
+                    origin=plan.get("origin"),
+                )
+                map_html = folium_map.get_root().render()
+                st_html(map_html, height=620, scrolling=False)
 
-        spots_json = json.dumps(map_spots)
-
-        html_map = f"""
-        <html>
-        <head>
-            <style>
-                #map {{
-                    height: 600px;
-                    width: 100%;
-                    border-radius: 12px;
-                    border: 1px solid #d2d2d7;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-                }}
-            </style>
-        </head>
-        <body>
-            <div id="map"></div>
-            <script>
-                function initMap() {{
-                    const map = new google.maps.Map(document.getElementById("map"), {{
-                        zoom: 8,
-                        center: {{ lat: 27.3, lng: 88.6 }},
-                        mapTypeId: 'roadmap',
-                        styles: [
-                            {{ featureType: "poi", stylers: [{{ visibility: "off" }}] }},
-                            {{ featureType: "transit", stylers: [{{ visibility: "off" }}] }}
-                        ]
-                    }});
-
-                    const spots = {spots_json};
-                    const bounds = new google.maps.LatLngBounds();
-                    const colors = ['#FFB900', '#0078D4', '#5C2D91', '#00B294'];
-
-                    spots.forEach((spot, index) => {{
-                        const marker = new google.maps.Marker {{
-                            position: {{ lat: spot.lat, lng: spot.lon }},
-                            map: map,
-                            title: spot.name,
-                            label: {{
-                                text: String(spot.day),
-                                color: "white",
-                                fontWeight: "bold"
-                            }}
-                        }};
-
-                        if (spot.day <= colors.length) {{
-                            marker.setIcon({{
-                                path: google.maps.SymbolPath.CIRCLE,
-                                scale: 15,
-                                fillColor: colors[spot.day - 1],
-                                fillOpacity: 1,
-                                strokeColor: 'white',
-                                strokeWeight: 2
-                            }});
-                        }}
-
-                        const infowindow = new google.maps.InfoWindow({{
-                            content: `<div style="font-family: 'Inter', sans-serif; padding: 4px;"><b style="color: #1d1d1f; font-size: 14px;">Day ${{spot.day}} - ${{spot.name}}</b></div>`
-                        }});
-
-                        marker.addListener("click", () => {{
-                            infowindow.open(map, marker);
-                        }});
-
-                        bounds.extend(marker.position);
-                    }});
-
-                    map.fitBounds(bounds);
-                }}
-            </script>
-            <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&callback=initMap"></script>
-        </body>
-        </html>
-        """
-        st.iframe(html_map, height=620)
-
-        st.markdown("<div style='margin-bottom: 16px;'></div>", unsafe_allow_html=True)
-        st.info(
-            "ⓘ Markers are color-coded by day (Day 1: Gold, Day 2: Blue, Day 3: Purple, Day 4: Teal). Click on a marker to see the spot name."
-        )
+                st.markdown("<div style='margin-bottom: 16px;'></div>", unsafe_allow_html=True)
+                st.info(
+                    "ⓘ Markers are color-coded by day with route lines. "
+                    "Use the layer control (top-right) to toggle days on/off. "
+                    "Click a marker for details."
+                )
+            except Exception as map_err:
+                st.warning(f"Map rendering failed: {map_err}")
+                st.info("Map visualization requires the itinerary to have geocodable place names.")
 
 
 def run() -> None:

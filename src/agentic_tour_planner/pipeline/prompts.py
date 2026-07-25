@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from textwrap import dedent
 from typing import Any
@@ -14,6 +15,37 @@ from agentic_tour_planner.domain.models import (
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Guard against logistics/day-phase labels masquerading as real places
+# (e.g. "Arrive", "Depart Gangtok", "Early", "Transit"). These are day-phase
+# or travel-logistics labels, not tourist places, and should never be given
+# their own spot entry with hours/best_time/transport fields.
+# ---------------------------------------------------------------------------
+_LOGISTICS_NAME_PATTERNS = re.compile(
+    r"^\s*(arrive|arrival|depart(ure)?|early|transit|check[- ]?in|check[- ]?out|"
+    r"drive to|drive from|en route|free time|rest day|travel day|return|transfer|"
+    r"flight|layover|breakfast|lunch|dinner)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_real_place_name(name: str) -> bool:
+    """Heuristic guard against logistics/day-phase labels masquerading as spots.
+
+    Returns False for names that look like travel logistics or day-phase
+    labels (e.g. "Arrive", "Depart Gangtok", "Early", "Transit", "Check-in")
+    rather than actual named tourist attractions.
+    """
+    if not name:
+        return False
+    stripped = name.strip()
+    if len(stripped) < 3:
+        return False
+    if _LOGISTICS_NAME_PATTERNS.match(stripped):
+        return False
+    return True
 
 
 def _format_live_brief(brief: LiveWebBrief) -> str:
@@ -163,6 +195,17 @@ def build_itinerary_prompt(
           does not name a concrete place for a slot, STOP and reason from the real place names that ARE
           present — do NOT invent filler. Every activity line must contain at least one proper noun that
           is an actual place in {request.destination}.
+        - NO LOGISTICS-AS-PLACES (mandatory): 'spots' and every day's place lists must ONLY
+          contain real, named tourist attractions, landmarks, viewpoints, markets, monasteries,
+          restaurants, or venues. NEVER create a spot/place entry for a travel-logistics or
+          day-phase label such as "Arrive", "Arrival", "Depart <City>", "Departure", "Early
+          Morning", "Transit", "Check-in", "Check-out", "Drive to <City>", "En Route",
+          "Free Time", "Return", or "Transfer". These are not places. Arrival, departure,
+          driving, and transfer details MUST be described inside that day's `summary`,
+          `transport`, and `logistics` fields instead — never given their own place-style
+          entry with hours/best_time/transport fields. If a day genuinely has fewer real named
+          places than the minimum (e.g. a long transit day), add nearby real attractions along
+          the route rather than inventing a fake "place" out of the logistics itself.
         - TIME WINDOWS: Every activity string MUST include a concrete time window, e.g.
           'Explore Arashiyama Bamboo Grove (Morning 6:00-8:30): walk in soft light'.
           Use realistic windows: Morning 6:00-8:30, Late Morning 8:30-11:00, Midday 11:00-13:00,
@@ -269,7 +312,11 @@ def build_detailed_places_prompt(
     hours_block = "\n".join(hours_lines) if hours_lines else "No opening-hour data was retrieved."
 
     # ---- CORE places per day (mandatory, from the standard plan) ----
+    # Filtered through _is_real_place_name so logistics/day-phase labels
+    # (e.g. "Arrive", "Depart Gangtok", "Early", "Transit") never get promoted
+    # into the detailed-places prompt as if they were real attractions.
     core_lines: list[str] = []
+    dropped_logistics: list[str] = []
     for day in getattr(response, "itinerary", []):
         spots = getattr(day, "spots", None) or []
         names: list[str] = []
@@ -278,12 +325,20 @@ def build_detailed_places_prompt(
                 n = s.get("name")
             else:
                 n = getattr(s, "name", None)
-            if n:
+            if not n:
+                continue
+            if _is_real_place_name(n):
                 names.append(str(n))
+            else:
+                dropped_logistics.append(str(n))
         names = names[:place_hi]
         if not names:
             names = [f"(let the model choose a real place in {request.destination})"]
         core_lines.append(f"Day {getattr(day, 'day', '?')} core places: " + " | ".join(names))
+    if dropped_logistics:
+        logger.debug(
+            f"Dropped {len(dropped_logistics)} logistics/day-phase labels from core places: {dropped_logistics}"
+        )
     core_block = "\n".join(core_lines) if core_lines else "No core places pre-selected."
 
     live_block = _format_live_brief(live_brief) if live_brief else "Not collected."
@@ -339,6 +394,10 @@ def build_detailed_places_prompt(
         "is_optional": true with description, key_note and keywords only
         (no opening_closing or transport).
 
+        Never output a "place" entry for arrival, departure, transit, packing, or
+        check-in/out phases — these belong only in the day-level summary/transport text,
+        not as a named place with its own description, hours, or transport block.
+
         CRITICAL WORD COUNT REQUIREMENTS:
         - description: MUST be 180-220 words. This is STRICTLY enforced.
         - key_note: approximately 100 words.
@@ -370,6 +429,12 @@ DETAILED_SYSTEM_PROMPT = dedent(
     Every field requested must be populated with real, specific, verified information.
     Never invent opening hours — use the data provided. Never return the full itinerary
     schema; return only the "days" array object requested.
+
+    Never output a "place" entry for arrival, departure, transit, packing, or
+    check-in/out phases (e.g. "Arrive", "Depart Gangtok", "Early", "Transit") — these
+    are day-phase/logistics labels, not tourist places. They belong only in the
+    day-level summary/transport text, never as a named place with its own
+    description, hours, or transport block.
 
     DESCRIPTION fields MUST be EXACTLY 180-220 words. This is a STRICT requirement.
     Each description must include: history/cultural significance, physical description,
