@@ -64,6 +64,7 @@ Thumbs.db
 .codegraph/
 .opencode/
 .kilo/
+*.log
 *.db*
 *.sql*
 *.bz*
