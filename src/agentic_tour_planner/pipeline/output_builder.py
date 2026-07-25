@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from agentic_tour_planner.domain.models import (
         DetailedPlan,
+        PlaceImage,
         PlanningInsights,
         PlanningRequest,
         PlanningResponse,
@@ -46,6 +47,7 @@ def build_output(
     pipeline: AgenticTourPlannerPipeline | None = None,
     metrics: dict | None = None,
     profile_rows: list[dict] | None = None,
+    images: list[PlaceImage] | None = None,
 ) -> dict[str, Any]:
     """Build the unified output dictionary used by both CLI and API.
 
@@ -101,5 +103,6 @@ def build_output(
             "metrics": metrics,
         },
         "detailed": detailed.model_dump() if detailed else None,
+        "images": [img.model_dump() for img in images] if images else [],
         "profile": profile_rows or [],
     }

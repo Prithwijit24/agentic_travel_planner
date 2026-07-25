@@ -1,10 +1,34 @@
 from __future__ import annotations
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agentic_tour_planner.domain.models import PlanningResponse
+
 from agentic_tour_planner.domain.models import PlaceImage
 from agentic_tour_planner.images.pipeline import resolve_images as _pipeline_resolve
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def collect_places_for_images(response: PlanningResponse) -> list[dict]:
+    """Extract place dicts from a PlanningResponse itinerary for image resolution.
+
+    Returns a list of dicts with 'place_name' and 'image_query' keys,
+    suitable for passing to ``resolve_images()``.
+    """
+    places: list[dict] = []
+    seen: set[str] = set()
+    for day in response.itinerary:
+        for spot in day.spots:
+            q = spot.image_query or spot.name
+            if q and spot.name not in seen:
+                seen.add(spot.name)
+                places.append({"place_name": spot.name, "image_query": q})
+    return places
 
 
 async def resolve_images(places: list[dict]) -> list[PlaceImage]:

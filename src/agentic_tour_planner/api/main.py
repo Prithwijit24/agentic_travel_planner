@@ -11,7 +11,7 @@ from prometheus_client import Counter, Histogram, generate_latest
 from sse_starlette.sse import EventSourceResponse
 
 from agentic_tour_planner.api.events import EventEmitter, get_emitter, register_emitter, remove_emitter
-from agentic_tour_planner.api.images import resolve_images
+from agentic_tour_planner.api.images import collect_places_for_images, resolve_images
 from agentic_tour_planner.config.settings import Settings, get_settings
 from agentic_tour_planner.domain.models import (
     ImageResponse,
@@ -115,6 +115,16 @@ async def _run_plan_job(request_id: str, request: PlanningRequest, emitter: Even
         REQUEST_LATENCY.labels(endpoint="/plans").observe(elapsed)
         logger.info(f"POST /plans completed plan_id={response.plan_id} in {elapsed:.2f}s")
 
+        # Resolve images for all spots in the itinerary
+        images_result = []
+        try:
+            places_for_images = collect_places_for_images(response)
+            if places_for_images:
+                logger.info(f"Resolving images for {len(places_for_images)} places")
+                images_result = await resolve_images(places_for_images)
+        except Exception as img_err:
+            logger.warning(f"Image resolution failed (non-fatal): {img_err}")
+
         base_result = build_output(
             request=request,
             context=pipeline.context,
@@ -124,6 +134,7 @@ async def _run_plan_job(request_id: str, request: PlanningRequest, emitter: Even
             pipeline=pipeline,
             metrics=None,
             profile_rows=pipeline.profiler.as_table(),
+            images=images_result,
         )
         full_result = {
             "plan_id": response.plan_id,

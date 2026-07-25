@@ -4,11 +4,15 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
+import logging
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Coroutine, TypeVar
+
+from typer.models import OptionInfo
 
 import click
 import typer
@@ -30,6 +34,37 @@ logger = get_logger(__name__)
 
 app = typer.Typer(help="Agentic Travel Planner - Interactive CLI")
 
+T = TypeVar("T")
+
+
+def _run_async(coro: Coroutine[Any, Any, T]) -> T:
+    """Run an async coroutine, handling both normal and notebook environments.
+
+    In Jupyter notebooks (or any environment with a running event loop),
+    asyncio.run() cannot be called directly. This function detects the
+    environment and uses the appropriate method.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is not None and loop.is_running():
+        # We're inside a running event loop (e.g., Jupyter notebook).
+        # Run the coroutine in a new thread with its own event loop.
+        def _run_in_new_loop() -> T:
+            new_loop = asyncio.new_event_loop()
+            try:
+                return new_loop.run_until_complete(coro)
+            finally:
+                new_loop.close()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future: concurrent.futures.Future[T] = pool.submit(_run_in_new_loop)
+            return future.result()
+    else:
+        return asyncio.run(coro)
+
 
 class LogLevel(str, Enum):
     DEBUG = "DEBUG"
@@ -38,11 +73,31 @@ class LogLevel(str, Enum):
     ERROR = "ERROR"
 
 
+class _LiteLLMFilter(logging.Filter):
+    """Suppress non-critical LiteLLM logging worker timeout errors."""
+    _attached = False
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        # Match litellm logger names and messages mentioning LoggingWorker
+        if (record.name.startswith("litellm") or "litellm" in record.name.lower()) and "LoggingWorker" in msg:
+            return False
+        return True
+
+    @classmethod
+    def attach(cls) -> None:
+        """Attach the filter once to the root logger."""
+        if not cls._attached:
+            logging.getLogger().addFilter(cls())
+            cls._attached = True
+
+
 def setup_logging(level: LogLevel = LogLevel.INFO) -> None:
     configure_logging(level.value)
+    _LiteLLMFilter.attach()
 
 
-_STEP_ICONS = {1: "🔍", 2: "🧠", 3: "📋", 4: "🗺️"}
+_STEP_ICONS = {1: "🔍", 2: "🧠", 3: "📋", 4: "🗺️", 5: "📝", 6: "📸"}
 
 
 def print_section(title: str) -> None:
@@ -635,12 +690,11 @@ def _render_profile(profile_rows: list[dict]) -> str:
 
 
 async def run_pipeline(
-    request: PlanningRequest, verbose: bool = True, mode: str = "standard", profile: bool = False
+    request: PlanningRequest, verbose: bool = True, profile: bool = False
 ) -> dict[str, Any]:
     """Run the full pipeline with detailed logging.
 
-    ``mode`` is either ``"standard"`` (structured itinerary) or ``"places"``
-    (detailed place-by-place Markdown itinerary built on real opening hours).
+    Always generates the detailed place-by-place itinerary with real opening hours.
     """
     logger.debug(f"run_pipeline start destination={request.destination} live={request.include_live_data}")
     metrics_bus.reset()
@@ -721,27 +775,41 @@ async def run_pipeline(
     if profile:
         profile_rows = pipeline.profiler.as_table()
 
-    detailed = None
-    if mode == "places":
-        if verbose:
-            print_step(5, "Detailed Places", "Fetching real hours + writing place-by-place itinerary...")
-        start_time = datetime.now()
-        detailed_obj = await pipeline.run_detailed_places(request, response, context=context, insights=insights)
-        elapsed = (datetime.now() - start_time).total_seconds()
-        if verbose:
-            print_step_done("Detailed Places", elapsed)
-        if profile:
-            profile_rows = pipeline.profiler.as_table()
+    if verbose:
+        print_step(5, "Detailed Places", "Fetching real hours + writing place-by-place itinerary...")
+    start_time = datetime.now()
+    detailed_obj = await pipeline.run_detailed_places(request, response, context=context, insights=insights)
+    elapsed = (datetime.now() - start_time).total_seconds()
+    if verbose:
+        print_step_done("Detailed Places", elapsed)
+    if profile:
+        profile_rows = pipeline.profiler.as_table()
+
+    # ── Step 6: Resolve images for all spots ─────────────────────────
+    images_result = []
+    try:
+        from agentic_tour_planner.api.images import collect_places_for_images, resolve_images
+
+        places_for_images = collect_places_for_images(response)
+        if places_for_images:
+            if verbose:
+                print_step(6, "Resolve Images", f"Fetching images for {len(places_for_images)} places...")
+            images_result = await resolve_images(places_for_images)
+            if verbose:
+                print_step_done("Resolve Images", 0.0)
+    except Exception as img_err:
+        logger.warning(f"Image resolution failed (non-fatal): {img_err}")
 
     return build_output(
         request=request,
         context=context,
         insights=insights,
         response=response,
-        detailed=detailed_obj if mode == "places" else None,
+        detailed=detailed_obj,
         pipeline=pipeline,
         metrics=metrics_bus.summary(),
         profile_rows=profile_rows,
+        images=images_result,
     )
 
 
@@ -762,16 +830,33 @@ def plan(
     transport: str = typer.Option(None, "--transport", help="Transport mode: 'car' or 'public'"),
     members: int = typer.Option(1, "--members", help="Number of travellers (costs are multiplied by this)"),
     verbose: bool = typer.Option(True, "--verbose", "-v", help="Verbose output"),
-    profile: bool = typer.Option(False, "--profile", help="Show detailed pipeline timing profile"),
+    profile: bool = typer.Option(True, "--profile", help="Show detailed pipeline timing profile"),
     log_level: LogLevel = typer.Option(LogLevel.INFO, "--log-level", help="Log level"),
     output_file: str = typer.Option("", "--output", "-f", help="Output file for JSON result"),
-    mode: str = typer.Option(
-        "standard",
-        "--mode",
-        help="Output mode: 'standard' (structured plan) or 'places' (detailed place-by-place Markdown).",
-    ),
 ):
     """Generate a travel plan using the agentic pipeline."""
+    # When called directly from Python (not CLI), typer.Option objects are passed
+    # instead of their values. Extract actual values if needed.
+    def _resolve(val: Any, default: Any = None) -> Any:
+        return default if isinstance(val, OptionInfo) else val
+    
+    destination = _resolve(destination, "")
+    days = _resolve(days, 4)
+    interests = _resolve(interests, "landmarks,food,walks")
+    budget = _resolve(budget, "midrange")
+    month = _resolve(month, "June")
+    origin = _resolve(origin, "")
+    notes = _resolve(notes, "")
+    live = _resolve(live, False)
+    provider = _resolve(provider, None)
+    places_per_day = _resolve(places_per_day, "3-5")
+    transport = _resolve(transport, None)
+    members = _resolve(members, 1)
+    verbose = _resolve(verbose, True)
+    profile = _resolve(profile, True)
+    log_level = _resolve(log_level, LogLevel.INFO)
+    output_file = _resolve(output_file, "")
+    
     setup_logging(log_level)
     logger.info(f"plan command invoked destination={destination} days={days} provider={provider or 'default'}")
 
@@ -792,15 +877,13 @@ def plan(
     )
 
     try:
-        if mode not in ("standard", "places"):
-            mode = "standard"
-        result = asyncio.run(run_pipeline(request, verbose=verbose, mode=mode, profile=profile))
+        result = _run_async(run_pipeline(request, verbose=verbose, profile=profile))
         logger.info("Plan generated successfully")
 
         if result.get("detailed"):
             render_combined(result["response"], result["detailed"])
         else:
-            render_plan(result["response"])
+            render_plan(result["response"])  # Fallback if detailed generation failed
         profile_text = _render_profile(result.get("profile") or [])
         if profile_text:
             console.print()
@@ -870,9 +953,6 @@ def interactive():
 
     provider = _select_provider_interactive()
 
-    # Interactive mode always produces the consolidated (standard + detailed places) view.
-    mode = "places"
-
     request = PlanningRequest(
         destination=destination,
         origin=origin,
@@ -890,13 +970,13 @@ def interactive():
     )
 
     try:
-        result = asyncio.run(run_pipeline(request, verbose=True, mode=mode, profile=True))
+        result = _run_async(run_pipeline(request, verbose=True, profile=True))
         logger.info("Interactive plan generated successfully")
 
         if result.get("detailed"):
             render_combined(result["response"], result["detailed"])
         else:
-            render_plan(result["response"])
+            render_plan(result["response"])  # Fallback if detailed generation failed
         profile_text = _render_profile(result.get("profile") or [])
         if profile_text:
             console.print()
@@ -924,7 +1004,7 @@ def test():
     )
 
     try:
-        result = asyncio.run(run_pipeline(request, verbose=True))
+        result = _run_async(run_pipeline(request, verbose=True, profile=True))
         logger.info("Test pipeline completed")
         print_section("TEST COMPLETE")
         print(f"Plan ID: {result['response']['plan_id']}")

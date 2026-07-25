@@ -1,163 +1,120 @@
 nohup: ignoring input
-[I 2026-07-10 19:23:13.541 ServerApp] jupyter_lsp | extension was successfully linked.
-[I 2026-07-10 19:23:13.546 ServerApp] jupyter_server_terminals | extension was successfully linked.
-[I 2026-07-10 19:23:13.550 ServerApp] jupyterlab | extension was successfully linked.
-[I 2026-07-10 19:23:13.766 ServerApp] notebook_shim | extension was successfully linked.
-[I 2026-07-10 19:23:13.776 ServerApp] notebook_shim | extension was successfully loaded.
-[I 2026-07-10 19:23:13.777 ServerApp] jupyter_lsp | extension was successfully loaded.
-[I 2026-07-10 19:23:13.777 ServerApp] jupyter_server_terminals | extension was successfully loaded.
-[I 2026-07-10 19:23:13.778 LabApp] JupyterLab extension loaded from /home/prithwijit/programming/python/imp_projects/tour-planner/agentic_travel_planner/.venv/lib/python3.14/site-packages/jupyterlab
-[I 2026-07-10 19:23:13.778 LabApp] JupyterLab application directory is /home/prithwijit/programming/python/imp_projects/tour-planner/agentic_travel_planner/.venv/share/jupyter/lab
-[I 2026-07-10 19:23:13.779 LabApp] Extension Manager is 'pypi'.
-[I 2026-07-10 19:23:13.800 ServerApp] jupyterlab | extension was successfully loaded.
-[I 2026-07-10 19:23:13.800 ServerApp] Serving notebooks from local directory: /home/prithwijit/programming/python/imp_projects/tour-planner/agentic_travel_planner
-[I 2026-07-10 19:23:13.801 ServerApp] Jupyter Server 2.20.0 is running at:
-[I 2026-07-10 19:23:13.801 ServerApp] http://localhost:8888/lab?token=99bc0ea8dbff06d47b106fc57ab0c1dbcc2fe66df5ace419
-[I 2026-07-10 19:23:13.801 ServerApp]     http://127.0.0.1:8888/lab?token=99bc0ea8dbff06d47b106fc57ab0c1dbcc2fe66df5ace419
-[I 2026-07-10 19:23:13.801 ServerApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
-[C 2026-07-10 19:23:13.832 ServerApp] 
+[I 2026-07-25 12:14:56.657 ServerApp] jupyter_lsp | extension was successfully linked.
+[I 2026-07-25 12:14:56.660 ServerApp] jupyter_server_terminals | extension was successfully linked.
+[I 2026-07-25 12:14:56.663 ServerApp] jupyterlab | extension was successfully linked.
+[I 2026-07-25 12:14:56.847 ServerApp] notebook_shim | extension was successfully linked.
+[I 2026-07-25 12:14:56.858 ServerApp] notebook_shim | extension was successfully loaded.
+[I 2026-07-25 12:14:56.859 ServerApp] jupyter_lsp | extension was successfully loaded.
+[I 2026-07-25 12:14:56.860 ServerApp] jupyter_server_terminals | extension was successfully loaded.
+[I 2026-07-25 12:14:56.861 LabApp] JupyterLab extension loaded from /home/prithwijit/programming/python/imp_projects/tour-planner/agentic_travel_planner/.venv/lib/python3.14/site-packages/jupyterlab
+[I 2026-07-25 12:14:56.861 LabApp] JupyterLab application directory is /home/prithwijit/programming/python/imp_projects/tour-planner/agentic_travel_planner/.venv/share/jupyter/lab
+[I 2026-07-25 12:14:56.861 LabApp] Extension Manager is 'pypi'.
+[I 2026-07-25 12:14:56.897 ServerApp] jupyterlab | extension was successfully loaded.
+[I 2026-07-25 12:14:56.898 ServerApp] Serving notebooks from local directory: /home/prithwijit/programming/python/imp_projects/tour-planner/agentic_travel_planner
+[I 2026-07-25 12:14:56.898 ServerApp] Jupyter Server 2.20.0 is running at:
+[I 2026-07-25 12:14:56.898 ServerApp] http://localhost:8888/lab?token=ef1f9baea7240cb236bf37e73548dd52e8bddfffaa9ca74e
+[I 2026-07-25 12:14:56.898 ServerApp]     http://127.0.0.1:8888/lab?token=ef1f9baea7240cb236bf37e73548dd52e8bddfffaa9ca74e
+[I 2026-07-25 12:14:56.898 ServerApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
+[C 2026-07-25 12:14:56.924 ServerApp] 
     
     To access the server, open this file in a browser:
-        file:/home/prithwijit/.local/share/jupyter/runtime/jpserver-8356-open.html
+        file:/home/prithwijit/.local/share/jupyter/runtime/jpserver-34768-open.html
     Or copy and paste one of these URLs:
-        http://localhost:8888/lab?token=99bc0ea8dbff06d47b106fc57ab0c1dbcc2fe66df5ace419
-        http://127.0.0.1:8888/lab?token=99bc0ea8dbff06d47b106fc57ab0c1dbcc2fe66df5ace419
+        http://localhost:8888/lab?token=ef1f9baea7240cb236bf37e73548dd52e8bddfffaa9ca74e
+        http://127.0.0.1:8888/lab?token=ef1f9baea7240cb236bf37e73548dd52e8bddfffaa9ca74e
 /usr/sbin/xdg-open: line 1045: x-www-browser: command not found
-[I 2026-07-10 19:23:13.985 ServerApp] Skipped non-installed server(s): basedpyright, bash-language-server, dockerfile-language-server-nodejs, javascript-typescript-langserver, jedi-language-server, julia-language-server, pyrefly, pyright, python-language-server, python-lsp-server, r-languageserver, sql-language-server, texlab, typescript-language-server, unified-language-server, vscode-css-languageserver-bin, vscode-html-languageserver-bin, vscode-json-languageserver-bin, yaml-language-server
-[I 2026-07-10 19:23:17.733 LabApp] Build is up to date
-[I 2026-07-10 19:23:19.729 ServerApp] Kernel started: 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1
+[I 2026-07-25 12:14:57.049 ServerApp] Skipped non-installed server(s): basedpyright, bash-language-server, dockerfile-language-server-nodejs, javascript-typescript-langserver, jedi-language-server, julia-language-server, pyrefly, pyright, python-language-server, python-lsp-server, r-languageserver, sql-language-server, texlab, typescript-language-server, unified-language-server, vscode-css-languageserver-bin, vscode-html-languageserver-bin, vscode-json-languageserver-bin, yaml-language-server
+[I 2026-07-25 12:15:01.232 LabApp] 302 GET /lab/tree/runner_notebook.ipynb (@127.0.0.1) 0.60ms
+[I 2026-07-25 12:15:03.137 LabApp] Build is up to date
+[W 2026-07-25 12:15:03.333 ServerApp] 404 GET /api/contents/cli?content=0&hash=0&1784961903287 (3aaa4501fc444a909fd9b412b714916b@127.0.0.1) 0.88ms referer=http://localhost:8888/lab
+[W 2026-07-25 12:15:03.333 ServerApp] 404 GET /api/contents/cli?content=0&hash=0&1784961903287 (127.0.0.1): No such file or directory: cli
+[W 2026-07-25 12:15:03.336 ServerApp] 404 GET /api/contents/main.py?content=0&hash=0&1784961903288 (3aaa4501fc444a909fd9b412b714916b@127.0.0.1) 2.77ms referer=http://localhost:8888/lab
+[W 2026-07-25 12:15:03.337 ServerApp] 404 GET /api/contents/main.py?content=0&hash=0&1784961903288 (127.0.0.1): No such file or directory: main.py
+[W 2026-07-25 12:15:03.339 ServerApp] 404 GET /api/contents/cli/plan.py?content=0&hash=0&1784961903287 (3aaa4501fc444a909fd9b412b714916b@127.0.0.1) 4.41ms referer=http://localhost:8888/lab
+[W 2026-07-25 12:15:03.340 ServerApp] 404 GET /api/contents/cli/plan.py?content=0&hash=0&1784961903287 (127.0.0.1): No such file or directory: cli/plan.py
+[W 2026-07-25 12:15:03.340 ServerApp] 404 GET /api/contents/api?content=0&hash=0&1784961903287 (3aaa4501fc444a909fd9b412b714916b@127.0.0.1) 5.16ms referer=http://localhost:8888/lab
+[W 2026-07-25 12:15:03.341 ServerApp] 404 GET /api/contents/api?content=0&hash=0&1784961903287 (127.0.0.1): No such file or directory: api
+[W 2026-07-25 12:15:03.341 ServerApp] 404 GET /api/contents/api/main.py?content=0&hash=0&1784961903287 (3aaa4501fc444a909fd9b412b714916b@127.0.0.1) 5.64ms referer=http://localhost:8888/lab
+[W 2026-07-25 12:15:03.341 ServerApp] 404 GET /api/contents/api/main.py?content=0&hash=0&1784961903287 (127.0.0.1): No such file or directory: api/main.py
+[W 2026-07-25 12:15:03.343 ServerApp] 404 GET /api/contents/runner_notebook.ipynb?content=0&hash=0&1784961903288 (3aaa4501fc444a909fd9b412b714916b@127.0.0.1) 1.60ms referer=http://localhost:8888/lab
+[W 2026-07-25 12:15:03.343 ServerApp] 404 GET /api/contents/runner_notebook.ipynb?content=0&hash=0&1784961903288 (127.0.0.1): No such file or directory: runner_notebook.ipynb
+[W 2026-07-25 12:15:03.345 ServerApp] 404 GET /api/contents/main.py?content=0&hash=0&1784961903288 (3aaa4501fc444a909fd9b412b714916b@127.0.0.1) 1.46ms referer=http://localhost:8888/lab
+[W 2026-07-25 12:15:03.345 ServerApp] 404 GET /api/contents/main.py?content=0&hash=0&1784961903288 (127.0.0.1): No such file or directory: main.py
+[W 2026-07-25 12:15:03.346 ServerApp] 404 GET /api/contents/api/main.py?content=0&hash=0&1784961903288 (3aaa4501fc444a909fd9b412b714916b@127.0.0.1) 1.70ms referer=http://localhost:8888/lab
+[W 2026-07-25 12:15:03.346 ServerApp] 404 GET /api/contents/api/main.py?content=0&hash=0&1784961903288 (127.0.0.1): No such file or directory: api/main.py
+[W 2026-07-25 12:15:03.347 ServerApp] 404 GET /api/contents/cli/plan.py?content=0&hash=0&1784961903288 (3aaa4501fc444a909fd9b412b714916b@127.0.0.1) 2.27ms referer=http://localhost:8888/lab
+[W 2026-07-25 12:15:03.347 ServerApp] 404 GET /api/contents/cli/plan.py?content=0&hash=0&1784961903288 (127.0.0.1): No such file or directory: cli/plan.py
+[W 2026-07-25 12:15:03.347 ServerApp] 404 GET /api/contents/runner_notebook.ipynb?content=0&hash=0&1784961903288 (3aaa4501fc444a909fd9b412b714916b@127.0.0.1) 2.82ms referer=http://localhost:8888/lab
+[W 2026-07-25 12:15:03.348 ServerApp] 404 GET /api/contents/runner_notebook.ipynb?content=0&hash=0&1784961903288 (127.0.0.1): No such file or directory: runner_notebook.ipynb
+[W 2026-07-25 12:15:04.999 ServerApp] 404 GET /api/contents/api?1784961904855 (3aaa4501fc444a909fd9b412b714916b@127.0.0.1) 1.58ms referer=http://localhost:8888/lab
+[W 2026-07-25 12:15:04.999 ServerApp] 404 GET /api/contents/api?1784961904855 (127.0.0.1): No such file or directory: api
+[I 2026-07-25 12:16:36.672 ServerApp] Kernel started: 9cefa660-7083-4d46-b8d3-103c892031a7
 [IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
-[I 2026-07-10 19:23:20.451 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-10 19:23:20.453 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[W 2026-07-10 19:23:20.455 ServerApp] The websocket_ping_timeout (90000) cannot be longer than the websocket_ping_interval (30000).
+[I 2026-07-25 12:16:37.287 ServerApp] Adapting from protocol version 5.3 (kernel 9cefa660-7083-4d46-b8d3-103c892031a7) to 5.4 (client).
+[I 2026-07-25 12:16:37.288 ServerApp] Connecting to kernel 9cefa660-7083-4d46-b8d3-103c892031a7.
+[W 2026-07-25 12:16:37.289 ServerApp] The websocket_ping_timeout (90000) cannot be longer than the websocket_ping_interval (30000).
     Setting websocket_ping_timeout=30000
-[I 2026-07-10 19:23:20.621 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-10 19:23:20.622 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-10 19:25:18.517 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 19:27:18.601 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 19:39:19.738 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 19:41:19.821 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 19:47:21.617 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 19:49:21.701 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 19:53:21.787 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 19:55:21.867 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 19:57:22.215 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 19:59:22.505 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 20:00:47.064 ServerApp] Kernel restarted: 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1
-[I 2026-07-10 20:00:47.067 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[I 2026-07-10 20:00:47.073 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-10 20:00:47.073 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-10 20:00:47.073 ServerApp] Restoring connection for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
+[I 2026-07-25 12:16:37.293 ServerApp] Adapting from protocol version 5.3 (kernel 9cefa660-7083-4d46-b8d3-103c892031a7) to 5.4 (client).
+[I 2026-07-25 12:16:37.293 ServerApp] Connecting to kernel 9cefa660-7083-4d46-b8d3-103c892031a7.
+[I 2026-07-25 12:16:37.298 ServerApp] Adapting from protocol version 5.3 (kernel 9cefa660-7083-4d46-b8d3-103c892031a7) to 5.4 (client).
+[I 2026-07-25 12:16:37.299 ServerApp] Connecting to kernel 9cefa660-7083-4d46-b8d3-103c892031a7.
+[I 2026-07-25 12:20:36.122 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:06:05.807 ServerApp] Kernel interrupted: 9cefa660-7083-4d46-b8d3-103c892031a7
+[I 2026-07-25 14:06:40.914 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:08:41.000 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:10:41.085 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:12:41.171 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:14:41.254 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:15:12.470 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:17:12.668 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:17:52.799 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:17:58.826 ServerApp] Kernel restarted: 9cefa660-7083-4d46-b8d3-103c892031a7
+[I 2026-07-25 14:17:58.834 ServerApp] Starting buffering for 9cefa660-7083-4d46-b8d3-103c892031a7:79db56b5-e8a2-4249-a872-880547905505
+[I 2026-07-25 14:17:58.839 ServerApp] Adapting from protocol version 5.3 (kernel 9cefa660-7083-4d46-b8d3-103c892031a7) to 5.4 (client).
+[I 2026-07-25 14:17:58.840 ServerApp] Connecting to kernel 9cefa660-7083-4d46-b8d3-103c892031a7.
+[I 2026-07-25 14:17:58.840 ServerApp] Restoring connection for 9cefa660-7083-4d46-b8d3-103c892031a7:79db56b5-e8a2-4249-a872-880547905505
 [IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
-[I 2026-07-10 20:01:22.579 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 20:05:51.404 ServerApp] Kernel restarted: 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1
-[I 2026-07-10 20:05:51.409 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[I 2026-07-10 20:05:51.413 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-10 20:05:51.414 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-10 20:05:51.414 ServerApp] Restoring connection for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
+[I 2026-07-25 14:19:52.956 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:21:53.041 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:29:05.260 ServerApp] Kernel restarted: 9cefa660-7083-4d46-b8d3-103c892031a7
+[I 2026-07-25 14:29:05.263 ServerApp] Starting buffering for 9cefa660-7083-4d46-b8d3-103c892031a7:79db56b5-e8a2-4249-a872-880547905505
+[I 2026-07-25 14:29:05.267 ServerApp] Adapting from protocol version 5.3 (kernel 9cefa660-7083-4d46-b8d3-103c892031a7) to 5.4 (client).
+[I 2026-07-25 14:29:05.267 ServerApp] Connecting to kernel 9cefa660-7083-4d46-b8d3-103c892031a7.
+[I 2026-07-25 14:29:05.268 ServerApp] Restoring connection for 9cefa660-7083-4d46-b8d3-103c892031a7:79db56b5-e8a2-4249-a872-880547905505
 [IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
-[I 2026-07-10 20:07:23.194 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 20:12:02.802 ServerApp] Kernel restarted: 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1
-[I 2026-07-10 20:12:02.808 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[I 2026-07-10 20:12:02.812 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-10 20:12:02.812 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-10 20:12:02.813 ServerApp] Restoring connection for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
+[I 2026-07-25 14:29:53.460 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:31:53.547 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:43:53.645 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:45:53.760 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:47:53.912 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:54:08.671 ServerApp] Kernel restarted: 9cefa660-7083-4d46-b8d3-103c892031a7
+[I 2026-07-25 14:54:08.675 ServerApp] Starting buffering for 9cefa660-7083-4d46-b8d3-103c892031a7:79db56b5-e8a2-4249-a872-880547905505
+[I 2026-07-25 14:54:08.679 ServerApp] Adapting from protocol version 5.3 (kernel 9cefa660-7083-4d46-b8d3-103c892031a7) to 5.4 (client).
+[I 2026-07-25 14:54:08.679 ServerApp] Connecting to kernel 9cefa660-7083-4d46-b8d3-103c892031a7.
+[I 2026-07-25 14:54:08.679 ServerApp] Restoring connection for 9cefa660-7083-4d46-b8d3-103c892031a7:79db56b5-e8a2-4249-a872-880547905505
 [IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
-[I 2026-07-10 20:13:24.944 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 20:17:50.676 ServerApp] Kernel restarted: 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1
-[I 2026-07-10 20:17:50.680 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[I 2026-07-10 20:17:50.683 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-10 20:17:50.684 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-10 20:17:50.684 ServerApp] Restoring connection for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
+[I 2026-07-25 14:54:14.525 ServerApp] Kernel restarted: 9cefa660-7083-4d46-b8d3-103c892031a7
+[I 2026-07-25 14:54:14.530 ServerApp] Starting buffering for 9cefa660-7083-4d46-b8d3-103c892031a7:79db56b5-e8a2-4249-a872-880547905505
+[I 2026-07-25 14:54:14.535 ServerApp] Adapting from protocol version 5.3 (kernel 9cefa660-7083-4d46-b8d3-103c892031a7) to 5.4 (client).
+[I 2026-07-25 14:54:14.536 ServerApp] Connecting to kernel 9cefa660-7083-4d46-b8d3-103c892031a7.
+[I 2026-07-25 14:54:14.536 ServerApp] Restoring connection for 9cefa660-7083-4d46-b8d3-103c892031a7:79db56b5-e8a2-4249-a872-880547905505
 [IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
-[I 2026-07-10 20:19:25.156 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 20:25:49.719 ServerApp] Kernel restarted: 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1
-[I 2026-07-10 20:25:49.724 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[I 2026-07-10 20:25:49.728 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-10 20:25:49.728 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-10 20:25:49.728 ServerApp] Restoring connection for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
+[I 2026-07-25 14:55:54.144 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 14:57:54.187 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 19:04:44.326 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 19:04:45.501 ServerApp] Kernel restarted: 9cefa660-7083-4d46-b8d3-103c892031a7
+[I 2026-07-25 19:04:45.506 ServerApp] Starting buffering for 9cefa660-7083-4d46-b8d3-103c892031a7:79db56b5-e8a2-4249-a872-880547905505
+[I 2026-07-25 19:04:45.513 ServerApp] Adapting from protocol version 5.3 (kernel 9cefa660-7083-4d46-b8d3-103c892031a7) to 5.4 (client).
+[I 2026-07-25 19:04:45.514 ServerApp] Connecting to kernel 9cefa660-7083-4d46-b8d3-103c892031a7.
+[I 2026-07-25 19:04:45.514 ServerApp] Restoring connection for 9cefa660-7083-4d46-b8d3-103c892031a7:79db56b5-e8a2-4249-a872-880547905505
 [IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
-[I 2026-07-10 20:27:23.391 ServerApp] Kernel restarted: 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1
-[I 2026-07-10 20:27:23.397 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[I 2026-07-10 20:27:23.401 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-10 20:27:23.402 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-10 20:27:23.402 ServerApp] Restoring connection for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
+[I 2026-07-25 19:06:44.505 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 19:08:44.594 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 19:17:22.591 ServerApp] Kernel restarted: 9cefa660-7083-4d46-b8d3-103c892031a7
+[I 2026-07-25 19:17:22.597 ServerApp] Starting buffering for 9cefa660-7083-4d46-b8d3-103c892031a7:79db56b5-e8a2-4249-a872-880547905505
+[I 2026-07-25 19:17:22.600 ServerApp] Adapting from protocol version 5.3 (kernel 9cefa660-7083-4d46-b8d3-103c892031a7) to 5.4 (client).
+[I 2026-07-25 19:17:22.601 ServerApp] Connecting to kernel 9cefa660-7083-4d46-b8d3-103c892031a7.
+[I 2026-07-25 19:17:22.601 ServerApp] Restoring connection for 9cefa660-7083-4d46-b8d3-103c892031a7:79db56b5-e8a2-4249-a872-880547905505
 [IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
-[I 2026-07-10 20:27:26.194 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 20:27:43.178 ServerApp] Kernel restarted: 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1
-[I 2026-07-10 20:27:43.182 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[I 2026-07-10 20:27:43.185 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-10 20:27:43.185 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-10 20:27:43.186 ServerApp] Restoring connection for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
-[I 2026-07-10 20:27:47.574 ServerApp] Kernel restarted: 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1
-[I 2026-07-10 20:27:47.580 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[I 2026-07-10 20:27:47.584 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-10 20:27:47.584 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-10 20:27:47.584 ServerApp] Restoring connection for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
-[I 2026-07-10 20:28:11.329 ServerApp] Saving file at /src/agentic_tour_planner/config/general.yml
-[I 2026-07-10 20:28:23.725 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 20:29:14.514 ServerApp] Saving file at /src/agentic_tour_planner/config/general.yml
-[I 2026-07-10 20:29:14.679 ServerApp] Saving file at /src/agentic_tour_planner/config/general.yml
-[I 2026-07-10 20:29:19.879 ServerApp] Kernel restarted: 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1
-[I 2026-07-10 20:29:19.883 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[I 2026-07-10 20:29:19.887 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-10 20:29:19.887 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-10 20:29:19.887 ServerApp] Restoring connection for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
-[I 2026-07-10 20:29:21.832 ServerApp] Kernel restarted: 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1
-[I 2026-07-10 20:29:21.838 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[I 2026-07-10 20:29:21.842 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-10 20:29:21.842 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-10 20:29:21.842 ServerApp] Restoring connection for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
-[I 2026-07-10 20:30:05.214 ServerApp] Saving file at /src/agentic_tour_planner/config/general.yml
-[I 2026-07-10 20:30:05.366 ServerApp] Saving file at /src/agentic_tour_planner/config/general.yml
-[I 2026-07-10 20:30:05.522 ServerApp] Saving file at /src/agentic_tour_planner/config/general.yml
-[I 2026-07-10 20:30:05.685 ServerApp] Saving file at /src/agentic_tour_planner/config/general.yml
-[I 2026-07-10 20:30:05.831 ServerApp] Saving file at /src/agentic_tour_planner/config/general.yml
-[I 2026-07-10 20:30:05.995 ServerApp] Saving file at /src/agentic_tour_planner/config/general.yml
-[I 2026-07-10 20:30:10.009 ServerApp] Kernel restarted: 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1
-[I 2026-07-10 20:30:10.011 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[I 2026-07-10 20:30:10.016 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-10 20:30:10.018 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-10 20:30:10.018 ServerApp] Restoring connection for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
-[I 2026-07-10 20:30:23.819 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 20:33:53.865 ServerApp] Saving file at /src/agentic_tour_planner/config/general.yml
-[I 2026-07-10 20:33:57.927 ServerApp] Kernel restarted: 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1
-[I 2026-07-10 20:33:57.932 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[I 2026-07-10 20:33:57.936 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-10 20:33:57.937 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-10 20:33:57.937 ServerApp] Restoring connection for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
-[I 2026-07-10 20:34:14.961 ServerApp] Saving file at /src/agentic_tour_planner/config/general.yml
-[I 2026-07-10 20:34:24.590 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 20:34:27.374 ServerApp] Kernel restarted: 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1
-[I 2026-07-10 20:34:27.381 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[I 2026-07-10 20:34:27.385 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-10 20:34:27.386 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-10 20:34:27.386 ServerApp] Restoring connection for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[IPKernelApp] WARNING | Kernel is running over TCP without encryption. All communication (including code and outputs) is sent in plain text and is susceptible to eavesdropping. Use IPC transport or launch with kernel manager-provisioned CurveZMQ keys to enable transport encryption.
-[I 2026-07-10 20:36:24.661 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-10 21:14:07.335 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:31642a1a-60e5-4085-aebc-be960815f6d8
-[I 2026-07-11 13:40:13.835 LabApp] 302 GET /lab/tree/notebooks/01_full_pipeline.ipynb (@127.0.0.1) 6.50ms
-[I 2026-07-11 13:41:04.092 ServerApp] User bd111f64a2014c6185ed0e3fa5eea5ff logged in.
-[I 2026-07-11 13:41:04.094 ServerApp] 302 POST /login?next=%2Flab%2Ftree%2Fnotebooks%2F01_full_pipeline.ipynb (bd111f64a2014c6185ed0e3fa5eea5ff@127.0.0.1) 2.82ms
-[I 2026-07-11 13:41:04.871 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-11 13:41:04.872 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-11 13:41:04.954 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:e6e7159c-029b-4921-a770-5ba599bb6353
-[I 2026-07-11 13:41:05.427 LabApp] Build is up to date
-[I 2026-07-11 13:41:06.309 ServerApp] Adapting from protocol version 5.3 (kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1) to 5.4 (client).
-[I 2026-07-11 13:41:06.320 ServerApp] Connecting to kernel 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1.
-[I 2026-07-11 16:51:20.463 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-11 16:53:20.593 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-11 16:55:20.706 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-11 16:57:20.788 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-11 16:59:21.388 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-11 17:15:22.958 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-11 17:17:23.055 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-11 17:19:23.150 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-11 17:25:23.239 ServerApp] Saving file at /notebooks/01_full_pipeline.ipynb
-[I 2026-07-12 00:41:10.566 ServerApp] Starting buffering for 1e9dd2bd-0f5f-41e7-9e4a-46b5238e86d1:aeb35133-cf90-49a8-a066-897286e0a794
+[I 2026-07-25 19:18:45.081 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
+[I 2026-07-25 19:20:45.175 ServerApp] Saving file at /src/agentic_tour_planner/runner_notebook.ipynb
