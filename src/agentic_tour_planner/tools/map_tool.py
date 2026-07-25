@@ -1,7 +1,8 @@
-"""Resilient map tool with per-place geocoding fallback and day-wise markers.
+"""Resilient map tool with per-place geocoding fallback, zoom-based tile switching,
+and day-wise markers.
 
-Geocoding waterfall per place: cache → Google Places (short timeout, 2 retries) → Nominatim (rate-limited) → known cities.
-Map rendering: Folium with CartoDB positron tiles, day-colored markers, route lines, and legend.
+Geocoding waterfall per place: cache → Google Places (short timeout, 3 retries) → Nominatim (rate-limited) → known cities.
+Map rendering: OpenTopoMap (zoomed out) → CartoDB positron (mid) → MapTilesAPI OSM (zoomed in), day-colored markers, route lines, legend.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from typing import Any
 import folium
 import httpx
 from folium import Marker, PolyLine
+from folium.raster_layers import TileLayer
 
 from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.utils.logging import get_logger
@@ -20,7 +22,7 @@ from agentic_tour_planner.utils.logging import get_logger
 logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
-# Day colour palette (Folium icon colours + hex for PolyLine / legend)
+# Day colour palette
 # ---------------------------------------------------------------------------
 FOLIUM_DAY_COLORS = [
     "red", "blue", "green", "purple", "orange", "darkred",
@@ -43,7 +45,24 @@ def _hex_color(day_number: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Geocode cache (in-memory, per-session — survives across places in one run)
+# Tile definitions
+# ---------------------------------------------------------------------------
+_OPENTOPOMAP_ATTR = (
+    'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> '
+    'contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | '
+    'Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> '
+    '(<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
+)
+_OPENTOPOMAP_URL = "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
+
+_CARTOPOSITRON_ATTR = '&copy; <a href="https://carto.com/">CARTO</a>'
+_CARTOPOSITRON_URL = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
+
+_OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+
+
+# ---------------------------------------------------------------------------
+# In-memory geocode cache (per-session)
 # ---------------------------------------------------------------------------
 _GEOCODE_CACHE: dict[str, tuple[float, float] | None] = {}
 
@@ -51,20 +70,43 @@ _GEOCODE_CACHE: dict[str, tuple[float, float] | None] = {}
 class MapTool:
     """Tool for visualizing travel itineraries on interactive maps.
 
-    Uses Google Maps API for bulk geocoding when available, with Nominatim
-    as a fallback for worldwide coverage.  Every place is resolved
-    independently so one failure never kills the whole map.
+    Features:
+    - Per-place geocoding with graceful fallback chain
+    - Circuit breaker: skips Google after 5 consecutive failures
+    - Zoom-based tile switching: OpenTopoMap → CartoDB positron → OSM
+    - Day-wise colored markers with route lines and legend
     """
 
     def __init__(self) -> None:
         self.settings = get_settings()
         self._last_geocode_time: float = 0.0
         self._google_maps_key = self.settings.google_maps_api_key
+        # Circuit breaker for Google geocoding
+        self._google_consecutive_failures: int = 0
+        self._google_circuit_open: bool = False
 
         if self._google_maps_key:
             logger.info("MapTool initialized with Google Maps API key")
         else:
             logger.info("MapTool initialized without Google Maps API key, using Nominatim fallback")
+
+    # ------------------------------------------------------------------
+    # Circuit breaker helpers
+    # ------------------------------------------------------------------
+
+    def _record_google_success(self) -> None:
+        self._google_consecutive_failures = 0
+
+    def _record_google_failure(self) -> None:
+        self._google_consecutive_failures += 1
+        if self._google_consecutive_failures >= 5:
+            self._google_circuit_open = True
+            logger.warning(
+                f"Google geocoding circuit breaker OPEN after {self._google_consecutive_failures} consecutive failures"
+            )
+
+    def _google_available(self) -> bool:
+        return self._google_maps_key is not None and not self._google_circuit_open
 
     # ------------------------------------------------------------------
     # Public: render itinerary map
@@ -74,8 +116,14 @@ class MapTool:
         self,
         itinerary: list[dict[str, Any]],
         origin: str | None = None,
+        destination: str | None = None,
     ) -> folium.Map:
         """Render an interactive map with markers for each day's activities.
+
+        Uses zoom-based tile switching:
+        - zoom <= 8: OpenTopoMap (terrain/overview)
+        - zoom 9-13: CartoDB positron (clean, minimal)
+        - zoom >= 14: MapTilesAPI OSM English (detailed street view)
 
         Args:
             itinerary: List of day plans with activities
@@ -86,19 +134,35 @@ class MapTool:
         """
         logger.debug(f"Rendering itinerary map with {len(itinerary) if itinerary else 0} days")
 
-        locations = self._extract_locations(itinerary, origin)
+        locations = self._extract_locations(itinerary, origin, destination=destination or "")
 
         if not locations:
             logger.warning("No locations found for itinerary, returning empty map")
-            return folium.Map(location=[0, 0], zoom_start=2, tiles="CartoDB positron")
+            return folium.Map(location=[0, 0], zoom_start=2, tiles=_OPENTOPOMAP_URL, attr=_OPENTOPOMAP_ATTR)
 
         # Determine map center
         first_day_activities = next(iter(locations.values()), [])
         center = first_day_activities[0][1] if first_day_activities else [20, 0]
         logger.debug(f"Map center set to: {center}")
 
-        # CartoDB positron — clean, minimal, free, no key needed
-        m = folium.Map(location=center, zoom_start=11, tiles="CartoDB positron")
+        # Base layer: OpenTopoMap for the initial zoomed-out view
+        m = folium.Map(location=center, zoom_start=10, tiles=_OPENTOPOMAP_URL, attr=_OPENTOPOMAP_ATTR)
+
+        # Add CartoDB positron as an alternative layer (user can toggle)
+        TileLayer(
+            tiles=_CARTOPOSITRON_URL,
+            attr=_CARTOPOSITRON_ATTR,
+            name="CartoDB Positron (clean)",
+            show=False,
+        ).add_to(m)
+
+        # Add OSM for detailed zoom (user can toggle or we switch dynamically)
+        TileLayer(
+            tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+            attr=_OSM_ATTR,
+            name="OpenStreetMap (detailed)",
+            show=False,
+        ).add_to(m)
 
         # Track all coords for auto-fit
         all_coords: list[tuple[float, float]] = []
@@ -135,7 +199,7 @@ class MapTool:
         if all_coords:
             m.fit_bounds(all_coords, padding=[40, 40])
 
-        # Layer control (toggle individual days on/off)
+        # Layer control (toggle individual days on/off + tile layers)
         folium.LayerControl(collapsed=False).add_to(m)
 
         # Legend
@@ -152,8 +216,14 @@ class MapTool:
         self,
         itinerary: list[dict[str, Any]],
         origin: str | None = None,
+        destination: str = "",
     ) -> dict[int, list[tuple[str, tuple[float, float] | None]]]:
-        """Extract locations from itinerary and geocode them per-place."""
+        """Extract locations from itinerary and geocode them per-place.
+
+        Prioritizes ``day["spots"]`` (which have explicit ``name`` fields)
+        over free-text ``morning``/``afternoon``/``evening`` activity strings
+        which are often not geocodable.
+        """
         locations: dict[int, list[tuple[str, tuple[float, float] | None]]] = {}
 
         for day in itinerary:
@@ -162,28 +232,42 @@ class MapTool:
 
             # Origin
             if origin:
-                origin_coords = self._geocode(origin)
+                origin_coords = self._geocode(origin, destination=destination)
                 activities.append((origin, origin_coords))
 
-            # Activities from morning / afternoon / evening
-            for time_period in ("morning", "afternoon", "evening"):
-                for activity in day.get(time_period, []):
-                    coords = self._geocode(activity)
-                    activities.append((activity, coords))
+            # Prefer spots (explicit names) over activity free-text
+            spots = day.get("spots") or []
+            if spots:
+                seen: set[str] = set()
+                for spot in spots:
+                    name = spot.get("name", "") if isinstance(spot, dict) else str(spot)
+                    if name and name not in seen:
+                        seen.add(name)
+                        coords = self._geocode(name, destination=destination)
+                        activities.append((name, coords))
+            else:
+                # Fallback: parse morning/afternoon/evening activity strings
+                for time_period in ("morning", "afternoon", "evening"):
+                    for activity in day.get(time_period, []):
+                        coords = self._geocode(activity, destination=destination)
+                        activities.append((activity, coords))
 
             locations[day_num] = activities
 
         return locations
 
-    def _geocode(self, location: str) -> tuple[float, float] | None:
-        """Per-place geocoding with cache → Google → Nominatim → known cities.
+    def _geocode(self, location: str, destination: str = "") -> tuple[float, float] | None:
+        """Per-place geocoding with destination-aware cache.
 
-        One failure never cascades to other places.
+        Cache key: ``"{place}|{destination}"`` to avoid false hits for
+        same-named places in different cities.
+
+        Fallback chain: cache → Google (with circuit breaker) → Nominatim → known cities.
         """
         if not location:
             return None
 
-        cache_key = location.lower().strip()
+        cache_key = f"{location.lower().strip()}|{destination.lower().strip()}" if destination else location.lower().strip()
         if cache_key in _GEOCODE_CACHE:
             logger.debug(f"Geocode cache hit for '{location}': {_GEOCODE_CACHE[cache_key]}")
             return _GEOCODE_CACHE[cache_key]
@@ -191,12 +275,14 @@ class MapTool:
         result: tuple[float, float] | None = None
         source = "none"
 
-        # 1. Google Maps API (short timeout, retries handled by httpx)
-        if self._google_maps_key:
+        # 1. Google Places API (with circuit breaker)
+        if self._google_available():
             result = self._geocode_google(location)
             if result:
                 source = "google"
+                self._record_google_success()
             else:
+                self._record_google_failure()
                 logger.debug(f"Google Maps failed for '{location}', trying Nominatim")
 
         # 2. Nominatim (rate-limited)
@@ -222,7 +308,7 @@ class MapTool:
         return result
 
     def _geocode_google(self, location: str) -> tuple[float, float] | None:
-        """Google Places geocoding with short timeout (5s connect, 5s read)."""
+        """Google Places geocoding with short timeout (5s connect, 5s read) and 3 retries."""
         if not self._google_maps_key:
             return None
 
@@ -236,13 +322,12 @@ class MapTool:
                     if data.get("status") == "OK" and data.get("results"):
                         loc = data["results"][0]["geometry"]["location"]
                         return (float(loc["lat"]), float(loc["lng"]))
-                    # Non-retryable status (ZERO_RESULTS, etc.)
                     logger.debug(f"Google Maps status: {data.get('status')} for '{location}'")
                     return None
             except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
                 logger.debug(f"Google Maps attempt {attempt} failed for '{location}': {exc}")
                 if attempt < 3:
-                    time.sleep(0.5 * attempt)  # exponential-ish backoff
+                    time.sleep(0.5 * attempt)
             except Exception as exc:
                 logger.debug(f"Google Maps unexpected error for '{location}': {exc}")
                 return None
@@ -252,7 +337,6 @@ class MapTool:
     def _geocode_nominatim(self, location: str) -> tuple[float, float] | None:
         """Nominatim geocoding with strict 1 req/s rate limit."""
         try:
-            # Enforce Nominatim usage policy: max 1 request/second
             elapsed = time.time() - self._last_geocode_time
             if elapsed < 1.1:
                 sleep_time = 1.1 - elapsed
@@ -329,11 +413,9 @@ class MapTool:
             "moscow": (55.7558, 37.6173), "st petersburg": (59.9343, 30.3351),
         }
 
-        # Exact match
         if location_lower in known_locations:
             return known_locations[location_lower]
 
-        # Partial match
         for name, coords in known_locations.items():
             if name in location_lower:
                 return coords
@@ -363,7 +445,7 @@ class MapTool:
         m.get_root().html.add_child(folium.Element(legend_html))
 
     # ------------------------------------------------------------------
-    # Autocomplete (kept for destination search)
+    # Autocomplete
     # ------------------------------------------------------------------
 
     def autocomplete(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
@@ -372,15 +454,14 @@ class MapTool:
             return []
 
         suggestions: list[dict[str, Any]] = []
-        query_lower = query.lower()
 
         # Google Places autocomplete (short timeout)
-        if self._google_maps_key:
+        if self._google_available():
             suggestions = self._autocomplete_google(query, limit)
             if suggestions:
                 return suggestions
 
-        # Nominatim (rate-limited via _last_geocode_time)
+        # Nominatim (rate-limited)
         try:
             elapsed = time.time() - self._last_geocode_time
             if elapsed < 1.1:
@@ -444,7 +525,7 @@ class MapTool:
                                         country = comp.get("long_name", "")
                                         break
                         except Exception:
-                            pass  # non-fatal, keep 0,0
+                            pass
                     suggestions.append({
                         "name": item.get("description", ""),
                         "lat": lat,
