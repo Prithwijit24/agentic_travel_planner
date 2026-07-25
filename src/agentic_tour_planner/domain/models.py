@@ -375,6 +375,13 @@ class PlaceImage(BaseModel):
     image_query: str
     image_url: str | None = None
     source: str | None = None
+    # New fields for image pipeline
+    license: str | None = None
+    attribution: str | None = None
+    clip_score: float | None = None
+    verified: bool = False
+    width: int | None = None
+    height: int | None = None
 
 
 class ImageResponse(BaseModel):
