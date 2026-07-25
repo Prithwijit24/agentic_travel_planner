@@ -51,6 +51,12 @@ dependencies = [
   "google-genai>=2.0.0",
   "litellm>=1.93.0",
   "sse-starlette>=3.4.6",
+  "marisa-trie>=0.8.0",    "rapidfuzz>=3.0.0",
+    "torch>=2.0",
+    "transformers>=4.30",
+    "Pillow>=10.0",
+    "imagehash>=4.3",
+    "smartcrop>=0.5.0",
 ]
 
 [project.scripts]
