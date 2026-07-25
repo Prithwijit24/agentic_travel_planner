@@ -135,6 +135,17 @@ def get_settings() -> Settings:
         merged.setdefault(key, None)
     merged.setdefault("image_provider", "unsplash")
 
+    # ── Image pipeline defaults ─────────────────────────────────────
+    merged.setdefault("image_clip_threshold", 0.22)
+    merged.setdefault("image_min_resolution", 800)
+    merged.setdefault("image_max_aspect_ratio", 2.5)
+    merged.setdefault("image_cache_ttl_seconds", 2592000)  # 30 days
+    merged.setdefault("image_dedup_threshold", 5)
+    merged.setdefault("image_nsfw_threshold", 0.5)
+    merged.setdefault("image_smart_crop_enabled", True)
+    merged.setdefault("image_mapillary_token", None)
+    merged.setdefault("image_openverse_enabled", True)
+
     applied_overrides = [
         key
         for key in env_data
