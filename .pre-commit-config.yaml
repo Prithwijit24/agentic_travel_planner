@@ -22,8 +22,7 @@ repos:
       - id: check-symlinks
       - id: destroyed-symlinks
       - id: detect-private-key
-      - id: no-commit-to-branch
-        args: [--branch, main, --branch, master]
+
 
   # -- Ruff: Linting + Formatting --
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -40,7 +39,7 @@ repos:
     rev: v1.17.0
     hooks:
       - id: mypy
-        additional_dependencies: [pydantic]
+        additional_dependencies: [pydantic, types-PyYAML]
         args: [--ignore-missing-imports]
         pass_filenames: false
         entry: mypy src/

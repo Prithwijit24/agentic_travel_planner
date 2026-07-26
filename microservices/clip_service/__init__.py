@@ -1,0 +1,1 @@
+"""CLIP Image Scoring Microservice."""
