@@ -54,6 +54,8 @@ data/knowledge/raw/*
 !data/knowledge/raw/.gitkeep
 data/knowledge/processed/*
 !data/knowledge/processed/.gitkeep
+**/data/**
+!**/data/.gitkeep
 
 # OS / editor files
 .DS_Store
