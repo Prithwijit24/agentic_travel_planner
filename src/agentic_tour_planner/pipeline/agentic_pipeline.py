@@ -13,9 +13,12 @@ from agentic_tour_planner.domain.models import (
     DetailedPlan,
     LiveWebBrief,
     LogEvent,
+    PlaceHours,
     PlanningRequest,
     PlanningResponse,
     RetrievedContext,
+    SearchResult,
+    SourceDocument,
     TransportOption,
 )
 from agentic_tour_planner.llm.provider import LLMProvider
@@ -25,14 +28,10 @@ from agentic_tour_planner.pipeline.prompts import (
     build_detailed_places_prompt,
     build_itinerary_prompt,
 )
-from agentic_tour_planner.retrieval.hybrid_retriever import HybridRetriever
-from agentic_tour_planner.retrieval.reranker import rerank_documents
 from agentic_tour_planner.services.cost_estimator import CostEstimator
-from agentic_tour_planner.services.live_web_collector import LiveWebCollector
 from agentic_tour_planner.services.planning_workers import PlanningInsightsBuilder
-from agentic_tour_planner.tools.place_intel import lookup_opening_hours
+from agentic_tour_planner.tools.ai_stack_client import AiStackClient
 from agentic_tour_planner.tools.weather import WeatherTool
-from agentic_tour_planner.tools.web_search import WebSearchTool
 from agentic_tour_planner.utils.logging import get_logger
 from agentic_tour_planner.utils.profiler import StageTimer
 
@@ -43,12 +42,10 @@ class AgenticTourPlannerPipeline:
     def __init__(self, provider=None) -> None:
         self.settings = get_settings()
         self.llm_provider = LLMProvider()
-        self.retriever = HybridRetriever()
-        self.search_tool = WebSearchTool()
+        self.ai_stack = AiStackClient()
         self.weather_tool = WeatherTool()
         self.insights_builder = PlanningInsightsBuilder()
         self.cost_estimator = CostEstimator()
-        self.live_collector = LiveWebCollector(self.llm_provider)
         self.profiler = StageTimer()
         self._context_summary: dict | None = None
         self._context: RetrievedContext | None = None
@@ -66,27 +63,47 @@ class AgenticTourPlannerPipeline:
         return self._context
 
     async def gather_context(self, request: PlanningRequest) -> RetrievedContext:
+        """Gather context using AI Infra Stack pipeline."""
         logger.debug(
             f"Gathering context for destination={request.destination!r} "
             f"interests={request.interests} include_live_data={request.include_live_data}"
         )
         query = " ".join([request.destination, *request.interests, request.notes or ""]).strip()
-        docs = self.retriever.retrieve(query=query, top_k=self.settings.retrieval_top_k)
-        docs = rerank_documents(query, docs, top_k=self.settings.rerank_top_k)
-        # Live web search (DDGS suggest_places) is replaced by the on-the-fly
-        # LiveWebCollector (blogs/videos crawl + translate) run in `run()`. The
-        # knowledge base (docs) remains the supplementary retrieval source here.
-        search_results: list = []
-        place_hours: list = []
+
+        # Use AI Infra Stack pipeline for search + crawl + rerank
+        docs: list[SourceDocument] = []
+        search_results: list[SearchResult] = []
+        try:
+            stack_result = await self.ai_stack.pipeline(
+                query=query,
+                top_k=self.settings.retrieval_top_k or 5,
+                crawl_limit=10,
+                max_search_results=15,
+            )
+            # Convert stack results to SourceDocument objects
+            for item in stack_result.get("results", []):
+                content = item.get("markdown", item.get("content", ""))
+                if content:
+                    docs.append(SourceDocument(
+                        source_id=item.get("url", ""),
+                        source_type="web",
+                        title=item.get("title", ""),
+                        content=content,
+                        url=item.get("url", ""),
+                        metadata={"score": item.get("score", 0.0)},
+                    ))
+        except Exception as e:
+            logger.warning(f"AI Infra Stack pipeline failed, using empty results: {e}")
+
+        # Get weather if requested
         weather = await self.weather_tool.current_weather(request.destination) if request.include_live_data else None
+
         logger.debug(f"Retrieved {len(docs)} documents; weather={'present' if weather else 'none'}")
         self._context_summary = {
             "documents_count": len(docs),
-            "search_results_count": len(search_results),
-            "place_hours_count": len(place_hours),
             "weather": weather.summary if weather else None,
         }
-        ctx = RetrievedContext(documents=docs, search_results=search_results, place_hours=place_hours, weather=weather)
+        ctx = RetrievedContext(documents=docs, search_results=search_results, place_hours=[], weather=weather)
         self._context = ctx
         return ctx
 
@@ -103,49 +120,25 @@ class AgenticTourPlannerPipeline:
             f"days={request.trip_length_days} provider={request.provider or 'default'}"
         )
 
-        # ── Phase 1: Independent tasks ──────────────────────────────────
-        # Gather Context and Live Web Collection share no data — run concurrently.
-
-        async def _gather_with_events() -> RetrievedContext:
-            if context is not None:
-                return context
-            async with self.profiler.atrack("Gather Context"):
-                if emitter:
-                    emitter.emit(LogEvent(event="step", step="Gather Context", message="Gathering context..."))
-                ctx = await self.gather_context(request)
-                if emitter:
-                    emitter.emit(
-                        LogEvent(
-                            event="debug",
-                            step="Gather Context",
-                            message="Context gathered",
-                            detail={
-                                "documents_count": len(ctx.documents),
-                                "search_results_count": len(ctx.search_results),
-                                "place_hours_count": len(ctx.place_hours),
-                            },
-                        )
+        # ── Phase 1: Gather Context ──────────────────────────────────────
+        async with self.profiler.atrack("Gather Context"):
+            if emitter:
+                emitter.emit(LogEvent(event="step", step="Gather Context", message="Gathering context..."))
+            if context is None:
+                context = await self.gather_context(request)
+            else:
+                logger.debug("Reusing supplied context.")
+            if emitter:
+                emitter.emit(
+                    LogEvent(
+                        event="debug",
+                        step="Gather Context",
+                        message="Context gathered",
+                        detail={
+                            "documents_count": len(context.documents),
+                        },
                     )
-            return ctx
-
-        context_task = asyncio.create_task(_gather_with_events())
-
-        live_task: asyncio.Task | None = None
-        if request.include_live_data:
-
-            async def _live_collect() -> LiveWebBrief | None:
-                async with self.profiler.atrack("Live Web Collection"):
-                    logger.info("Collecting live web intelligence.")
-                    return await self.live_collector.collect(request, provider_override=request.provider)
-
-            live_task = asyncio.create_task(_live_collect())
-
-        # Wait for context (needed for insights)
-        if context is None:
-            context = await context_task
-        else:
-            logger.debug("Reusing supplied context.")
-            await context_task  # still wait if it was created
+                )
 
         # ── Phase 2: Build insights (needs context) ─────────────────────
         async with self.profiler.atrack("Build Insights"):
@@ -170,20 +163,9 @@ class AgenticTourPlannerPipeline:
             else:
                 logger.debug("Reusing supplied insights.")
 
-        # ── Phase 3: Wait for live data (ran in parallel with Phase 1+2) ──
-        live_brief: LiveWebBrief | None = None
-        if live_task:
-            live_brief = await live_task
-            if live_brief and live_brief.sources:
-                async with self.profiler.atrack("Place Hours Lookup"):
-                    ph = []
-                    for src in live_brief.sources[:3]:
-                        ph.append(await lookup_opening_hours(src.title, request.destination))
-                    context.place_hours = ph
-
-        # ── Phase 4: Build prompt + generate plan ───────────────────────
+        # ── Phase 3: Build prompt + generate plan ───────────────────────
         async with self.profiler.atrack("Build Prompt"):
-            prompt = build_itinerary_prompt(request, context, insights, live_web_brief=live_brief)
+            prompt = build_itinerary_prompt(request, context, insights)
             logger.debug(f"Built planning prompt (length={len(prompt)} chars).")
 
         async with self.profiler.atrack("Generate Plan"):
@@ -198,10 +180,7 @@ class AgenticTourPlannerPipeline:
                 logger.error(f"Planner failed, using fallback: {e}")
                 plan_json = self._fallback_plan(request)
 
-        # ── Phase 5: Parallel post-processing ───────────────────────────
-        # Cost Estimate is expensive (~115s or ~10s with agnes); run it
-        # concurrent with cheap parse/transform steps.
-
+        # ── Phase 4: Parallel post-processing ───────────────────────────
         planner_provider, planner_model = self.llm_provider.last_planner_used()
         worker_meta = self.insights_builder.last_worker_used
         worker_used = {v for v in worker_meta.values() if v}
@@ -243,9 +222,9 @@ class AgenticTourPlannerPipeline:
             ]
             if not citations:
                 citations = [
-                    Citation(title=document.title, url=document.url or "https://example.local")
+                    Citation(title=document.get("title", ""), url=document.get("url", "https://example.local"))
                     for document in context.documents[:5]
-                    if document.url
+                    if document.get("url")
                 ]
             logger.debug(f"Resolved {len(citations)} citations.")
 
@@ -312,7 +291,7 @@ class AgenticTourPlannerPipeline:
             monthly_weather=plan_json.get("monthly_weather"),
             transport_options=transport_options,
             cost_estimate=cost_estimate,
-            live_web_brief=live_brief,
+            live_web_brief=None,
             worker_provider_used=worker_provider,
             worker_model_used=worker_model,
         )
@@ -324,12 +303,7 @@ class AgenticTourPlannerPipeline:
         context: RetrievedContext | None = None,
         insights: Any | None = None,
     ) -> DetailedPlan | None:
-        """Generate the detailed, place-by-place itinerary as structured data.
-
-        Reuses the standard plan's chosen core places, pre-fetches their REAL
-        opening hours via the Google Places tool, then asks the LLM to emit the
-        fixed ``output_format.md`` JSON contract.
-        """
+        """Generate the detailed, place-by-place itinerary as structured data."""
         logger.info(f"Building detailed places itinerary for {request.destination!r}")
         async with self.profiler.atrack("Detailed Places: Gather"):
             names: list[str] = []
@@ -341,22 +315,31 @@ class AgenticTourPlannerPipeline:
                         seen.add(n)
                         names.append(n)
 
-        async with self.profiler.atrack("Detailed Places: Opening Hours"):
-            place_hours_map: dict[str, dict] = {}
+        async with self.profiler.atrack("Detailed Places: Search"):
+            place_hours_map: dict[str, PlaceHours] = {}
             if names:
-                logger.info(f"Fetching real opening hours for {len(names)} places via Google Places")
-                results = await asyncio.gather(*[lookup_opening_hours(n, request.destination) for n in names])
-                for n, ph in zip(names, results, strict=False):
-                    if ph is None:
-                        place_hours_map[n] = {"status": "unavailable", "opening_hours": []}
-                    elif isinstance(ph, dict):
-                        place_hours_map[n] = ph
-                    else:
-                        place_hours_map[n] = {
-                            "status": getattr(ph, "status", None),
-                            "opening_hours": list(getattr(ph, "opening_hours", None) or []),
-                        }
-                logger.debug(f"Fetched opening hours for {len(place_hours_map)} places.")
+                logger.info(f"Fetching info for {len(names)} places via AI Infra Stack")
+                for name in names[:5]:  # Limit to avoid rate limits
+                    try:
+                        result = await self.ai_stack.search(
+                            query=f"{name} {request.destination} opening hours",
+                            max_results=3,
+                        )
+                        if result and result.get("results"):
+                            info = result["results"][0]
+                            place_hours_map[name] = PlaceHours(
+                                venue=name,
+                                status="found",
+                                opening_hours=[info.get("snippet", "")],
+                                source=info.get("url", ""),
+                            )
+                    except Exception as e:
+                        logger.warning(f"Failed to search for {name}: {e}")
+                        place_hours_map[name] = PlaceHours(
+                            venue=name,
+                            status="unavailable",
+                        )
+                logger.debug(f"Fetched info for {len(place_hours_map)} places.")
 
         async with self.profiler.atrack("Detailed Places: LLM Generation"):
             live_brief = getattr(base_response, "live_web_brief", None)
