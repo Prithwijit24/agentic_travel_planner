@@ -53,6 +53,7 @@ async def test_resolve_images_returns_no_image_when_all_sources_fail():
     """Pipeline should return no image when all sources fail."""
     with (
         patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.fetch_ddgs_images", new_callable=AsyncMock, return_value=[]),
         patch("agentic_tour_planner.images.pipeline.fetch_wikidata", new_callable=AsyncMock, return_value=[]),
         patch("agentic_tour_planner.images.pipeline.fetch_wikimedia_commons", new_callable=AsyncMock, return_value=[]),
         patch("agentic_tour_planner.images.pipeline.fetch_wikipedia", new_callable=AsyncMock, return_value=[]),
