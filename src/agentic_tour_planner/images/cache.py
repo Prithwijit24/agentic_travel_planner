@@ -40,7 +40,7 @@ async def get_cached_image(place_id: str) -> ImageResult | None:
     try:
         stack = _get_ai_stack()
         data = await stack.cache_get(_cache_key(place_id))
-        value = data.get("value")
+        value = data if not isinstance(data, dict) or "value" not in data else data.get("value")
         if value is None:
             return None
 
@@ -98,7 +98,7 @@ async def get_dedup_hashes(place_id: str) -> list[str]:
     try:
         stack = _get_ai_stack()
         data = await stack.cache_get(_hash_key(place_id))
-        value = data.get("value")
+        value = data if not isinstance(data, dict) or "value" not in data else data.get("value")
         if value is None:
             return []
         return value if isinstance(value, list) else []

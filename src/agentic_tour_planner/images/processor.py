@@ -26,14 +26,16 @@ def _get_ai_stack() -> AiStackClient:
     return _ai_stack
 
 
-async def _clip_score(image_url: str, place_name: str, place_type: str = "") -> float:
-    """Compute CLIP relevance score via AI Infra Stack."""
+async def _clip_score(image_bytes: bytes, place_name: str, place_type: str = "") -> float:
+    """Compute CLIP relevance score via AI Infra Stack using base64 image."""
+    import base64
     settings = get_settings()
     threshold = getattr(settings, "image_clip_threshold", 0.20)
     try:
         stack = _get_ai_stack()
         query = f"{place_name} {place_type}".strip()
-        result = await stack.clip_similarity(text=query, image_urls=[image_url])
+        b64 = base64.b64encode(image_bytes).decode()
+        result = await stack.clip_similarity(text=query, images_base64=[b64])
         scores = result.get("scores", [])
         if scores:
             score = float(scores[0])
@@ -99,7 +101,7 @@ async def process_image(
         return None
 
     # Stage 4: CLIP score via AI Infra Stack
-    score = await _clip_score(candidate.url, place_name, place_type)
+    score = await _clip_score(image_bytes, place_name, place_type)
 
     # Stage 5: NSFW check (skip for now — stack doesn't have NSFW endpoint)
     # TODO: Add NSFW check when stack supports it
