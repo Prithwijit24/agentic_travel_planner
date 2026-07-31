@@ -7,20 +7,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from agentic_tour_planner.config.settings import get_settings
+from agentic_tour_planner.images import get_ai_stack
 from agentic_tour_planner.images.models import ImageResult
-from agentic_tour_planner.tools.ai_stack_client import AiStackClient
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-_ai_stack: AiStackClient | None = None
-
-
-def _get_ai_stack() -> AiStackClient:
-    global _ai_stack
-    if _ai_stack is None:
-        _ai_stack = AiStackClient()
-    return _ai_stack
 
 
 def _cache_key(place_id: str) -> str:
@@ -38,7 +29,7 @@ async def get_cached_image(place_id: str) -> ImageResult | None:
         return None
 
     try:
-        stack = _get_ai_stack()
+        stack = get_ai_stack()
         data = await stack.cache_get(_cache_key(place_id))
         value = data if not isinstance(data, dict) or "value" not in data else data.get("value")
         if value is None:
@@ -67,7 +58,7 @@ async def set_cached_image(place_id: str, result: ImageResult) -> None:
         return
 
     try:
-        stack = _get_ai_stack()
+        stack = get_ai_stack()
         data = {
             "place_name": result.place_name,
             "image_url": result.image_url,
@@ -96,7 +87,7 @@ async def get_dedup_hashes(place_id: str) -> list[str]:
         return []
 
     try:
-        stack = _get_ai_stack()
+        stack = get_ai_stack()
         data = await stack.cache_get(_hash_key(place_id))
         value = data if not isinstance(data, dict) or "value" not in data else data.get("value")
         if value is None:
@@ -114,7 +105,7 @@ async def add_dedup_hash(place_id: str, phash: str) -> None:
         return
 
     try:
-        stack = _get_ai_stack()
+        stack = get_ai_stack()
         existing = await get_dedup_hashes(place_id)
         if phash not in existing:
             existing.append(phash)

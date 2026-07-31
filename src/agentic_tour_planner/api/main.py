@@ -68,7 +68,16 @@ app.add_middleware(
 @app.get("/health")
 async def health() -> dict:
     logger.debug("Health check requested")
-    return {"status": "ok", "env": settings.app_env}
+    result = {"status": "ok", "env": settings.app_env, "stack": "unknown"}
+    try:
+        from agentic_tour_planner.tools.ai_stack_client import AiStackClient
+        stack = AiStackClient()
+        stack_health = await stack.health()
+        result["stack"] = "ok" if stack_health else "degraded"
+    except Exception as e:
+        logger.warning(f"Stack health check failed: {e}")
+        result["stack"] = "unreachable"
+    return result
 
 
 PLAN_TIMEOUT_SECONDS = 600

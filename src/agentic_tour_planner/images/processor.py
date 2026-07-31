@@ -11,19 +11,10 @@ import httpx
 
 from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.images.models import ImageCandidate, ProcessedImage
-from agentic_tour_planner.tools.ai_stack_client import AiStackClient
+from agentic_tour_planner.images import get_ai_stack
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-_ai_stack: AiStackClient | None = None
-
-
-def _get_ai_stack() -> AiStackClient:
-    global _ai_stack
-    if _ai_stack is None:
-        _ai_stack = AiStackClient()
-    return _ai_stack
 
 
 async def _clip_score(image_bytes: bytes, place_name: str, place_type: str = "") -> float:
@@ -32,7 +23,7 @@ async def _clip_score(image_bytes: bytes, place_name: str, place_type: str = "")
     settings = get_settings()
     threshold = getattr(settings, "image_clip_threshold", 0.20)
     try:
-        stack = _get_ai_stack()
+        stack = get_ai_stack()
         query = f"{place_name} {place_type}".strip()
         b64 = base64.b64encode(image_bytes).decode()
         result = await stack.clip_similarity(text=query, images_base64=[b64])
