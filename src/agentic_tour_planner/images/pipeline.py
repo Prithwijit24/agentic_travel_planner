@@ -116,18 +116,11 @@ async def _run_waterfall(
                 # Cache the result
                 await set_cached_image(pid, result)
 
-                # Add hash to dedup set
+                # Add URL hash to dedup set
                 try:
-                    from agentic_tour_planner.images.processor import _compute_phash
-                    import httpx
-                    from PIL import Image
-                    import io
-
-                    async with httpx.AsyncClient(timeout=15) as client:
-                        resp = await client.get(best.url)
-                        img = Image.open(io.BytesIO(resp.content)).convert("RGB")
-                        phash = _compute_phash(img)
-                        await add_dedup_hash(pid, phash)
+                    import hashlib
+                    url_hash = hashlib.md5(best.url.encode()).hexdigest()[:16]
+                    await add_dedup_hash(pid, url_hash)
                 except Exception:
                     pass  # Non-fatal
 
