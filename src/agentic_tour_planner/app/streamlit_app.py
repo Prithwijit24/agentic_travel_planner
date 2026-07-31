@@ -2188,7 +2188,7 @@ elif st.session_state.plan is not None:
                 st.info("No recent news articles found for this destination.")
             else:
                 # Render article cards
-                for i, article in enumerate(digest.articles):
+                for article in digest.articles:
                     date_str = f" · {article.date}" if article.date else ""
                     source_str = f" · {article.source}" if article.source else ""
                     summary_text = article.summary or article.snippet[:200]

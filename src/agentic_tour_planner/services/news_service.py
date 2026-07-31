@@ -125,7 +125,7 @@ class NewsService:
             f"Write a 3-5 sentence overview of what's currently happening in {destination}. "
             f"Be factual and concise. Return only the summary text, no JSON."
         )
-        result = await self.llm.complete_json(prompt, role="worker")
+        result = await self.llm.complete_text(prompt, role="worker")
         return str(result) if result else f"Recent news about {destination}."
 
     async def _summarize_article(self, article: NewsArticle) -> str:
@@ -136,5 +136,5 @@ class NewsService:
             f"Snippet: {article.snippet}\n\n"
             f"Write a 1-2 sentence factual summary of this news article. Return only the summary text, no JSON."
         )
-        result = await self.llm.complete_json(prompt, role="worker")
+        result = await self.llm.complete_text(prompt, role="worker")
         return str(result) if result else article.snippet[:200]
