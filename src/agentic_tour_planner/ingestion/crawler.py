@@ -48,6 +48,13 @@ class WebCrawler:
         return urls[index]
 
     async def fetch(self, url: str, backend: str | None = None) -> CrawlResult:
+        # Try DDGS extract first (fast, no API key)
+        ddgs_result = await self._fetch_ddgs_extract(url)
+        if ddgs_result and ddgs_result.content.strip():
+            logger.info(f"DDGS extract succeeded for {url}")
+            return ddgs_result
+
+        # Fall back to existing cascade
         resolved_backend = backend or self.settings.web_crawl_backend
         logger.info(f"Fetching url={url} backend={resolved_backend}")
         cache_key = self._cache_key(url, resolved_backend)
@@ -101,6 +108,30 @@ class WebCrawler:
             content=extracted,
             metadata={"backend": "trafilatura"},
         )
+
+    async def _fetch_ddgs_extract(self, url: str) -> CrawlResult | None:
+        """Fast content extraction via DDGS().extract(). No API key needed."""
+        try:
+            from ddgs import DDGS
+
+            items = list(DDGS().extract(url))
+            if not items:
+                return None
+            content = "\n\n".join(
+                item.get("content", "") for item in items if item.get("content")
+            )
+            title = items[0].get("title", "") if items else ""
+            if not content.strip():
+                return None
+            return CrawlResult(
+                url=url,
+                title=title or url,
+                content=content[:12000],
+                metadata={"backend": "ddgs_extract"},
+            )
+        except Exception as exc:
+            logger.debug(f"DDGS extract failed for {url}: {exc}")
+            return None
 
     async def _fetch_scrapling(self, url: str) -> CrawlResult:
         try:
