@@ -122,7 +122,7 @@ class WebCrawler:
                 return None
             return CrawlResult(
                 url=url,
-                title=title or url,
+                title=url,
                 content=content[:12000],
                 metadata={"backend": "ddgs_extract"},
             )
