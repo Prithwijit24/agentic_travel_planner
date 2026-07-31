@@ -34,7 +34,6 @@ def _make_client(**kwargs) -> ApiClient:
     mock_client.base_url = httpx.URL(kwargs.pop("base_url", DEFAULT_BASE_URL))
     kwargs["client"] = mock_client
     client = ApiClient(**kwargs)
-    client._client = mock_client
     return client, mock_client
 
 
