@@ -114,14 +114,11 @@ class WebCrawler:
         try:
             from ddgs import DDGS
 
-            items = list(DDGS().extract(url))
-            if not items:
+            result = DDGS().extract(url)
+            if not result or not isinstance(result, dict):
                 return None
-            content = "\n\n".join(
-                item.get("content", "") for item in items if item.get("content")
-            )
-            title = items[0].get("title", "") if items else ""
-            if not content.strip():
+            content = result.get("content", "")
+            if not content or not content.strip():
                 return None
             return CrawlResult(
                 url=url,
