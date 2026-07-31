@@ -157,7 +157,8 @@ def test_insert_or_update_dump_updates_changed_content(monkeypatch, tmp_path):
     run2 = service.insert_or_update_dump(raw_dir, batch_size=1)
     assert run2.indexed_sources == 1
     assert run2.skipped_sources == 0
-    assert graph_store.indexed[0].content != "Kyoto has temples, gardens, markets, transit, food, and museums."
+    # graph_store.indexed accumulates all documents; check the latest one
+    assert graph_store.indexed[-1].content != "Kyoto has temples, gardens, markets, transit, food, and museums."
 
 
 def test_insert_or_update_dump_skips_unchanged_content(monkeypatch, tmp_path):
