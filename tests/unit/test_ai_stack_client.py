@@ -122,6 +122,22 @@ class TestAiStackClientCore:
         )
 
     @pytest.mark.asyncio
+    async def test_stream_pipeline(self, client_with_mock):
+        c, mock_api = client_with_mock
+        # stream_pipeline returns the sync client's iterator directly
+        mock_api.stream_pipeline.return_value = iter([
+            {"event": "search", "data": {"query": "test"}},
+            {"event": "result", "data": {"url": "https://example.com"}},
+        ])
+        result = await c.stream_pipeline("test query", top_k=5)
+        mock_api.stream_pipeline.assert_called_once_with("test query", top_k=5)
+        # Verify it returns the iterator
+        events = list(result)
+        assert len(events) == 2
+        assert events[0]["event"] == "search"
+        assert events[1]["event"] == "result"
+
+    @pytest.mark.asyncio
     async def test_embed(self, client_with_mock):
         c, mock_api = client_with_mock
         result = await c.embed(["hello", "world"])
