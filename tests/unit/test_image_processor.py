@@ -1,4 +1,4 @@
-"""Unit tests for image post-processing pipeline."""
+"""Unit tests for image post-processing pipeline (AiStackClient-based)."""
 from __future__ import annotations
 
 import io
@@ -7,10 +7,6 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from PIL import Image
 
 from agentic_tour_planner.images.models import ImageCandidate, ProcessedImage
-from agentic_tour_planner.images.processor import (
-    passes_quality_check,
-    process_image,
-)
 
 
 def _make_test_image(width: int = 1000, height: int = 800) -> Image.Image:
@@ -18,24 +14,12 @@ def _make_test_image(width: int = 1000, height: int = 800) -> Image.Image:
     return Image.new("RGB", (width, height), color=(128, 64, 32))
 
 
-def test_quality_check_passes():
-    img = _make_test_image(1000, 800)
-    assert passes_quality_check(img) is True
-
-
-def test_quality_check_rejects_small():
-    img = _make_test_image(400, 300)
-    assert passes_quality_check(img) is False
-
-
-def test_quality_check_rejects_extreme_aspect():
-    img = _make_test_image(5000, 100)  # 50:1 ratio
-    assert passes_quality_check(img) is False
-
-
-def test_quality_check_passes_wide():
-    img = _make_test_image(1920, 1080)  # ~1.78 ratio
-    assert passes_quality_check(img) is True
+def _make_image_bytes(width: int = 1000, height: int = 800) -> bytes:
+    """Create test image bytes of given dimensions."""
+    img = _make_test_image(width, height)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    return buf.getvalue()
 
 
 @pytest.mark.asyncio
@@ -45,14 +29,8 @@ async def test_process_image_rejects_low_res():
         url="https://example.com/small.jpg",
         source="wikidata",
     )
-    # Mock httpx to return a small image
-    small_img = _make_test_image(400, 300)
-    buf = io.BytesIO()
-    small_img.save(buf, format="JPEG")
-    buf.seek(0)
-
     mock_resp = MagicMock()
-    mock_resp.content = buf.getvalue()
+    mock_resp.content = _make_image_bytes(400, 300)
     mock_resp.status_code = 200
 
     mock_client = MagicMock()
@@ -75,13 +53,8 @@ async def test_process_image_passes_quality():
         width=1920,
         height=1080,
     )
-    good_img = _make_test_image(1920, 1080)
-    buf = io.BytesIO()
-    good_img.save(buf, format="JPEG")
-    buf.seek(0)
-
     mock_resp = MagicMock()
-    mock_resp.content = buf.getvalue()
+    mock_resp.content = _make_image_bytes(1920, 1080)
     mock_resp.status_code = 200
 
     mock_client = MagicMock()
@@ -90,21 +63,11 @@ async def test_process_image_passes_quality():
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
     # Mock CLIP scoring to return high score
-    mock_score = MagicMock(return_value=0.35)
-
-    # Mock NSFW to return not NSFW (False = safe)
-    mock_nsfw = MagicMock(return_value=False)
-
-    # Mock dedup to return not duplicate
-    mock_dedup = MagicMock(return_value=False)
+    mock_clip_score = AsyncMock(return_value=0.35)
 
     with (
         patch("agentic_tour_planner.images.processor.httpx.AsyncClient", return_value=mock_client),
-        patch("agentic_tour_planner.images.processor._clip_score", mock_score),
-        patch("agentic_tour_planner.images.processor._is_nsfw", mock_nsfw),
-        patch("agentic_tour_planner.images.processor._is_duplicate", mock_dedup),
-        patch("agentic_tour_planner.images.processor._compute_phash", return_value="abc123def456"),
-        patch("agentic_tour_planner.images.processor._smart_crop", lambda img, **kw: img),
+        patch("agentic_tour_planner.images.processor._clip_score", mock_clip_score),
     ):
         result = await process_image(candidate, "Eiffel Tower")
 
@@ -113,3 +76,88 @@ async def test_process_image_passes_quality():
     assert result.clip_score == 0.35
     assert result.source == "wikidata"
     assert result.verified is True
+
+
+@pytest.mark.asyncio
+async def test_process_image_rejects_extreme_aspect():
+    """process_image should return None for extreme aspect ratios."""
+    candidate = ImageCandidate(
+        url="https://example.com/extreme.jpg",
+        source="wikidata",
+    )
+    mock_resp = MagicMock()
+    mock_resp.content = _make_image_bytes(5000, 100)
+    mock_resp.status_code = 200
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("agentic_tour_planner.images.processor.httpx.AsyncClient", return_value=mock_client):
+        result = await process_image(candidate, "Eiffel Tower")
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_process_image_content_hash_dedup():
+    """process_image should skip duplicates based on content hash."""
+    candidate = ImageCandidate(
+        url="https://example.com/dup.jpg",
+        source="wikidata",
+    )
+    mock_resp = MagicMock()
+    mock_resp.content = _make_image_bytes(1920, 1080)
+    mock_resp.status_code = 200
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    # Create a content hash that matches the image bytes
+    import hashlib
+    content_hash = hashlib.sha256(mock_resp.content).hexdigest()[:16]
+    existing_hashes = [content_hash]
+
+    with patch("agentic_tour_planner.images.processor.httpx.AsyncClient", return_value=mock_client):
+        result = await process_image(candidate, "Eiffel Tower", existing_hashes=existing_hashes)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_clip_score_returns_zero_on_failure():
+    """_clip_score should return 0.0 when the stack call fails."""
+    from agentic_tour_planner.images.processor import _clip_score
+
+    mock_stack = AsyncMock()
+    mock_stack.clip_similarity = AsyncMock(side_effect=Exception("Connection failed"))
+
+    with patch("agentic_tour_planner.images.processor.get_ai_stack", return_value=mock_stack):
+        score = await _clip_score(b"fake image bytes", "Eiffel Tower")
+
+    assert score == 0.0
+
+
+@pytest.mark.asyncio
+async def test_clip_score_passes_base64():
+    """_clip_score should pass base64-encoded image to the stack."""
+    import base64
+    from agentic_tour_planner.images.processor import _clip_score
+
+    mock_stack = AsyncMock()
+    mock_stack.clip_similarity = AsyncMock(return_value={"scores": [0.42]})
+
+    image_bytes = b"fake image bytes"
+    b64 = base64.b64encode(image_bytes).decode()
+
+    with patch("agentic_tour_planner.images.processor.get_ai_stack", return_value=mock_stack):
+        score = await _clip_score(image_bytes, "Eiffel Tower", "monument")
+
+    assert score == 0.42
+    mock_stack.clip_similarity.assert_called_once_with(
+        text="Eiffel Tower monument",
+        images_base64=[b64],
+    )
