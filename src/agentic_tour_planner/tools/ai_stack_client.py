@@ -251,13 +251,13 @@ class AiStackClient:
 
     # ── YouTube downloads ────────────────────────────────────────────
 
-    async def youtube_download_audio(self, url: str, quality: str = best) -> dict:
+    async def youtube_download_audio(self, url: str, quality: str = "best") -> dict:
         """POST /youtube/download/audio — queue an mp3 download job."""
         return await asyncio.to_thread(
             self._client.youtube_download_audio, url, quality=quality,
         )
 
-    async def youtube_download_video(self, url: str, quality: str = best) -> dict:
+    async def youtube_download_video(self, url: str, quality: str = "best") -> dict:
         """POST /youtube/download/video — queue a video download job."""
         return await asyncio.to_thread(
             self._client.youtube_download_video, url, quality=quality,
