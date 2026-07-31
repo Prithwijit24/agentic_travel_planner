@@ -7,6 +7,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from PIL import Image
 
 from agentic_tour_planner.images.models import ImageCandidate, ProcessedImage
+from agentic_tour_planner.images.processor import process_image
 
 
 def _make_test_image(width: int = 1000, height: int = 800) -> Image.Image:

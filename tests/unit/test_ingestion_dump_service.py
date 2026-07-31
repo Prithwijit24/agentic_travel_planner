@@ -4,7 +4,7 @@ from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.ingestion.service import IngestionService
 
 
-class FakeVectorStore:
+class FakeAiStackClient:
     def __init__(self) -> None:
         self.deleted = []
         self.indexed = []
@@ -17,7 +17,7 @@ class FakeVectorStore:
         return len(documents)
 
 
-class FakeGraphStore(FakeVectorStore):
+class FakeGraphStore(FakeAiStackClient):
     pass
 
 
@@ -39,7 +39,7 @@ def test_ingest_wikivoyage_dump_indexes_vector_and_graph(monkeypatch, tmp_path):
 </mediawiki>"""
         )
     )
-    vector_store = FakeVectorStore()
+    vector_store = FakeAiStackClient()
     graph_store = FakeGraphStore()
 
     run = IngestionService(vector_store=vector_store, graph_store=graph_store).ingest_wikivoyage_dump(
@@ -71,7 +71,7 @@ def test_ingest_wikivoyage_dump_skips_existing_records(monkeypatch, tmp_path):
 </mediawiki>"""
         )
     )
-    vector_store = FakeVectorStore()
+    vector_store = FakeAiStackClient()
     graph_store = FakeGraphStore()
     service = IngestionService(vector_store=vector_store, graph_store=graph_store)
 
@@ -102,7 +102,7 @@ def test_insert_or_update_dump_inserts_new(monkeypatch, tmp_path):
 </mediawiki>"""
         )
     )
-    vector_store = FakeVectorStore()
+    vector_store = FakeAiStackClient()
     graph_store = FakeGraphStore()
 
     run = IngestionService(vector_store=vector_store, graph_store=graph_store).insert_or_update_dump(
@@ -133,7 +133,7 @@ def test_insert_or_update_dump_updates_changed_content(monkeypatch, tmp_path):
 </mediawiki>"""
         )
     )
-    vector_store = FakeVectorStore()
+    vector_store = FakeAiStackClient()
     graph_store = FakeGraphStore()
     service = IngestionService(vector_store=vector_store, graph_store=graph_store)
 
@@ -178,7 +178,7 @@ def test_insert_or_update_dump_skips_unchanged_content(monkeypatch, tmp_path):
 </mediawiki>"""
         )
     )
-    vector_store = FakeVectorStore()
+    vector_store = FakeAiStackClient()
     graph_store = FakeGraphStore()
     service = IngestionService(vector_store=vector_store, graph_store=graph_store)
 
