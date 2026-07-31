@@ -243,3 +243,64 @@ class AiStackClient:
         return await asyncio.to_thread(
             self._client.storage_list, prefix, bucket=bucket,
         )
+
+
+    # ── YouTube downloads ────────────────────────────────────────────
+
+    async def youtube_download_audio(self, url: str, quality: str = best) -> dict:
+        """POST /youtube/download/audio — queue an mp3 download job."""
+        return await asyncio.to_thread(
+            self._client.youtube_download_audio, url, quality=quality,
+        )
+
+    async def youtube_download_video(self, url: str, quality: str = best) -> dict:
+        """POST /youtube/download/video — queue a video download job."""
+        return await asyncio.to_thread(
+            self._client.youtube_download_video, url, quality=quality,
+        )
+
+    async def youtube_job_status(self, job_id: str) -> dict:
+        """GET /youtube/jobs/{job_id} — poll a download job."""
+        return await asyncio.to_thread(self._client.youtube_job_status, job_id)
+
+    # ── DuckDB extended ──────────────────────────────────────────────
+
+    async def duckdb_insert(
+        self, table: str, columns: list[str], rows: list[dict],
+    ) -> dict:
+        """POST /duckdb/insert — insert rows into a table."""
+        return await asyncio.to_thread(
+            self._client.duckdb_insert, table, columns, rows,
+        )
+
+    async def duckdb_tables(self) -> dict:
+        """GET /duckdb/tables — list tables with columns and row counts."""
+        return await asyncio.to_thread(self._client.duckdb_tables)
+
+    # ── Storage (MinIO/S3) extended ──────────────────────────────────
+
+    async def storage_upload(
+        self, key: str, file_path: str | None = None,
+        file_bytes: bytes | None = None, filename: str | None = None,
+        bucket: str | None = None, content_type: str | None = None,
+    ) -> dict:
+        """POST /storage/upload — multipart upload."""
+        return await asyncio.to_thread(
+            self._client.storage_upload, key,
+            file_path=file_path, file_bytes=file_bytes,
+            filename=filename, bucket=bucket, content_type=content_type,
+        )
+
+    async def storage_download(self, bucket: str, key: str) -> Any:
+        """GET /storage/download/{bucket}/{key} — stream an object."""
+        return await asyncio.to_thread(
+            self._client.storage_download, bucket, key,
+        )
+
+    async def storage_delete(
+        self, keys: list[str], bucket: str | None = None,
+    ) -> dict:
+        """POST /storage/delete — delete objects by key."""
+        return await asyncio.to_thread(
+            self._client.storage_delete, keys, bucket=bucket,
+        )
