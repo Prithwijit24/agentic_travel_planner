@@ -2154,7 +2154,9 @@ elif st.session_state.plan is not None:
         )
 
         # Check for cached news in session state
-        news_key = f"news_{dest_name}"
+        # Include interests in cache key for per-interest deduplication
+        _interests = st.session_state.get("form_data", {}).get("interests", [])
+        news_key = f"news_{dest_name}:{hash(tuple(_interests))}"
         if news_key not in st.session_state:
             st.session_state[news_key] = None
 

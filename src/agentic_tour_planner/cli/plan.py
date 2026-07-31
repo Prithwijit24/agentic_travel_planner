@@ -989,6 +989,45 @@ def interactive():
 
 
 @app.command()
+def news(
+    destination: str = typer.Option(..., "--destination", "-d", help="Destination to fetch news for"),
+    interests: str = typer.Option("", "--interests", "-i", help="Comma-separated interests to filter news"),
+    verbose: bool = typer.Option(True, "--verbose", "-v", help="Show verbose output"),
+) -> None:
+    """Fetch recent news about a destination using DuckDuckGo."""
+    setup_logging(LogLevel.INFO if not verbose else LogLevel.DEBUG)
+    logger.info(f"Fetching news for {destination!r}")
+
+    interest_list = [i.strip() for i in interests.split(",") if i.strip()] or None
+
+    from agentic_tour_planner.services.news_service import NewsService
+
+    digest = _run_async(NewsService().collect(destination=destination, interests=interest_list))
+
+    console.print()
+    print_section(f"NEWS: {destination}")
+
+    if digest.overview:
+        console.print(Panel(digest.overview, title="Overview", border_style="blue"))
+
+    if not digest.articles:
+        console.print("[yellow]No recent news found for this destination.[/yellow]")
+        return
+
+    for i, article in enumerate(digest.articles, 1):
+        date_str = f" ({article.date})" if article.date else ""
+        source_str = f" [{article.source}]" if article.source else ""
+        console.print(f"\n[bold cyan]{i}. {article.title}[/bold cyan]{source_str}{date_str}")
+        summary = article.summary or article.snippet[:200]
+        console.print(f"   {escape(summary)}")
+        console.print(f"   [link={article.url}]Read more →[/link]")
+
+    if digest.fetched_at:
+        console.print(f"\n[dim]Fetched at: {digest.fetched_at}[/dim]")
+
+
+
+@app.command()
 def test():
     """Run a quick test with default parameters."""
     setup_logging(LogLevel.INFO)
