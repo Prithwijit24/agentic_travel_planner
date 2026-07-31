@@ -65,15 +65,22 @@ app.add_middleware(
 )
 
 
+_stack_client = None
+
+
 @app.get("/health")
 async def health() -> dict:
+    global _stack_client
     logger.debug("Health check requested")
     result = {"status": "ok", "env": settings.app_env, "stack": "unknown"}
     try:
-        from agentic_tour_planner.tools.ai_stack_client import AiStackClient
-        stack = AiStackClient()
-        stack_health = await stack.health()
-        result["stack"] = "ok" if stack_health else "degraded"
+        if _stack_client is None:
+            from agentic_tour_planner.tools.ai_stack_client import AiStackClient
+            _stack_client = AiStackClient()
+        stack_health = await asyncio.wait_for(
+            _stack_client.health(), timeout=5.0,
+        )
+        result["stack"] = "ok" if stack_health.get("status") == "healthy" else "degraded"
     except Exception as e:
         logger.warning(f"Stack health check failed: {e}")
         result["stack"] = "unreachable"
