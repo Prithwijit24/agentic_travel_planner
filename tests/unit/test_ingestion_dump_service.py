@@ -42,7 +42,7 @@ def test_ingest_wikivoyage_dump_indexes_vector_and_graph(monkeypatch, tmp_path):
     vector_store = FakeAiStackClient()
     graph_store = FakeGraphStore()
 
-    run = IngestionService(vector_store=vector_store, graph_store=graph_store).ingest_wikivoyage_dump(
+    run = IngestionService(ai_stack=vector_store, graph_store=graph_store).ingest_wikivoyage_dump(
         raw_dir,
         batch_size=1,
     )
@@ -73,7 +73,7 @@ def test_ingest_wikivoyage_dump_skips_existing_records(monkeypatch, tmp_path):
     )
     vector_store = FakeAiStackClient()
     graph_store = FakeGraphStore()
-    service = IngestionService(vector_store=vector_store, graph_store=graph_store)
+    service = IngestionService(ai_stack=vector_store, graph_store=graph_store)
 
     run1 = service.ingest_wikivoyage_dump(raw_dir, batch_size=1)
     assert run1.indexed_sources == 1
@@ -105,7 +105,7 @@ def test_insert_or_update_dump_inserts_new(monkeypatch, tmp_path):
     vector_store = FakeAiStackClient()
     graph_store = FakeGraphStore()
 
-    run = IngestionService(vector_store=vector_store, graph_store=graph_store).insert_or_update_dump(
+    run = IngestionService(ai_stack=vector_store, graph_store=graph_store).insert_or_update_dump(
         raw_dir,
         batch_size=1,
     )
@@ -135,7 +135,7 @@ def test_insert_or_update_dump_updates_changed_content(monkeypatch, tmp_path):
     )
     vector_store = FakeAiStackClient()
     graph_store = FakeGraphStore()
-    service = IngestionService(vector_store=vector_store, graph_store=graph_store)
+    service = IngestionService(ai_stack=vector_store, graph_store=graph_store)
 
     run1 = service.insert_or_update_dump(raw_dir, batch_size=1)
     assert run1.indexed_sources == 1
@@ -180,7 +180,7 @@ def test_insert_or_update_dump_skips_unchanged_content(monkeypatch, tmp_path):
     )
     vector_store = FakeAiStackClient()
     graph_store = FakeGraphStore()
-    service = IngestionService(vector_store=vector_store, graph_store=graph_store)
+    service = IngestionService(ai_stack=vector_store, graph_store=graph_store)
 
     run1 = service.insert_or_update_dump(raw_dir, batch_size=1)
     assert run1.indexed_sources == 1
