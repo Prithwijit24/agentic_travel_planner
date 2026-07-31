@@ -8,11 +8,7 @@ from typing import Any, Iterator, Optional
 
 import httpx
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
+# dotenv loaded in __main__ block only
 
 DEFAULT_BASE_URL = "http://localhost:8000"
 DEFAULT_ADMIN_USER = "admin"
