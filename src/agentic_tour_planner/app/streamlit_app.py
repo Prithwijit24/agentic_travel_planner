@@ -2163,7 +2163,8 @@ elif st.session_state.plan is not None:
                 with st.spinner("Searching for recent news..."):
                     try:
                         news_svc = NewsService()
-                        digest = asyncio.run(
+                        loop = asyncio.new_event_loop()
+                        digest = loop.run_until_complete(
                             news_svc.collect(
                                 destination=dest_name,
                                 interests=None,
