@@ -11,7 +11,7 @@ import httpx
 
 from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.images.models import ImageCandidate, ProcessedImage
-from agentic_tour_planner.images import get_ai_stack
+from agentic_tour_planner.images._stack import get_ai_stack
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
