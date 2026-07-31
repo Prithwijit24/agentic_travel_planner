@@ -2170,7 +2170,7 @@ elif st.session_state.plan is not None:
                             digest = loop.run_until_complete(
                                 news_svc.collect(
                                     destination=dest_name,
-                                    interests=None,
+                                    interests=_interests,
                                 )
                             )
                         finally:
