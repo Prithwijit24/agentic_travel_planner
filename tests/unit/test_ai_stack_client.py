@@ -64,12 +64,8 @@ def client_with_mock():
             ai_stack_admin_pass="pass",
             ai_stack_token="",
         )
-        with patch(
-            "agentic_tour_planner.tools.ai_stack_client.AiStackClient.__init__",
-            return_value=None,
-        ):
-            c = AiStackClient.__new__(AiStackClient)
-            c._client = mock_api
+        c = AiStackClient()
+    c._client = mock_api
     return c, mock_api
 
 
