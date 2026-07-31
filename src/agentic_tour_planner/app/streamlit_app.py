@@ -2164,12 +2164,15 @@ elif st.session_state.plan is not None:
                     try:
                         news_svc = NewsService()
                         loop = asyncio.new_event_loop()
-                        digest = loop.run_until_complete(
-                            news_svc.collect(
-                                destination=dest_name,
-                                interests=None,
+                        try:
+                            digest = loop.run_until_complete(
+                                news_svc.collect(
+                                    destination=dest_name,
+                                    interests=None,
+                                )
                             )
-                        )
+                        finally:
+                            loop.close()
                         st.session_state[news_key] = digest
                         st.rerun()
                     except Exception as news_err:
