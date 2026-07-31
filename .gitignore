@@ -57,6 +57,9 @@ data/knowledge/processed/*
 **/data/**
 !**/data/.gitkeep
 
+# Integration tests with credentials
+tests/integration/test_ai_stack_real.py
+
 # OS / editor files
 .DS_Store
 Thumbs.db
