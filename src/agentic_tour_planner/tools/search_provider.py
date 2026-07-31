@@ -65,7 +65,7 @@ def parse_published(value: Any) -> str | None:
     text = str(value).strip()
     try:
         return datetime.fromisoformat(text).date().isoformat()
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
     m = re.match(r"(\d+)\s*(year|month|week|day|hour)s?\s*ago", text, re.IGNORECASE)
     if m:
@@ -83,16 +83,16 @@ def parse_published(value: Any) -> str | None:
     for fmt in ("%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%Y-%m-%d", "%m/%d/%Y"):
         try:
             return datetime.strptime(text, fmt).date().isoformat()
-        except Exception:  # noqa: BLE001
+        except Exception:
             continue
     return None
 
 
 class SearchProvider:
-    """Internet search with a cascading backend: Tavily -> SerpAPI -> DuckDuckGo.
+    """Internet search with a cascading backend: DuckDuckGo -> Tavily -> SerpAPI.
 
-    Tavily is the primary (clean, LLM-ready snippets); on failure/empty we fall
-    through to SerpAPI, then to DDGS as a last resort. Each backend returns
+    DuckDuckGo is the primary (free, no API key needed); on failure/empty we fall
+    through to Tavily, then to SerpAPI as a last resort. Each backend returns
     :class:`SearchHit` objects so the caller can filter videos by duration /
     recency.
     """
@@ -107,20 +107,17 @@ class SearchProvider:
         # Tavily is web-only; for video searches it returns web pages with no real
         # video metadata (duration/published). SerpAPI's YouTube engine and DDGS video
         # search return proper results, so skip Tavily for video queries.
-        backends = (
-            ("serpapi", self._search_serpapi) if kind == "video"
-            else ("tavily", self._search_tavily)
-        )
+        backends = ("serpapi", self._search_serpapi) if kind == "video" else ("tavily", self._search_tavily)
         if kind == "video":
             backends = (
-                ("serpapi", self._search_serpapi),
                 ("ddgs", self._search_ddgs),
+                ("serpapi", self._search_serpapi),
             )
         else:
             backends = (
+                ("ddgs", self._search_ddgs),
                 ("tavily", self._search_tavily),
                 ("serpapi", self._search_serpapi),
-                ("ddgs", self._search_ddgs),
             )
         for backend, fetcher in backends:
             try:
@@ -130,22 +127,20 @@ class SearchProvider:
                     logger.info(f"[search] {backend} returned {len(hits)} hit(s) for {query!r}")
                     return hits
                 logger.debug(f"[search] {backend} returned no hits for {query!r}")
-            except Exception as exc:  # noqa: BLE001 - cascade to next backend
+            except Exception as exc:
                 logger.warning(f"[search] {backend} failed: {exc}")
         logger.debug(f"[search] all backends exhausted for {query!r}, returning empty")
         return []
 
     async def _search_serpapi(self, query: str, kind: str, max_results: int) -> list[SearchHit]:
-        serpapi_key = getattr(self.settings, "serpapi_api_key", None) or getattr(
-            self.settings, "serp_api_key", None
-        )
+        serpapi_key = getattr(self.settings, "serpapi_api_key", None) or getattr(self.settings, "serp_api_key", None)
         if not serpapi_key:
             logger.debug("[search] serpapi api_key not set, skipping serpapi")
             return []
         logger.debug(f"_search_serpapi called query={query!r} kind={kind} api_key=<set>")
         try:
             from serpapi import GoogleSearch
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(f"[search] serpapi package missing: {exc}")
             return []
 
@@ -207,7 +202,7 @@ class SearchProvider:
         logger.debug(f"_search_tavily called query={query!r} kind={kind} api_key=<set>")
         try:
             from tavily import TavilyClient
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(f"[search] tavily package missing: {exc}")
             return []
 
@@ -239,7 +234,7 @@ class SearchProvider:
 
                 logger.info(f"Calling DDGS videos for {query!r}")
                 items = list(DDGS().videos(query, max_results=max_results))
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning(f"[search] ddgs videos failed: {exc}")
                 return []
             logger.debug(f"ddgs videos returned {len(items)} item(s) for {query!r}")

@@ -26,11 +26,11 @@ class WebSearchTool:
             logger.debug(f"search cache hit for {query!r}: {len(cached_results)} result(s)")
             return cached_results
 
-        # Cascade: Tavily (primary) -> SerpAPI -> DuckDuckGo (fallback only).
+        # Cascade: DuckDuckGo (primary, no API key) -> Tavily -> SerpAPI.
         for backend, fetcher in (
+            ("ddgs", self._search_ddgs),
             ("tavily", self._search_tavily),
             ("serpapi", self._search_serpapi),
-            ("ddgs", self._search_ddgs),
         ):
             try:
                 logger.info(f"Searching {backend} for {query!r} (max_results={max_results})")
