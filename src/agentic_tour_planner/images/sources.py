@@ -340,6 +340,33 @@ async def fetch_stock(place_name: str, place_type: str = "") -> list[ImageCandid
     return candidates
 
 
+# ── 5.0 DuckDuckGo Images (Primary — no API key needed) ─────────────
+
+
+async def fetch_ddgs_images(place_name: str) -> list[ImageCandidate]:
+    """Search DuckDuckGo for images of a place. No API key required."""
+    try:
+        from ddgs import DDGS
+
+        items = list(DDGS().images(place_name, max_results=5))
+        return [
+            _make_candidate(
+                url=item.get("image") or item.get("thumbnail") or "",
+                source="ddgs",
+                width=item.get("width"),
+                height=item.get("height"),
+                license_name=None,  # DDGS doesn't provide license info
+                attribution=item.get("source"),
+                verified=False,  # Not a curated/open-licensed source
+            )
+            for item in items
+            if item.get("image")
+        ]
+    except Exception as exc:
+        logger.warning(f"fetch_ddgs_images failed for {place_name!r}: {exc}")
+        return []
+
+
 # ── Internal helpers ─────────────────────────────────────────────────
 
 

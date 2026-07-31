@@ -10,6 +10,7 @@ from agentic_tour_planner.images.cache import (
 from agentic_tour_planner.images.models import ImageResult
 from agentic_tour_planner.images.processor import process_image
 from agentic_tour_planner.images.sources import (
+    fetch_ddgs_images,
     fetch_openverse,
     fetch_stock,
     fetch_mapillary,
@@ -23,6 +24,7 @@ logger = get_logger(__name__)
 
 # Waterfall order: (fetcher, needs_coords)
 _WATERFALL = [
+    (fetch_ddgs_images, False),  # #1 primary — no API key needed
     (fetch_wikidata, False),
     (fetch_wikimedia_commons, False),
     (fetch_wikipedia, False),
