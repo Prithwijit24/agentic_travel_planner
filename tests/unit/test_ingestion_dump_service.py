@@ -49,7 +49,7 @@ def test_ingest_wikivoyage_dump_indexes_vector_and_graph(monkeypatch, tmp_path):
 
     assert run.total_sources == 1
     assert run.indexed_sources == 1
-    assert vector_store.indexed[0].source_id == "wikivoyage-dump:42"
+    assert graph_store.indexed[0].source_id == "wikivoyage-dump:42"
     assert graph_store.indexed[0].source_id == "wikivoyage-dump:42"
 
 
@@ -112,7 +112,7 @@ def test_insert_or_update_dump_inserts_new(monkeypatch, tmp_path):
 
     assert run.total_sources == 1
     assert run.indexed_sources == 1
-    assert vector_store.indexed[0].source_id == "wikivoyage-dump:42"
+    assert graph_store.indexed[0].source_id == "wikivoyage-dump:42"
 
 
 def test_insert_or_update_dump_updates_changed_content(monkeypatch, tmp_path):
@@ -157,7 +157,7 @@ def test_insert_or_update_dump_updates_changed_content(monkeypatch, tmp_path):
     run2 = service.insert_or_update_dump(raw_dir, batch_size=1)
     assert run2.indexed_sources == 1
     assert run2.skipped_sources == 0
-    assert vector_store.indexed[0].content != "Kyoto has temples, gardens, markets, transit, food, and museums."
+    assert graph_store.indexed[0].content != "Kyoto has temples, gardens, markets, transit, food, and museums."
 
 
 def test_insert_or_update_dump_skips_unchanged_content(monkeypatch, tmp_path):
