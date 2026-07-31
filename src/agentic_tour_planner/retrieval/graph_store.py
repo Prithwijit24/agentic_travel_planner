@@ -5,7 +5,15 @@ from typing import Any
 
 from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import SourceDocument
-from agentic_tour_planner.retrieval.reranker import _lexical_score
+
+import re
+from collections import Counter
+
+
+def _lexical_score(query: str, content: str) -> float:
+    q = Counter(re.findall(r"[a-z0-9]+", query.lower()))
+    d = Counter(re.findall(r"[a-z0-9]+", content.lower()))
+    return float(sum(min(q[tok], d[tok]) for tok in q))
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
