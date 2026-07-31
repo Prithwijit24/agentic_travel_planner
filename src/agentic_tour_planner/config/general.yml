@@ -5,3 +5,8 @@ enable_trace_logs: false
 
 # Graph store backend: neo4j, memory, or disabled
 graph_store_backend: memory
+# AI Infra Stack integration
+ai_stack_base_url: "http://localhost:8000"
+ai_stack_admin_user: "admin"
+ai_stack_admin_pass: ""
+ai_stack_token: ""

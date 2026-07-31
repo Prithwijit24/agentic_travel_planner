@@ -1,0 +1,245 @@
+"""Async wrapper around self-hosted AI Infra Stack."""
+from __future__ import annotations
+
+import asyncio
+from typing import Any
+
+from agentic_tour_planner.config.settings import get_settings
+from agentic_tour_planner.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+class AiStackClient:
+    """Thin async wrapper around the AI Infra Stack ApiClient.
+
+    All methods return parsed JSON (dict/list) and raise
+    ``httpx.HTTPStatusError`` on non-2xx responses.
+    """
+
+    def __init__(self) -> None:
+        from agentic_tour_planner.tools.api_client import ApiClient
+
+        settings = get_settings()
+        self._client = ApiClient(
+            base_url=getattr(settings, "ai_stack_base_url", None),
+            username=getattr(settings, "ai_stack_admin_user", None),
+            password=getattr(settings, "ai_stack_admin_pass", None),
+            token=getattr(settings, "ai_stack_token", None) or None,
+        )
+        logger.info(f"AiStackClient initialized: {self._client.base_url}")
+
+    # ── lifecycle ───────────────────────────────────────────────────────
+
+    def close(self) -> None:
+        self._client.close()
+
+    def __enter__(self) -> AiStackClient:
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.close()
+
+    # ── core ────────────────────────────────────────────────────────────
+
+    async def health(self) -> dict:
+        """GET /health — per-service dependency health."""
+        return await asyncio.to_thread(self._client.health)
+
+    # ── search / browse / crawl / pipeline ──────────────────────────────
+
+    async def search(
+        self,
+        query: str,
+        categories: str = "general",
+        language: str = "en",
+        max_results: int = 10,
+    ) -> dict:
+        """POST /search — web search (SearXNG or DDGS)."""
+        return await asyncio.to_thread(
+            self._client.search, query,
+            categories=categories, language=language, max_results=max_results,
+        )
+
+    async def browse(
+        self,
+        url: str,
+        action: str = "content",
+        selector: str | None = None,
+        text: str | None = None,
+        full_page: bool = True,
+    ) -> dict:
+        """POST /browse — automated browser (content/screenshot/click/fill_form)."""
+        return await asyncio.to_thread(
+            self._client.browse, url,
+            action=action, selector=selector, text=text, full_page=full_page,
+        )
+
+    async def crawl(self, url: str) -> dict:
+        """POST /crawl — extract clean markdown from a URL."""
+        return await asyncio.to_thread(self._client.crawl, url)
+
+    async def pipeline(
+        self,
+        query: str,
+        top_k: int = 5,
+        crawl_limit: int = 10,
+        max_search_results: int = 15,
+    ) -> dict:
+        """POST /pipeline — search -> crawl -> rerank (non-streaming)."""
+        return await asyncio.to_thread(
+            self._client.pipeline, query,
+            top_k=top_k, crawl_limit=crawl_limit,
+            max_search_results=max_search_results,
+        )
+
+    async def stream_pipeline(self, query: str, **options: Any) -> Any:
+        """POST /pipeline/stream — SSE streaming pipeline. Returns iterator."""
+        return self._client.stream_pipeline(query, **options)
+
+    # ── rerank / embed ─────────────────────────────────────────────────
+
+    async def rerank(
+        self, query: str, documents: list[str], top_k: int | None = None,
+    ) -> dict:
+        """POST /rerank — cross-encoder relevance ranking."""
+        return await asyncio.to_thread(
+            self._client.rerank, query, documents, top_k=top_k,
+        )
+
+    async def embed(self, texts: list[str]) -> dict:
+        """POST /embed — sentence-transformer text embeddings."""
+        return await asyncio.to_thread(self._client.embed, texts)
+
+    # ── CLIP ───────────────────────────────────────────────────────────
+
+    async def clip_text_embedding(self, texts: list[str]) -> dict:
+        """POST /clip/text_embedding — CLIP text encoder."""
+        return await asyncio.to_thread(self._client.clip_text_embedding, texts)
+
+    async def clip_image_embedding(
+        self, image_urls: list[str] | None = None,
+    ) -> dict:
+        """POST /clip/image_embedding — CLIP vision encoder."""
+        return await asyncio.to_thread(
+            self._client.clip_image_embedding, image_urls=image_urls,
+        )
+
+    async def clip_similarity(
+        self, text: str, image_urls: list[str] | None = None,
+    ) -> dict:
+        """POST /clip/similarity — softmax text->image similarity."""
+        return await asyncio.to_thread(
+            self._client.clip_similarity, text, image_urls=image_urls,
+        )
+
+    # ── cache (Redis) ──────────────────────────────────────────────────
+
+    async def cache_set(
+        self, key: str, value: Any, ttl_seconds: int | None = None,
+    ) -> dict:
+        """POST /cache/set — write a value to Redis."""
+        return await asyncio.to_thread(
+            self._client.cache_set, key, value, ttl_seconds=ttl_seconds,
+        )
+
+    async def cache_get(self, key: str) -> dict:
+        """GET /cache/get/{key} — read a value from Redis."""
+        return await asyncio.to_thread(self._client.cache_get, key)
+
+    async def cache_delete(self, key: str) -> dict:
+        """DELETE /cache/delete/{key} — remove a Redis key."""
+        return await asyncio.to_thread(self._client.cache_delete, key)
+
+    # ── vector (ChromaDB) ──────────────────────────────────────────────
+
+    async def vector_upsert(
+        self, collection: str, records: list[dict],
+    ) -> dict:
+        """POST /vector/upsert — insert/update embeddings."""
+        return await asyncio.to_thread(
+            self._client.vector_upsert, collection, records,
+        )
+
+    async def vector_search(
+        self, collection: str, query_embedding: list[float], top_k: int = 5,
+    ) -> dict:
+        """POST /vector/search — approximate nearest-neighbor search."""
+        return await asyncio.to_thread(
+            self._client.vector_search, collection, query_embedding, top_k=top_k,
+        )
+
+    async def vector_delete(self, collection: str, ids: list[str]) -> dict:
+        """POST /vector/delete — delete embeddings by ID."""
+        return await asyncio.to_thread(
+            self._client.vector_delete, collection, ids,
+        )
+
+    # ── graph (Neo4j) ──────────────────────────────────────────────────
+
+    async def graph_query(
+        self, cypher: str, parameters: dict | None = None,
+    ) -> dict:
+        """POST /graph/query — run a parameterized Cypher query."""
+        return await asyncio.to_thread(
+            self._client.graph_query, cypher, parameters=parameters,
+        )
+
+    async def graph_add_node(
+        self, label: str, properties: dict | None = None,
+        merge_key: str | None = None,
+    ) -> dict:
+        """POST /graph/add_node — create or merge a node."""
+        return await asyncio.to_thread(
+            self._client.graph_add_node, label, properties=properties,
+            merge_key=merge_key,
+        )
+
+    async def graph_add_edge(
+        self, from_label: str, from_key: str, from_value: Any,
+        to_label: str, to_key: str, to_value: Any,
+        relationship: str, properties: dict | None = None,
+    ) -> dict:
+        """POST /graph/add_edge — create a relationship between two nodes."""
+        return await asyncio.to_thread(
+            self._client.graph_add_edge, from_label, from_key, from_value,
+            to_label, to_key, to_value, relationship, properties=properties,
+        )
+
+    # ── YouTube ────────────────────────────────────────────────────────
+
+    async def youtube_info(self, url: str) -> dict:
+        """POST /youtube/info — video metadata."""
+        return await asyncio.to_thread(self._client.youtube_info, url)
+
+    async def youtube_transcript(
+        self, url: str, language: str = "en",
+    ) -> dict:
+        """POST /youtube/transcript — subtitles (Whisper fallback)."""
+        return await asyncio.to_thread(
+            self._client.youtube_transcript, url, language=language,
+        )
+
+    async def youtube_thumbnail(self, url: str) -> dict:
+        """POST /youtube/thumbnail — thumbnail URL."""
+        return await asyncio.to_thread(self._client.youtube_thumbnail, url)
+
+    # ── DuckDB ─────────────────────────────────────────────────────────
+
+    async def duckdb_query(
+        self, sql: str, params: list | None = None,
+    ) -> dict:
+        """POST /duckdb/query — run SQL on DuckDB."""
+        return await asyncio.to_thread(
+            self._client.duckdb_query, sql, params=params,
+        )
+
+    # ── storage (MinIO/S3) ─────────────────────────────────────────────
+
+    async def storage_list(
+        self, prefix: str = "", bucket: str | None = None,
+    ) -> dict:
+        """POST /storage/list — list objects under a prefix."""
+        return await asyncio.to_thread(
+            self._client.storage_list, prefix, bucket=bucket,
+        )
