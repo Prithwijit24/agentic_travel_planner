@@ -20,10 +20,9 @@ from agentic_tour_planner.domain.models import (
 )
 from agentic_tour_planner.ingestion.connectors import SourceConnectors
 from agentic_tour_planner.ingestion.wikivoyage_dump import WikivoyageDumpReader
-from agentic_tour_planner.retrieval.chunker import chunk_text
 from agentic_tour_planner.retrieval.graph_store import create_graph_store
-from agentic_tour_planner.retrieval.vector_store import VectorStore
 from agentic_tour_planner.storage.ingestion_store import SQLiteIngestionStore
+from agentic_tour_planner.tools.ai_stack_client import AiStackClient
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -57,13 +56,13 @@ def _load_manifest(path: str | Path) -> SourceManifest:
 
 
 class IngestionService:
-    def __init__(self, vector_store: VectorStore | None = None, graph_store=None) -> None:
+    def __init__(self, ai_stack: AiStackClient | None = None, graph_store=None) -> None:
         self.settings = get_settings()
         self.connectors = SourceConnectors()
-        self.vector_store = vector_store or VectorStore()
+        self.ai_stack = ai_stack or AiStackClient()
         self.graph_store = graph_store or create_graph_store()
         self.store = SQLiteIngestionStore()
-        logger.debug("Initialized IngestionService")
+        logger.debug("Initialized IngestionService with AiStackClient")
 
     def _persist(
         self, seed: SourceSeed, document: SourceDocument, content_hash: str, chunk_count: int
@@ -123,9 +122,43 @@ class IngestionService:
         if existing and existing.content_hash == content_hash and not force:
             logger.debug(f"Seed skip (unchanged) source_id={self._source_key(seed)}")
             return existing
-        self.vector_store.delete_source(document.source_id)
+
+        # Use AI Infra Stack for vector operations
+        try:
+            # Delete old vector embeddings
+            await self.ai_stack.vector_delete(
+                collection="documents",
+                ids=[document.source_id],
+            )
+        except Exception as e:
+            logger.warning(f"Failed to delete old vectors: {e}")
+
         self.graph_store.delete_source(document.source_id)
-        chunk_count = self.vector_store.upsert_documents([document])
+
+        # Upsert to vector store via AI Infra Stack
+        try:
+            # Embed the document content
+            embed_result = await self.ai_stack.embed([document.content[:2000]])
+            embedding = embed_result.get("embeddings", [[]])[0]
+
+            # Upsert to vector store
+            await self.ai_stack.vector_upsert(
+                collection="documents",
+                records=[{
+                    "id": document.source_id,
+                    "embedding": embedding,
+                    "metadata": {
+                        "title": document.title,
+                        "url": str(document.url or ""),
+                        "source_type": document.source_type,
+                    },
+                }],
+            )
+            chunk_count = 1
+        except Exception as e:
+            logger.warning(f"Failed to upsert vectors: {e}")
+            chunk_count = 0
+
         self.graph_store.upsert_documents([document])
         record = self._persist(seed, document, content_hash, chunk_count)
         logger.info(f"Ingested seed source_id={self._source_key(seed)} chunk_count={chunk_count}")
@@ -307,25 +340,17 @@ class IngestionService:
             if existing and existing.content_hash == content_hash:
                 run.skipped_sources += 1
                 continue
-            chunk_count = len(
-                list(
-                    chunk_text(
-                        document.content,
-                        chunk_size=self.settings.chunk_size,
-                        overlap=self.settings.chunk_overlap,
-                    )
-                )
-            )
+            # Simple chunk count estimate
+            chunk_count = max(1, len(document.content) // self.settings.chunk_size)
             changed.append((seed, document, content_hash, chunk_count))
 
         if not changed:
             return
 
         for _, document, _, _ in changed:
-            self.vector_store.delete_source(document.source_id)
             self.graph_store.delete_source(document.source_id)
+
         docs_to_index = [document for _, document, _, _ in changed]
-        self.vector_store.upsert_documents(docs_to_index)
         self.graph_store.upsert_documents(docs_to_index)
         for seed, document, content_hash, chunk_count in changed:
             self._persist(seed, document, content_hash, chunk_count)
