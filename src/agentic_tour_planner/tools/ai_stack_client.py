@@ -119,10 +119,12 @@ class AiStackClient:
 
     async def clip_image_embedding(
         self, image_urls: list[str] | None = None,
+        images_base64: list[str] | None = None,
     ) -> dict:
         """POST /clip/image_embedding — CLIP vision encoder."""
         return await asyncio.to_thread(
-            self._client.clip_image_embedding, image_urls=image_urls,
+            self._client.clip_image_embedding,
+            image_urls=image_urls, images_base64=images_base64,
         )
 
     async def clip_similarity(
