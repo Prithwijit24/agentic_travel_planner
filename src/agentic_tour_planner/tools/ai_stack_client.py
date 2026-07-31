@@ -127,10 +127,12 @@ class AiStackClient:
 
     async def clip_similarity(
         self, text: str, image_urls: list[str] | None = None,
+        images_base64: list[str] | None = None,
     ) -> dict:
         """POST /clip/similarity — softmax text->image similarity."""
         return await asyncio.to_thread(
-            self._client.clip_similarity, text, image_urls=image_urls,
+            self._client.clip_similarity, text,
+            image_urls=image_urls, images_base64=images_base64,
         )
 
     # ── cache (Redis) ──────────────────────────────────────────────────
