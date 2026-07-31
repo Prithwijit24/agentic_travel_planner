@@ -276,3 +276,31 @@ class TestListEndpoints:
         captured = capsys.readouterr()
         assert "POST" in captured.out
         assert "/search" in captured.out
+
+
+# ── stream_pipeline ──────────────────────────────────────────────────
+
+class TestStreamPipeline:
+    def test_stream_pipeline_parses_sse(self):
+        client, mock_client = _make_client(token="tok")
+        # Mock streaming response
+        sse_data = """event: search
+data: {"query": "test"}
+
+event: result
+data: {"url": "https://example.com"}
+
+"""
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.iter_lines.return_value = iter(sse_data.split("\n"))
+        mock_client.stream.return_value.__enter__ = MagicMock(return_value=mock_resp)
+        mock_client.stream.return_value.__exit__ = MagicMock(return_value=False)
+
+        events = list(client.stream_pipeline("test query"))
+        assert len(events) == 2
+        assert events[0]["event"] == "search"
+        assert events[0]["data"] == {"query": "test"}
+        assert events[1]["event"] == "result"
+        assert events[1]["data"] == {"url": "https://example.com"}
+
