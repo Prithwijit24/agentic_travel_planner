@@ -980,6 +980,7 @@ import streamlit as st
 from agentic_tour_planner.domain.models import PlanningRequest
 from agentic_tour_planner.geonames.index import search_places
 from agentic_tour_planner.llm.provider import LLMProvider
+from agentic_tour_planner.services.news_service import NewsService
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
@@ -1920,7 +1921,7 @@ elif st.session_state.plan is not None:
         st.markdown(f"**Budget:** {plan['budget']} · {plan['travelers']} Travelers")
         st.markdown("<hr style='border: 0; border-top: 1px solid #d2d2d7; margin: 16px 0;'>", unsafe_allow_html=True)
 
-        menu_options = ["🗓️ Daily Itinerary", "💡 Budget & Tips", "🚇 Transport & Sources", "🗺️ Maps"]
+        menu_options = ["🗓️ Daily Itinerary", "💡 Budget & Tips", "🚇 Transport & Sources", "🗺️ Maps", "📰 News"]
         menu_choice = st.radio("Navigation", menu_options, label_visibility="collapsed")
 
         st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
@@ -2142,6 +2143,81 @@ elif st.session_state.plan is not None:
             except Exception as map_err:
                 st.warning(f"Map rendering failed: {map_err}")
                 st.info("Map visualization requires the itinerary to have geocodable place names.")
+
+    elif menu_choice == "📰 News":
+        st.markdown("### 📰 Recent News")
+        dest_name = plan["destination"]
+        st.markdown(
+            f"<p style='font-size: 15px; color: #6e6e73; margin-bottom: 24px;'>"
+            f"Latest news and updates about {dest_name}</p>",
+            unsafe_allow_html=True,
+        )
+
+        # Check for cached news in session state
+        news_key = f"news_{dest_name}"
+        if news_key not in st.session_state:
+            st.session_state[news_key] = None
+
+        if st.session_state[news_key] is None:
+            if st.button("🔍 Fetch Latest News", type="primary", use_container_width=True, key="fetch_news_btn"):
+                with st.spinner("Searching for recent news..."):
+                    try:
+                        news_svc = NewsService()
+                        digest = asyncio.run(
+                            news_svc.collect(
+                                destination=dest_name,
+                                interests=None,
+                            )
+                        )
+                        st.session_state[news_key] = digest
+                        st.rerun()
+                    except Exception as news_err:
+                        st.error(f"Failed to fetch news: {news_err}")
+        else:
+            digest = st.session_state[news_key]
+
+            # Overview card
+            if digest.overview:
+                overview_html = f"<p style='font-size: 15px; color: #3a3a3c; line-height: 1.6;'>{digest.overview}</p>"
+                st.markdown(
+                    fluent_card("Overview", "blue", overview_html),
+                    unsafe_allow_html=True,
+                )
+
+            if not digest.articles:
+                st.info("No recent news articles found for this destination.")
+            else:
+                # Render article cards
+                for i, article in enumerate(digest.articles):
+                    date_str = f" · {article.date}" if article.date else ""
+                    source_str = f" · {article.source}" if article.source else ""
+                    summary_text = article.summary or article.snippet[:200]
+                    summary_html = f"<p style='font-size: 14px; color: #3a3a3c; line-height: 1.5; margin-bottom: 8px;'>{summary_text}</p>"
+                    meta_html = (
+                        f"<p style='font-size: 12px; color: #6e6e73; margin-bottom: 12px;'>{source_str}{date_str}</p>"
+                    )
+                    link_html = f"<a href='{article.url}' target='_blank' style='font-size: 13px; color: var(--ms-blue); text-decoration: none; font-weight: 500;'>Read full article →</a>"
+                    card_html = (
+                        f"<div style='border-bottom: 1px solid #f0f0f0; padding-bottom: 16px; margin-bottom: 16px;'>"
+                        f"<h4 style='font-size: 16px; margin-bottom: 8px; color: #1d1d1f;'>{article.title}</h4>"
+                        f"{meta_html}{summary_html}{link_html}</div>"
+                    )
+                    st.markdown(card_html, unsafe_allow_html=True)
+
+            st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
+            col1, col2, _ = st.columns([1, 1, 2])
+            with col1:
+                if st.button("🔄 Refresh News", key="refresh_news_btn"):
+                    st.session_state[news_key] = None
+                    st.rerun()
+            with col2:
+                if st.button("🗑️ Clear Cache", key="clear_news_btn"):
+                    st.session_state[news_key] = None
+                    st.rerun()
+
+            fetched = digest.fetched_at
+            if fetched:
+                st.caption(f"Last updated: {fetched}")
 
 
 def run() -> None:

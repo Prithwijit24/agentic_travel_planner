@@ -1,7 +1,8 @@
 """Fetch and summarize recent news about a destination using DDGS."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from ddgs import DDGS
 from pydantic import BaseModel
@@ -86,7 +87,7 @@ class NewsService:
             return NewsDigest(
                 destination=destination,
                 overview="No recent news found for this destination.",
-                fetched_at=datetime.now(timezone.utc).isoformat(),
+                fetched_at=datetime.now(datetime.UTC).isoformat(),
             )
 
         # LLM summarization
@@ -105,7 +106,7 @@ class NewsService:
             destination=destination,
             overview=overview,
             articles=articles[:5],
-            fetched_at=datetime.now(timezone.utc).isoformat(),
+            fetched_at=datetime.now(datetime.UTC).isoformat(),
         )
 
         # Cache for 1 hour
