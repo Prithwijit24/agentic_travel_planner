@@ -499,9 +499,10 @@ class MapTool:
             <b>Itinerary Days</b><br>{rows}
         </div>
         """
-        # folium's typed ``Element`` does not declare the runtime ``html`` child,
-        # so access it dynamically (the root element always has one).
-        m.get_root().html.add_child(folium.Element(legend_html))
+        # folium's typed ``Element`` does not declare the runtime ``html`` child;
+        # the root element always has one at runtime, so widen the type to access it.
+        root: Any = m.get_root()
+        root.html.add_child(folium.Element(legend_html))
 
     # ------------------------------------------------------------------
     # Autocomplete

@@ -8,6 +8,7 @@ from agentic_tour_planner.domain.models import (
     PlaceImage,
     PlanAPIResponse,
     PlanningInsights,
+    PlanningRequest,
     PlanningResponse,
     RouteGuidance,
     SpotDetail,
@@ -36,8 +37,6 @@ def _make_planning_response() -> PlanningResponse:
 
 def test_planning_request_requires_destination():
     with pytest.raises(ValidationError):
-        from agentic_tour_planner.domain.models import PlanningRequest
-
         PlanningRequest(destination="", trip_length_days=3)
 
 

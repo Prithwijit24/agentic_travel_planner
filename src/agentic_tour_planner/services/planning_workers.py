@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import ClassVar
 
 from agentic_tour_planner.domain.models import (
     BudgetGuidance,
@@ -163,7 +164,7 @@ Return JSON with keys: estimated_daily_budget, estimated_total_budget, assumptio
 
 
 class TimingPlannerWorker:
-    HIGH_SEASON_MONTHS = {
+    HIGH_SEASON_MONTHS: ClassVar[set[str]] = {
         "june",
         "july",
         "august",
