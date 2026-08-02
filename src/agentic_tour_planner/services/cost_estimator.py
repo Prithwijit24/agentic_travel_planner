@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from agentic_tour_planner.domain.models import (
@@ -100,6 +101,10 @@ class CostEstimator:
             ("error" in data or "raw" in data),
         )
         if "error" in data or "raw" in data:
+            rebuilt = _estimate_from_records(records, request)
+            if rebuilt is not None:
+                logger.info("_parse rebuilt estimate from {} calculator records", len(records))
+                return rebuilt
             return CostEstimate(calculations=records)
 
         # The model occasionally returns a different (but equally valid) shape:
@@ -126,9 +131,13 @@ class CostEstimator:
             subtotal = d.get("subtotal", d.get("day_total"))
             if isinstance(subtotal, str):
                 subtotal = _amount_to_num(subtotal)
+            try:
+                day_num = int(d.get("day", 0))
+            except (TypeError, ValueError):
+                day_num = 0
             daily.append(
                 DailyCost(
-                    day=int(d.get("day", 0)),
+                    day=day_num,
                     items=items,
                     subtotal=subtotal,
                     steps=d.get("steps") or [],
@@ -177,8 +186,72 @@ class CostEstimator:
 
 def _amount_to_num(text: str) -> float:
     """Extract numeric value from a string like '3500 rupees' or '₹5,000'."""
-    import re
-
     cleaned = re.sub(r"[₹$€£,]", "", str(text))
     nums = re.findall(r"\d+(?:\.\d+)?", cleaned)
     return float(nums[0]) if nums else 0.0
+
+
+_DAY_NUM_RE = re.compile(r"\bday\s*(\d+)\b", re.IGNORECASE)
+_TOTAL_WORD_RE = re.compile(r"\b(total|subtotal)\b", re.IGNORECASE)
+_GRAND_TOTAL_RE = re.compile(r"\bgrand\s+total\b", re.IGNORECASE)
+_PER_PERSON_RE = re.compile(r"\bper\s+person\b", re.IGNORECASE)
+
+
+def _estimate_from_records(records: list[dict[str, Any]], request: PlanningRequest) -> CostEstimate | None:
+    """Rebuild a usable CostEstimate from the calculator tool records.
+
+    The model sometimes runs all of its arithmetic through the calculator tool
+    and then returns an unparseable final message (prose, empty, or truncated).
+    The tool records carry every computed number (per-day totals, grand total,
+    per-person total), so we reconstruct the estimate from them instead of
+    handing the UI an empty "N/A" card.
+    """
+    usable = [r for r in records if isinstance(r, dict) and r.get("result") is not None]
+    if not usable:
+        return None
+
+    day_totals: dict[int, float] = {}
+    day_items: dict[int, list[CostLineItem]] = {}
+    grand_total: float | None = None
+    per_person_total: float | None = None
+
+    for r in usable:
+        label = str(r.get("label", ""))
+        try:
+            amount = float(r["result"])
+        except (TypeError, ValueError):
+            continue
+        day_match = _DAY_NUM_RE.search(label)
+        if _GRAND_TOTAL_RE.search(label):
+            grand_total = amount
+        elif _PER_PERSON_RE.search(label):
+            per_person_total = amount
+        if day_match:
+            day_num = int(day_match.group(1))
+            if _TOTAL_WORD_RE.search(label):
+                day_totals[day_num] = amount
+            else:
+                day_items.setdefault(day_num, []).append(CostLineItem(label=label, amount=amount))
+
+    daily: list[DailyCost] = []
+    for day in sorted(day_totals):
+        daily.append(DailyCost(day=day, items=day_items.get(day, []), subtotal=day_totals[day]))
+
+    if not daily and grand_total is None:
+        return None
+
+    members = max(int(request.travelers or 1), 1)
+    if grand_total is None:
+        grand_total = round(sum(d.subtotal or 0 for d in daily), 2)
+    if per_person_total is None:
+        per_person_total = round(grand_total / members, 2)
+
+    return CostEstimate(
+        daily=daily,
+        overall=OverallCost(
+            per_person_total=per_person_total,
+            members=members,
+            grand_total=grand_total,
+        ),
+        calculations=records,
+    )
