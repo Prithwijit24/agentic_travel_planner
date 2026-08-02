@@ -1850,6 +1850,7 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
                     }
                     st.session_state.form_submitted = True
                     st.session_state.is_loading = True
+                    st.session_state.loading_seconds = 0
                     st.rerun()
 
 # --- LOADING PAGE ---
@@ -1862,30 +1863,57 @@ elif st.session_state.is_loading:
     st.markdown("<style>.main .block-container {max-width: 820px; padding-top: 4rem;}</style>", unsafe_allow_html=True)
 
     # Static header (spinner + title) — rendered once, stable
-    _pulse_svg = _load_loading_svg("pulse.svg")
+    st.iframe(
+        """<!DOCTYPE html>
+<html><head><style>
+@keyframes pulse-ring {
+  0%   { transform: scale(0.2); opacity: 0.9; }
+  60%  { opacity: 0.3; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+.ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pulse-ring 2.4s cubic-bezier(0.25, 0.1, 0.25, 1) infinite;
+}
+.ring:nth-of-type(2) { animation-delay: 0.6s; }
+.ring:nth-of-type(3) { animation-delay: 1.2s; }
+.ring:nth-of-type(4) { animation-delay: 1.8s; }
+</style></head><body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="100%" height="100%">
+  <g fill="none" stroke="#269eff" stroke-width="4">
+    <g class="ring"><circle cx="60" cy="60" r="26"/></g>
+    <g class="ring"><circle cx="60" cy="60" r="26"/></g>
+    <g class="ring"><circle cx="60" cy="60" r="26"/></g>
+    <g class="ring"><circle cx="60" cy="60" r="26"/></g>
+  </g>
+</svg>
+</body></html>""",
+        height=140,
+    )
+
     st.markdown(
-        f"""
+        """
         <style>
-        .tour-loader-box {{ text-align: center; margin-bottom: 24px; }}
-        .tour-loader-spinner {{ position: relative; width: 120px; height: 120px; margin: 0 auto 16px auto; }}
-        .tour-loader-box h3 {{ margin: 0; color: #1d1d1f; font-size: 20px; font-weight: 600; }}
-        .tour-loader-box p {{ color: #6e6e73; margin-top: 8px; font-size: 14px; }}
-        .tour-terminal {{ background: #ffffff; border: 1px solid #d2d2d7; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); overflow: hidden; text-align: left; margin-bottom: 16px; }}
-        .tour-terminal-head {{ background: #f5f5f7; padding: 12px 16px; border-bottom: 1px solid #d2d2d7; display: flex; align-items: center; gap: 8px; }}
-        .tour-terminal-dot {{ width: 12px; height: 12px; border-radius: 50%; }}
-        .tour-dot-red {{ background: #ff5f56; }}
-        .tour-dot-yellow {{ background: #ffbd2e; }}
-        .tour-dot-green {{ background: #27c93f; }}
-        .tour-terminal-body {{ padding: 20px 24px; font-family: 'SF Mono', 'Courier New', monospace; font-size: 14px; color: #3a3a3c; background: #fbfbfd; min-height: 280px; max-height: 420px; overflow-y: auto; }}
-        .tour-log {{ margin-bottom: 10px; line-height: 1.4; }}
-        .tour-log-time {{ color: #8e8e93; margin-right: 8px; }}
-        .tour-log-success {{ color: #00B294; }}
-        .tour-log-info {{ color: #0078D4; }}
-        .tour-log-warn {{ color: #FFB900; }}
-        .tour-log-error {{ color: #D0021B; }}
+        .tour-loader-box { text-align: center; margin-bottom: 24px; }
+        .tour-loader-box h3 { margin: 0; color: #1d1d1f; font-size: 20px; font-weight: 600; }
+        .tour-loader-box p { color: #6e6e73; margin-top: 8px; font-size: 14px; }
+        .tour-terminal { background: #ffffff; border: 1px solid #d2d2d7; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); overflow: hidden; text-align: left; margin-bottom: 16px; }
+        .tour-terminal-head { background: #f5f5f7; padding: 12px 16px; border-bottom: 1px solid #d2d2d7; display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+        .tour-terminal-dot { width: 12px; height: 12px; border-radius: 50%; }
+        .tour-dot-red { background: #ff5f56; }
+        .tour-dot-yellow { background: #ffbd2e; }
+        .tour-dot-green { background: #27c93f; }
+        .tour-terminal-body { padding: 20px 24px; font-family: 'SF Mono', 'Courier New', monospace; font-size: 14px; color: #3a3a3c; background: #fbfbfd; min-height: 280px; max-height: 420px; overflow-y: auto; }
+        .tour-log { margin-bottom: 10px; line-height: 1.4; }
+        .tour-log-time { color: #8e8e93; margin-right: 8px; }
+        .tour-log-success { color: #00B294; }
+        .tour-log-info { color: #0078D4; }
+        .tour-log-warn { color: #FFB900; }
+        .tour-log-error { color: #D0021B; }
+        .tour-terminal-clock { font-family: 'SF Mono', 'Courier New', monospace; font-size: 13px; color: #8e8e93; margin-left: auto; }
         </style>
         <div class="tour-loader-box">
-            <div class="tour-loader-spinner">{_pulse_svg}</div>
             <h3>Crafting your perfect trip...</h3>
             <p>Our AI agents are analyzing routes, weather, and local insights. This may take 10-15 minutes.</p>
         </div>
@@ -1895,6 +1923,7 @@ elif st.session_state.is_loading:
 
     @st.fragment(run_every=1.0)
     def _loading_status() -> None:
+        st.session_state.loading_seconds = st.session_state.get("loading_seconds", 0) + 1
         form_data = st.session_state.get("form_data", {})
         if "generation_job_id" not in st.session_state:
             st.session_state.generation_job_id = _start_generation_job(
@@ -1924,6 +1953,7 @@ elif st.session_state.is_loading:
                     <div class="tour-terminal-dot tour-dot-red"></div>
                     <div class="tour-terminal-dot tour-dot-yellow"></div>
                     <div class="tour-terminal-dot tour-dot-green"></div>
+                    <span class="tour-terminal-clock">{st.session_state.loading_seconds // 3600:02d}:{st.session_state.loading_seconds % 3600 // 60:02d}:{st.session_state.loading_seconds % 60:02d}</span>
                 </div>
                 <div class="tour-terminal-body">{term_lines}</div>
             </div>
