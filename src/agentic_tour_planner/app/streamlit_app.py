@@ -1403,8 +1403,8 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
                     "transport": transport_text,
                     "key_note": key_note,
                     "keywords": det.get("keywords") or [],
-                    "lat": 0,
-                    "lon": 0,
+                    "lat": spot.get("lat", 0),
+                    "lon": spot.get("lon", 0),
                     "image_query": spot.get("image_query", spot.get("name", "")),
                 }
             )

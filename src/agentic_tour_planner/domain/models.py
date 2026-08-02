@@ -155,6 +155,8 @@ class DayWeather(BaseModel):
 class SpotDetail(BaseModel):
     name: str
     slot: str | None = None
+    lat: float | None = None
+    lon: float | None = None
     history: str | None = None
     opening_hours: str | None = None
     closing_hours: str | None = None

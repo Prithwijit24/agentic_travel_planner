@@ -250,6 +250,13 @@ def build_itinerary_prompt(
           (i.e. the recommended area differs from the previous day's base); otherwise leave it false.
         - {transport_rule}
         - {authority_rule}
+        - COORDINATES: Include lat and lon for every spot in the spots array so a
+          geographic solver can assign places to days. Example: {"name": "MG Marg", "lat": 27.3314, "lon": 88.6138}.
+        - SOLVER-BASED DAY ASSIGNMENT: A deterministic geographic solver assigns places to days
+          after your extraction. Do NOT assign places to specific days in your output —
+          only group places loosely by region to help the solver. The solver enforces
+          the 3-5 per-day bound and ensures geographic coherence. Your job is to
+          extract accurate POIs with coordinates and write high-quality narrative text.
 
         LIVE WEB INTELLIGENCE (authoritative source of truth):
         {live_block or "Not collected."}
@@ -265,8 +272,9 @@ def build_itinerary_prompt(
         Itinerary must be a list of day objects with:
         day, theme, summary, rationale, transport, morning, afternoon, evening, meals, logistics, weather, spots,
         needs_hotel_change, hotel_recommendation.
-         Citations must be grounded in the evidence above (favour the Live Web sources).
-         """
+        Each spot in spots must include: name, lat, lon, slot, history, opening_hours, closing_hours, best_time, description.
+          Citations must be grounded in the evidence above (favour the Live Web sources).
+          """
     ).strip()
     logger.debug(f"Built itinerary prompt (length={len(prompt)} chars, evidence_blocks={len(evidence_blocks)})")
     return prompt

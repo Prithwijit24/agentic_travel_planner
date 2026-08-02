@@ -19,9 +19,11 @@ from agentic_tour_planner.domain.models import (
     RetrievedContext,
     SearchResult,
     SourceDocument,
+    SpotDetail,
     TransportOption,
 )
 from agentic_tour_planner.llm.provider import LLMProvider, LLMUnavailableError
+from agentic_tour_planner.pipeline.day_clustering import capacitated_geo_cluster, order_days_and_stops
 from agentic_tour_planner.pipeline.place_constraints import enforce_minimum_daily_spots
 from agentic_tour_planner.pipeline.prompts import (
     DETAILED_SYSTEM_PROMPT,
@@ -256,6 +258,52 @@ class AgenticTourPlannerPipeline:
                         item[field] = [value]
                 itinerary.append(DayPlan.model_validate(item))
             itinerary = enforce_minimum_daily_spots(request, itinerary)
+
+            # --- Deterministic day clustering (replaces LLM-based assignment) ---
+            try:
+                all_pois: list[dict] = []
+                for day in itinerary:
+                    for spot in day.spots:
+                        poi: dict = {"name": spot.name}
+                        if spot.lat is not None and spot.lon is not None:
+                            poi["lat"] = spot.lat
+                            poi["lon"] = spot.lon
+                        all_pois.append(poi)
+
+                if all_pois and len(all_pois) >= request.trip_length_days * 3:
+                    clusters = capacitated_geo_cluster(
+                        all_pois,
+                        num_days=request.trip_length_days,
+                        min_per_day=3,
+                        max_per_day=5,
+                    )
+                    clusters = order_days_and_stops(
+                        clusters,
+                        origin=(float(request.origin.split(",")[0]), float(request.origin.split(",")[1]))
+                        if request.origin
+                        else None,
+                    )
+                    # Reassign spots to days, preserving original day structure
+                    for d_idx, cluster in enumerate(clusters):
+                        if d_idx < len(itinerary):
+                            day_spots = []
+                            for poi in cluster:
+                                spot = SpotDetail(name=poi["name"])
+                                if "lat" in poi and "lon" in poi:
+                                    spot.lat = poi["lat"]
+                                    spot.lon = poi["lon"]
+                                day_spots.append(spot)
+                            itinerary[d_idx].spots = day_spots
+                    logger.debug(f"Day clustering solver reassigned {len(all_pois)} POIs into {len(itinerary)} days.")
+                else:
+                    logger.debug(
+                        f"Day clustering skipped: {len(all_pois)} POIs, need at least {request.trip_length_days * 3}."
+                    )
+            except ValueError as e:
+                logger.warning(f"Day clustering infeasible, keeping LLM assignment: {e}")
+            except Exception as e:
+                logger.warning(f"Day clustering failed, keeping LLM assignment: {e}")
+
             logger.debug(f"Parsed {len(itinerary)} itinerary days.")
 
         async with self.profiler.atrack("Transport Options"):
