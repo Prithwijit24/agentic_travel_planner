@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -14,12 +12,17 @@ from agentic_tour_planner.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def collect_places_for_images(response: PlanningResponse) -> list[dict]:
+def collect_places_for_images(response: PlanningResponse, destination: str = "") -> list[dict]:
     """Extract place dicts from a PlanningResponse itinerary for image resolution.
 
     Returns a list of dicts with 'place_name' and 'image_query' keys,
     suitable for passing to ``resolve_images()``.
+
+    The destination is appended to each image query so searches resolve to the
+    correct region (e.g. 'Zero Point, Gangtok') instead of a same-named place
+    elsewhere.
     """
+    dest_suffix = destination.strip()
     places: list[dict] = []
     seen: set[str] = set()
     for day in response.itinerary:
@@ -27,6 +30,8 @@ def collect_places_for_images(response: PlanningResponse) -> list[dict]:
             q = spot.image_query or spot.name
             if q and spot.name not in seen:
                 seen.add(spot.name)
+                if dest_suffix and dest_suffix.lower() not in q.lower():
+                    q = f"{q}, {dest_suffix}"
                 places.append({"place_name": spot.name, "image_query": q})
     return places
 

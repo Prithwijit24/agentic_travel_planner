@@ -21,7 +21,7 @@
 
 # logger = get_logger(__name__)
 
-# _HOURS_ESTIMATE_PLACEHOLDER = "Processing your request… (typically 10–15 seconds)"
+# _HOURS_ESTIMATE_PLACEHOLDER = "Processing your request... (typically 10-15 seconds)"
 
 
 # def _search_unsplash(query: str, per_page: int = 1) -> str | None:
@@ -970,14 +970,18 @@
 import asyncio
 import json
 import os
+import re
 import threading
 import time
+from pathlib import Path
+from typing import Any, cast
 from uuid import uuid4
 
 import httpx
 import streamlit as st
+from streamlit_searchbox import st_searchbox
 
-from agentic_tour_planner.domain.models import PlanningRequest
+from agentic_tour_planner.domain.models import BudgetLevel, PlanningRequest
 from agentic_tour_planner.geonames.index import search_places
 from agentic_tour_planner.llm.provider import LLMProvider
 from agentic_tour_planner.services.news_service import NewsService
@@ -1015,10 +1019,76 @@ if "worker_model" not in st.session_state:
 
 
 # --- HELPER FUNCTIONS ---
-def clean_html(html_str):
+def clean_html(html_str: str) -> str:
     lines = html_str.split("\n")
     cleaned_lines = [line.lstrip() for line in lines]
     return "\n".join(cleaned_lines).strip()
+
+
+def html_escape(text: str) -> str:
+    """Minimal HTML escape for user/LLM text injected via unsafe_allow_html."""
+    return (text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+# Markdown category -> colour used for keyword highlighting (mirrors the CLI).
+_KEYWORD_COLORS = {
+    "place": "#0078D4",
+    "altitude": "#ff8c00",
+    "person": "#c026d3",
+    "deity": "#ffb900",
+    "other": "#00b294",
+}
+
+
+def render_highlighted(text: str, keywords: list | None = None) -> str:
+    """Render a markdown-ish string as HTML with applying bold, italics and coloured keywords.
+
+    keywords: a list of {"text": ..., "category": ...} dicts. Words found verbatim
+    in the text are wrapped in a bold category colour. ``**bold**`` / ``*italic*``
+    markdown is converted to ``<b>`` / ``<i>``. Safe for ``unsafe_allow_html``.
+    """
+    s = html_escape(text or "")
+    s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)
+    s = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?!\*)\*(?!\*)", r"<i>\1</i>", s)
+    for kw in keywords or []:
+        if isinstance(kw, dict):
+            term, cat = kw.get("text"), kw.get("category", "other")
+        else:
+            term = getattr(kw, "text", None)
+            cat = getattr(kw, "category", "other")
+        if not term:
+            continue
+        color = _KEYWORD_COLORS.get(cat, _KEYWORD_COLORS["other"])
+        pattern = re.compile(r"(?i)\b(" + re.escape(str(term)) + r")\b")
+        s = pattern.sub(rf'<b style="color: {color};">\1</b>', s)
+    return s
+
+
+_LOADING_ANIMATION_DIR = Path(__file__).resolve().parent.parent / "loading_animations"
+
+
+@st.cache_data(show_spinner=False)
+def _load_loading_svg(filename: str) -> str:
+    with (_LOADING_ANIMATION_DIR / filename).open(encoding="utf-8") as fh:
+        return str(fh.read())
+
+
+def _render_loading_animation(svg_filename: str, title: str, subtitle: str) -> str:
+    """Return HTML for a nice animated SVG loader (World_map / Notifications)."""
+    svg = _load_loading_svg(svg_filename)
+    return clean_html(
+        f"""
+<div style="display:flex; flex-direction:column; align-items:center; justify-content:center;
+            gap:14px; padding:36px 24px; background:#f8f9fb; border:1px solid #e6e7eb;
+            border-radius:16px; text-align:center; margin-bottom:20px;">
+    <div style="width:220px; height:220px; display:flex; align-items:center; justify-content:center;">
+        {svg}
+    </div>
+    <div style="font-size:17px; font-weight:600; color:#1d1d1f;">{title}</div>
+    <div style="font-size:14px; color:#6e6e73;">{subtitle}</div>
+</div>
+"""
+    )
 
 
 def _search_suggestions(query: str) -> list[str]:
@@ -1072,7 +1142,7 @@ def _build_request_from_form(
         origin=origin or None,
         trip_length_days=days,
         interests=interests,
-        budget_level=budget.lower(),
+        budget_level=cast(BudgetLevel, budget.lower()),
         travel_month=month,
         notes=notes or None,
         provider=provider or None,
@@ -1090,17 +1160,19 @@ async def _call_plans_api(request: PlanningRequest) -> dict:
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
         r = await client.post(f"{API_BASE_URL}/plans", json=request.model_dump(mode="json"))
         r.raise_for_status()
-        return r.json()
+        return cast(dict, r.json())
 
 
 async def _stream_logs(request_id: str, callback) -> None:
     """Connect to SSE stream and call callback for each event."""
-    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
-        async with client.stream("GET", f"{API_BASE_URL}/plans/stream/{request_id}") as response:
-            async for line in response.aiter_lines():
-                if line.startswith("data: "):
-                    event_data = json.loads(line[6:])
-                    callback(event_data)
+    async with (
+        httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client,
+        client.stream("GET", f"{API_BASE_URL}/plans/stream/{request_id}") as response,
+    ):
+        async for line in response.aiter_lines():
+            if line.startswith("data: "):
+                event_data = json.loads(line[6:])
+                callback(event_data)
 
 
 async def _fetch_images(plan_id: str) -> dict:
@@ -1108,7 +1180,7 @@ async def _fetch_images(plan_id: str) -> dict:
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.get(f"{API_BASE_URL}/plans/{plan_id}/images")
         r.raise_for_status()
-        return r.json()
+        return cast(dict, r.json())
 
 
 def _start_generation_job(
@@ -1125,10 +1197,22 @@ def _start_generation_job(
         "plan": None,
         "images": {},
         "error": None,
+        "started_at": time.time(),
+        "logs": [],
     }
 
     def run_job() -> None:
         job = _UI_JOBS[job_id]
+        job["logs"] = [
+            {"time": "00:00", "text": "🚀 Initializing Agentic Tour Planner...", "class": "info"},
+            {
+                "time": "00:00",
+                "text": f"🤖 Connecting to {planner_model} via {provider}...",
+                "class": "info",
+            },
+            {"time": "00:00", "text": "📡 Sending request to API server...", "class": "info"},
+        ]
+        job["started_at"] = time.time()
         request_obj = _build_request_from_form(
             destination=form_data.get("destination", ""),
             origin=form_data.get("origin"),
@@ -1150,29 +1234,41 @@ def _start_generation_job(
             if response_data.get("status") == "error":
                 raise RuntimeError(response_data.get("error") or "Unknown error")
 
-            stream_result = {"plan": response_data.get("plan"), "error": None}
+            stream_result: dict[str, Any] = {"plan": response_data.get("plan"), "images": [], "error": None}
             step_counter = [0]
             total_steps = 4
 
             def on_event(event_data):
                 event_type = event_data.get("event", "")
                 message = event_data.get("message", "")
+                elapsed = time.time() - job["started_at"]
+                ts = f"{int(elapsed // 60):02d}:{int(elapsed % 60):02d}"
+                if event_type in ("step", "debug", "metric", "info", "log", "progress"):
+                    job["logs"].append({"time": ts, "text": message, "class": "info"})
                 if event_type == "step":
                     step_counter[0] += 1
                     job["progress"] = min(step_counter[0] / total_steps, 0.95)
                     job["message"] = message
                 elif event_type == "error":
+                    job["logs"].append({"time": ts, "text": f"❌ {message}", "class": "error"})
                     stream_result["error"] = message
                     job["message"] = f"Error: {message}"
                 elif event_type == "done":
                     detail = event_data.get("detail") or {}
                     if detail.get("status") == "error":
+                        job["logs"].append(
+                            {"time": ts, "text": f"❌ {detail.get('error') or message}", "class": "error"}
+                        )
                         stream_result["error"] = detail.get("error") or message
+                    else:
+                        job["logs"].append({"time": ts, "text": f"✅ {message}", "class": "success"})
                     if detail.get("response"):
                         plan_payload = {**detail["response"]}
                         if detail.get("detailed"):
                             plan_payload["detailed"] = detail["detailed"]
                         stream_result["plan"] = plan_payload
+                    if isinstance(detail.get("images"), list):
+                        stream_result["images"] = detail["images"]
                     job["progress"] = 1.0
                     job["message"] = "Complete!"
 
@@ -1182,10 +1278,13 @@ def _start_generation_job(
                 raise RuntimeError(stream_result["error"] or "No plan returned by API")
 
             plan_data = stream_result["plan"]
-            try:
-                job["images"] = asyncio.run(_fetch_images(plan_data["plan_id"]))
-            except Exception:
-                job["images"] = {}
+            if stream_result["images"]:
+                job["images"] = {"images": stream_result["images"]}
+            else:
+                try:
+                    job["images"] = asyncio.run(_fetch_images(plan_data["plan_id"]))
+                except Exception:
+                    job["images"] = {}
 
             job["plan"] = plan_data
             job["status"] = "done"
@@ -1214,31 +1313,92 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
                     places_by_name[pname] = place
             detailed_lookup[day_num] = places_by_name
 
+    def _is_real_place(name: str) -> bool:
+        n = (name or "").strip()
+        n_lower = n.lower()
+        if not n or len(n) < 3:
+            return False
+        junk = {
+            "morning",
+            "late morning",
+            "midday",
+            "afternoon",
+            "late afternoon",
+            "evening",
+            "early",
+            "late",
+            "noon",
+            "dawn",
+            "dusk",
+            "night",
+            "breakfast",
+            "lunch",
+            "dinner",
+            "brunch",
+            "arrival",
+            "arrive",
+            "departure",
+            "depart",
+            "transit",
+            "check-in",
+            "check-out",
+            "drive",
+            "transfer",
+            "return",
+            "free time",
+            "en route",
+            "explore",
+            "visit",
+            "walk",
+            "rest",
+            "optional place",
+        }
+        if n_lower in junk or any(seg.strip().lower() in junk for seg in n.split(",")):
+            return False
+        return not ("optional place" in n_lower or re.search(r"\d", n))
+
     display_itinerary = []
+
+    transport_options = []
+    for t in plan_data.get("transport_options", []):
+        transport_options.append(
+            {
+                "mode": t.get("mode", ""),
+                "cost": t.get("fare", ""),
+                "description": t.get("description", ""),
+            }
+        )
+
+    # Fallback per-place transport text assembled from the global transport options
+    # so places never render an empty "Transport:" field.
+    transport_fallback = " · ".join(f"{tp['mode']} ({tp['cost']})" for tp in transport_options if tp.get("mode"))
+
     for day in itinerary:
         day_num = day.get("day")
         day_detailed = detailed_lookup.get(day_num, {})
         spots = []
         for spot in day.get("spots", []):
             spot_name = spot.get("name", "")
+            if not _is_real_place(spot_name):
+                continue
             det = day_detailed.get(spot_name, {})
             desc = det.get("description") or spot.get("description", "")
             key_note = det.get("key_note") or spot.get("history", "") or spot.get("description", "")[:120]
             opening_hours = (
                 det.get("opening_closing")
-                or f"{spot.get('opening_hours', '')} – {spot.get('closing_hours', '')}".strip(" –")
+                or f"{spot.get('opening_hours', '')} \u2013 {spot.get('closing_hours', '')}".strip(" \u2013")
                 or "Not available"
             )
+            transport_text = det.get("transport") or spot.get("transport") or transport_fallback
             spots.append(
                 {
                     "name": spot_name,
                     "description": desc,
                     "hours": opening_hours,
                     "best_time": det.get("best_time") or spot.get("best_time", ""),
-                    "transport": det.get("transport") or spot.get("description", "")[:80]
-                    if not spot.get("best_time")
-                    else "",
+                    "transport": transport_text,
                     "key_note": key_note,
+                    "keywords": det.get("keywords") or [],
                     "lat": 0,
                     "lon": 0,
                     "image_query": spot.get("image_query", spot.get("name", "")),
@@ -1296,14 +1456,6 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
     }
 
     transport_options = []
-    for t in plan_data.get("transport_options", []):
-        transport_options.append(
-            {
-                "mode": t.get("mode", ""),
-                "cost": t.get("fare", ""),
-                "description": t.get("description", ""),
-            }
-        )
 
     citations = []
     for c in plan_data.get("citations", []):
@@ -1465,27 +1617,6 @@ section[data-testid="stSidebar"] [data-checked="true"] span {
     transform: scale(0.98);
 }
 
-/* Form Submit Button (Light Reddish Color) */
-div[data-testid="stFormSubmitButton"] > button {
-    background-color: #FF6B6B !important;
-    border-color: #FF6B6B !important;
-    color: white !important;
-    border-radius: 980px;
-    padding: 12px 24px;
-    font-weight: 600;
-    border: none;
-    width: 100%;
-    transition: transform 0.1s, background-color 0.2s;
-}
-div[data-testid="stFormSubmitButton"] > button:hover {
-    background-color: #FF5252 !important;
-    border-color: #FF5252 !important;
-    color: white !important;
-}
-div[data-testid="stFormSubmitButton"] > button:active {
-    transform: scale(0.98);
-}
-
 .weather-strip {
     display: flex;
     justify-content: space-between;
@@ -1600,15 +1731,55 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
+        destination = st_searchbox(
+            _search_suggestions,
+            placeholder="e.g. Sikkim, Kyoto, Paris... (type to search)",
+            label="🌍 Destination *",
+            default="",
+            default_use_searchterm=True,
+            clear_on_submit=False,
+            edit_after_submit="option",
+            debounce=200,
+            key="dest_searchbox",
+        )
+        origin = st_searchbox(
+            _search_suggestions,
+            placeholder="e.g. Kolkata, Mumbai... (type to search)",
+            label="📍 Origin",
+            default="",
+            default_use_searchterm=True,
+            clear_on_submit=False,
+            edit_after_submit="option",
+            debounce=200,
+            key="origin_searchbox",
+        )
+
+        st.markdown("### Configuration")
+        conf_c1, conf_c2, conf_c3 = st.columns(3)
+        with conf_c1:
+            provider = st.selectbox(
+                "🤖 Model Provider",
+                PROVIDERS,
+                index=PROVIDERS.index(st.session_state.provider) if st.session_state.provider in PROVIDERS else 0,
+            )
+        with conf_c2:
+            current_planner = PLANNER_MODELS.get(provider, ["default"]) or ["default"]
+            planner_index = (
+                current_planner.index(st.session_state.planner_model)
+                if st.session_state.planner_model in current_planner
+                else 0
+            )
+            planner_model = st.selectbox("🧠 Planner Model", current_planner, index=planner_index)
+        with conf_c3:
+            current_worker = WORKER_MODELS.get(provider, ["default"]) or ["default"]
+            worker_index = (
+                current_worker.index(st.session_state.worker_model)
+                if st.session_state.worker_model in current_worker
+                else 0
+            )
+            worker_model = st.selectbox("🛠️ Worker Model", current_worker, index=worker_index)
+
         with st.form("trip_planner_form"):
-            destination = st.text_input(
-                "🌍 Destination *",
-                placeholder="e.g. Sikkim, Kyoto, Paris",
-            )
-            origin = st.text_input(
-                "📍 Origin",
-                placeholder="e.g. Kolkata, Mumbai",
-            )
             st.markdown("### Trip Details")
             c3, c4 = st.columns(2)
             with c3:
@@ -1645,37 +1816,9 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
             )
 
             st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-            st.markdown("### Configuration")
-            conf_c1, conf_c2, conf_c3 = st.columns(3)
-            with conf_c1:
-                provider = st.selectbox(
-                    "🤖 Model Provider",
-                    PROVIDERS,
-                    index=PROVIDERS.index(st.session_state.provider) if st.session_state.provider in PROVIDERS else 0,
-                )
-            with conf_c2:
-                current_planner = PLANNER_MODELS.get(provider, ["default"])
-                planner_index = (
-                    current_planner.index(st.session_state.planner_model)
-                    if st.session_state.planner_model in current_planner
-                    else 0
-                )
-                planner_model = st.selectbox("🧠 Planner Model", current_planner, index=planner_index)
-            with conf_c3:
-                current_worker = WORKER_MODELS.get(provider, ["default"])
-                worker_index = (
-                    current_worker.index(st.session_state.worker_model)
-                    if st.session_state.worker_model in current_worker
-                    else 0
-                )
-                worker_model = st.selectbox("🛠️ Worker Model", current_worker, index=worker_index)
-
             st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
 
-            # Right-aligned button using columns
-            btn_col1, btn_col2 = st.columns([4, 1])
-            with btn_col2:
-                submit = st.form_submit_button("Generate Itinerary ✨", use_container_width=True)
+            submit = st.form_submit_button("Generate Itinerary ✨", use_container_width=True)
 
             if submit:
                 dest_clean = destination.split(",")[0].strip() if destination else ""
@@ -1706,160 +1849,42 @@ elif st.session_state.is_loading:
         '<style>[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {display: none !important;}</style>',
         unsafe_allow_html=True,
     )
-    st.markdown("<style>.main .block-container {max-width: 800px; padding-top: 5rem;}</style>", unsafe_allow_html=True)
+    st.markdown("<style>.main .block-container {max-width: 820px; padding-top: 4rem;}</style>", unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        loading_html = f"""
-        <html>
-        <head>
-            <style>
-                body {{
-                    margin: 0; padding: 0; font-family: 'Inter', sans-serif; background: transparent;
-                    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
-                }}
-                .loader-container {{
-                    text-align: center;
-                    margin-bottom: 30px;
-                }}
-                .spinner-wrap {{
-                    position: relative;
-                    width: 64px;
-                    height: 64px;
-                    margin: 0 auto 24px auto;
-                }}
-                .spinner-ring {{
-                    width: 64px;
-                    height: 64px;
-                    border: 5px solid #f3f3f3;
-                    border-top-color: #0078D4;
-                    border-right-color: #00BCF2;
-                    border-radius: 50%;
-                    animation: spin 1s linear infinite;
-                    box-sizing: border-box;
-                }}
-                .spinner-pin {{
-                    position: absolute;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    font-size: 24px;
-                }}
-                @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
-                h3 {{ margin: 0; color: #1d1d1f; font-size: 20px; font-weight: 600; }}
-                p {{ color: #6e6e73; margin-top: 8px; font-size: 14px; }}
+    # Static header (spinner + title) — rendered once, stable
+    _pulse_svg = _load_loading_svg("pulse.svg")
+    st.markdown(
+        f"""
+        <style>
+        .tour-loader-box {{ text-align: center; margin-bottom: 24px; }}
+        .tour-loader-spinner {{ position: relative; width: 120px; height: 120px; margin: 0 auto 16px auto; }}
+        .tour-loader-box h3 {{ margin: 0; color: #1d1d1f; font-size: 20px; font-weight: 600; }}
+        .tour-loader-box p {{ color: #6e6e73; margin-top: 8px; font-size: 14px; }}
+        .tour-terminal {{ background: #ffffff; border: 1px solid #d2d2d7; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); overflow: hidden; text-align: left; margin-bottom: 16px; }}
+        .tour-terminal-head {{ background: #f5f5f7; padding: 12px 16px; border-bottom: 1px solid #d2d2d7; display: flex; align-items: center; gap: 8px; }}
+        .tour-terminal-dot {{ width: 12px; height: 12px; border-radius: 50%; }}
+        .tour-dot-red {{ background: #ff5f56; }}
+        .tour-dot-yellow {{ background: #ffbd2e; }}
+        .tour-dot-green {{ background: #27c93f; }}
+        .tour-terminal-body {{ padding: 20px 24px; font-family: 'SF Mono', 'Courier New', monospace; font-size: 14px; color: #3a3a3c; background: #fbfbfd; min-height: 280px; max-height: 420px; overflow-y: auto; }}
+        .tour-log {{ margin-bottom: 10px; line-height: 1.4; }}
+        .tour-log-time {{ color: #8e8e93; margin-right: 8px; }}
+        .tour-log-success {{ color: #00B294; }}
+        .tour-log-info {{ color: #0078D4; }}
+        .tour-log-warn {{ color: #FFB900; }}
+        .tour-log-error {{ color: #D0021B; }}
+        </style>
+        <div class="tour-loader-box">
+            <div class="tour-loader-spinner">{_pulse_svg}</div>
+            <h3>Crafting your perfect trip...</h3>
+            <p>Our AI agents are analyzing routes, weather, and local insights. This may take 10-15 minutes.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-                .terminal-window {{
-                    background: #ffffff;
-                    border: 1px solid #d2d2d7;
-                    border-radius: 12px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-                    width: 100%;
-                    overflow: hidden;
-                    text-align: left;
-                    box-sizing: border-box;
-                    display: flex;
-                    flex-direction: column;
-                }}
-                .terminal-header {{
-                    background: #f5f5f7;
-                    padding: 12px 16px;
-                    border-bottom: 1px solid #d2d2d7;
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    flex: 0 0 auto;
-                }}
-                .terminal-dot {{ width: 12px; height: 12px; border-radius: 50%; }}
-                .dot-red {{ background: #ff5f56; }}
-                .dot-yellow {{ background: #ffbd2e; }}
-                .dot-green {{ background: #27c93f; }}
-                .terminal-clock {{
-                    margin-left: auto;
-                    font-family: 'SF Mono', monospace;
-                    font-size: 13px;
-                    color: #6e6e73;
-                    font-weight: 600;
-                }}
-                .terminal-body {{
-                    padding: 24px;
-                    font-family: 'SF Mono', 'Courier New', monospace;
-                    font-size: 14px;
-                    color: #3a3a3c;
-                    flex: 1 1 auto;
-                    overflow-y: auto;
-                    background: #fbfbfd;
-                    min-height: 300px;
-                }}
-                .log-line {{ margin-bottom: 12px; line-height: 1.4; opacity: 0; animation: fadeIn 0.3s forwards; }}
-                .log-time {{ color: #8e8e93; margin-right: 8px; }}
-                .log-success {{ color: #00B294; }}
-                .log-info {{ color: #0078D4; }}
-                .log-warn {{ color: #FFB900; }}
-                @keyframes fadeIn {{ to {{ opacity: 1; }} }}
-            </style>
-        </head>
-        <body>
-            <div class="loader-container">
-                <div class="spinner-wrap">
-                    <div class="spinner-ring"></div>
-                    <div class="spinner-pin">🗺️</div>
-                </div>
-                <h3>Crafting your perfect trip...</h3>
-                <p>Our AI agents are analyzing routes, weather, and local insights. This may take 10-15 minutes.</p>
-            </div>
-
-            <div class="terminal-window">
-                <div class="terminal-header">
-                    <div class="terminal-dot dot-red"></div>
-                    <div class="terminal-dot dot-yellow"></div>
-                    <div class="terminal-dot dot-green"></div>
-                    <div class="terminal-clock" id="clock">00:00:00</div>
-                </div>
-                <div class="terminal-body" id="term-body"></div>
-            </div>
-
-            <script>
-                function updateClock() {{
-                    const now = new Date();
-                    const h = String(now.getHours()).padStart(2, '0');
-                    const m = String(now.getMinutes()).padStart(2, '0');
-                    const s = String(now.getSeconds()).padStart(2, '0');
-                    document.getElementById('clock').innerText = h + ":" + m + ":" + s;
-                }}
-                setInterval(updateClock, 1000);
-                updateClock();
-
-                const logs = [
-                    {{time: "00:01", text: "🚀 Initializing Agentic Tour Planner...", class: "info"}},
-                    {{time: "00:03", text: "🤖 Connecting to {st.session_state.planner_model} via {st.session_state.provider}...", class: "info"}},
-                    {{time: "00:06", text: "📡 Sending request to API server...", class: "info"}},
-                    {{time: "00:09", text: "🔄 Waiting for plan generation to begin...", class: "info"}},
-                    {{time: "00:12", text: "⏳ This may take 10-15 minutes. Please keep this window open.", class: "warn"}}
-                ];
-
-                const termBody = document.getElementById('term-body');
-                let i = 0;
-
-                function addLog() {{
-                    if (i < logs.length) {{
-                        const log = logs[i];
-                        const div = document.createElement('div');
-                        div.className = 'log-line log-' + log.class;
-                        div.innerHTML = '<span class="log-time">[' + log.time + ']</span>' + log.text;
-                        termBody.appendChild(div);
-                        termBody.scrollTop = termBody.scrollHeight;
-                        i++;
-                        setTimeout(addLog, 800);
-                    }}
-                }}
-                setTimeout(addLog, 500);
-            </script>
-        </body>
-        </html>
-        """
-        st.iframe(loading_html, height=600)
-
+    @st.fragment(run_every=1.0)
+    def _loading_status() -> None:
         form_data = st.session_state.get("form_data", {})
         if "generation_job_id" not in st.session_state:
             st.session_state.generation_job_id = _start_generation_job(
@@ -1877,7 +1902,35 @@ elif st.session_state.is_loading:
             st.session_state.pop("generation_job_id", None)
             st.rerun()
 
-        st.progress(job.get("progress", 0.05), text=job.get("message", "Generating itinerary..."))
+        term_lines = "".join(
+            f'<div class="tour-log tour-log-{line["class"]}">'
+            f'<span class="tour-log-time">[{line["time"]}]</span>{line["text"]}</div>'
+            for line in job.get("logs", [])
+        )
+        st.markdown(
+            f"""
+            <div class="tour-terminal">
+                <div class="tour-terminal-head">
+                    <div class="tour-terminal-dot tour-dot-red"></div>
+                    <div class="tour-terminal-dot tour-dot-yellow"></div>
+                    <div class="tour-terminal-dot tour-dot-green"></div>
+                </div>
+                <div class="tour-terminal-body">{term_lines}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        progress_value = job.get("progress", 0.05)
+        pct = min(int(progress_value * 100), 100)
+        pcol, lcol = st.columns([5, 1], vertical_alignment="center")
+        with pcol:
+            st.progress(progress_value, text=job.get("message", "Generating itinerary..."))
+        with lcol:
+            st.markdown(
+                f"<div style='text-align:right; font-size:15px; font-weight:600; color:#1d1d1f;'>{pct}%</div>",
+                unsafe_allow_html=True,
+            )
 
         if job["status"] == "error":
             st.error(f"Plan generation failed: {job.get('error') or 'Unknown error'}")
@@ -1907,8 +1960,7 @@ elif st.session_state.is_loading:
                 _UI_JOBS.pop(finished_job_id, None)
             st.rerun()
 
-        time.sleep(0.5)
-        st.rerun()
+    _loading_status()
 
 # --- RESULTS PAGE ---
 elif st.session_state.plan is not None:
@@ -1921,7 +1973,14 @@ elif st.session_state.plan is not None:
         st.markdown(f"**Budget:** {plan['budget']} · {plan['travelers']} Travelers")
         st.markdown("<hr style='border: 0; border-top: 1px solid #d2d2d7; margin: 16px 0;'>", unsafe_allow_html=True)
 
-        menu_options = ["🗓️ Daily Itinerary", "💡 Budget & Tips", "🚇 Transport & Sources", "🗺️ Maps", "📰 News"]
+        menu_options = [
+            "📄 Overview",
+            "🗓️ Daily Itinerary",
+            "🗺️ Maps",
+            "📰 News",
+            "🚇 Transport & Resources",
+            "💡 Budget & Tips",
+        ]
         menu_choice = st.radio("Navigation", menu_options, label_visibility="collapsed")
 
         st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
@@ -1962,27 +2021,28 @@ elif st.session_state.plan is not None:
         unsafe_allow_html=True,
     )
 
-    st.markdown("### Trip Overview")
-    st.markdown(
-        clean_html(f"""
-<p style="font-size: 16px; line-height: 1.6; color: #3a3a3c;">{plan["overview"]}</p>
+    if menu_choice == "📄 Overview":
+        st.markdown("### Trip Overview")
+        st.markdown(
+            clean_html(f"""
+<p style="font-size: 16px; line-height: 1.6; color: #3a3a3c;">{render_highlighted(plan["overview"])}</p>
 """),
-        unsafe_allow_html=True,
-    )
+            unsafe_allow_html=True,
+        )
 
-    res_html = f"""
+        res_html = f"""
 <div style="font-size: 15px; line-height: 1.8; color: #3a3a3c;">
 <div style="margin-bottom: 8px;">✈️ <b>Train/Flight:</b> {", ".join(plan["booking_resources"]["flights"])}</div>
 <div style="margin-bottom: 8px;">🏨 <b>Hotel booking:</b> {", ".join(plan["booking_resources"]["hotels"])}</div>
 <div>🛍️ <b>Accessories:</b> {", ".join(plan["booking_resources"]["accessories"])}</div>
 </div>
 """
-    st.markdown(fluent_card("Booking & Resources", "purple", clean_html(res_html)), unsafe_allow_html=True)
+        st.markdown(fluent_card("Booking & Resources", "purple", clean_html(res_html)), unsafe_allow_html=True)
 
-    weather_html = f"<p style='font-size:14px; color:#3a3a3c;'>{plan['monthly_weather']}</p>"
-    st.markdown(fluent_card(f"Estimated Weather ({plan['month']})", "cyan", weather_html), unsafe_allow_html=True)
+        weather_html = f"<p style='font-size:14px; color:#3a3a3c;'>{render_highlighted(plan['monthly_weather'])}</p>"
+        st.markdown(fluent_card(f"Estimated Weather ({plan['month']})", "cyan", weather_html), unsafe_allow_html=True)
 
-    st.markdown("---")
+        st.markdown("---")
 
     if menu_choice == "🗓️ Daily Itinerary":
         day_tabs = st.tabs([f"Day {d['day']}" for d in plan["itinerary"]])
@@ -1992,7 +2052,7 @@ elif st.session_state.plan is not None:
                 st.markdown(f"#### Day {day['day']} — {day['theme']}")
                 st.markdown(
                     clean_html(f"""
-<p style="font-size: 15px; color: #3a3a3c; margin-bottom: 24px;">{day["plan"]}</p>
+<p style="font-size: 15px; color: #3a3a3c; margin-bottom: 24px;">{render_highlighted(day["plan"])}</p>
 """),
                     unsafe_allow_html=True,
                 )
@@ -2013,7 +2073,14 @@ elif st.session_state.plan is not None:
                 st.markdown("##### 📍 Spots to Visit")
                 for spot in day["spots"]:
                     images = st.session_state.get("images", [])
-                    spot_image = next((img for img in images if img.get("place_name") == spot["name"]), None)
+                    spot_image = next(
+                        (
+                            img
+                            for img in images
+                            if (img.get("place_name") or "").strip().lower() == (spot["name"] or "").strip().lower()
+                        ),
+                        None,
+                    )
                     if spot_image and spot_image.get("image_url"):
                         img_url = spot_image["image_url"]
                     else:
@@ -2023,22 +2090,22 @@ elif st.session_state.plan is not None:
 <div class="spot-wrapper">
 <div class="spot-text-card">
 <div class="accent-bar bg-blue" style="width: 60px; margin-bottom: 16px;"></div>
-<div style="font-weight: 600; font-size: 18px; margin-bottom: 8px; color: #1d1d1f;">{spot["name"]}</div>
-<div style="font-size: 15px; color: #3a3a3c; margin-bottom: 12px; line-height: 1.5;">{spot["description"]}</div>
-<div style="font-size: 14px; margin-bottom: 6px; color: #3a3a3c;"><b style="color: #1d1d1f;">🕒 Hours:</b> {spot["hours"]}</div>
-<div style="font-size: 14px; margin-bottom: 6px; color: #3a3a3c;"><b style="color: #1d1d1f;">⏳ Best Time:</b> {spot["best_time"]}</div>
-<div style="font-size: 14px; margin-bottom: 6px; color: #3a3a3c;"><b style="color: #1d1d1f;">🚕 Transport:</b> {spot["transport"]}</div>
-<div style="font-size: 14px; background: #f5f5f7; padding: 12px; border-radius: 8px; margin-top: 12px; color: #3a3a3c; border-left: 4px solid var(--ms-gold);"><b style="color: #1d1d1f;">🔑 Note:</b> {spot["key_note"]}</div>
+<div style="font-weight: 600; font-size: 18px; margin-bottom: 8px; color: #1d1d1f;">{html_escape(spot["name"])}</div>
+<div style="font-size: 15px; color: #3a3a3c; margin-bottom: 12px; line-height: 1.5;">{render_highlighted(spot["description"], spot.get("keywords"))}</div>
+<div style="font-size: 14px; margin-bottom: 6px; color: #3a3a3c;"><b style="color: #1d1d1f;">🕒 Hours:</b> {html_escape(spot["hours"])}</div>
+<div style="font-size: 14px; margin-bottom: 6px; color: #3a3a3c;"><b style="color: #1d1d1f;">⏳ Best Time:</b> {render_highlighted(spot["best_time"])}</div>
+<div style="font-size: 14px; margin-bottom: 6px; color: #3a3a3c;"><b style="color: #1d1d1f;">🚕 Transport:</b> {render_highlighted(spot["transport"])}</div>
+<div style="font-size: 14px; background: #f5f5f7; padding: 12px; border-radius: 8px; margin-top: 12px; color: #3a3a3c; border-left: 4px solid var(--ms-gold);"><b style="color: #1d1d1f;">🔑 Note:</b> {render_highlighted(spot["key_note"])}</div>
 </div>
 <div class="spot-image-card">
-<img src="{img_url}" alt="{spot["name"]}">
+<img src="{img_url}" alt="{html_escape(spot["name"])}">
 </div>
 </div>
 """
                     st.markdown(clean_html(spot_html), unsafe_allow_html=True)
 
-                hotel_html = f"<p style='font-size:14px; color:#3a3a3c;'>🏨 {day['hotel']}</p>"
-                st.markdown(fluent_card("Accommodation", "teal", clean_html(hotel_html)), unsafe_allow_html=True)
+                hotel_html = f"<p style='font-size:17px; color:#3a3a3c;'>🏨 {render_highlighted(day['hotel'])}</p>"
+                st.markdown(fluent_card("Accommodation", "cyan", clean_html(hotel_html)), unsafe_allow_html=True)
 
     elif menu_choice == "💡 Budget & Tips":
         st.markdown("### 💰 Cost Estimate")
@@ -2085,13 +2152,15 @@ elif st.session_state.plan is not None:
         st.markdown("### 💡 Practical Tips")
         tips_html = "<ul style='padding-left: 20px; margin: 0;'>"
         for tip in plan["practical_tips"]:
-            tips_html += f"<li style='font-size: 14px; color: #3a3a3c; margin-bottom: 10px;'>{tip}</li>"
+            tips_html += (
+                f"<li style='font-size: 14px; color: #3a3a3c; margin-bottom: 10px;'>{render_highlighted(tip)}</li>"
+            )
         tips_html += "</ul>"
         st.markdown(
             fluent_card(f"Tips for {plan['destination']}", "purple", clean_html(tips_html)), unsafe_allow_html=True
         )
 
-    elif menu_choice == "🚇 Transport & Sources":
+    elif menu_choice == "🚇 Transport & Resources":
         st.markdown("### 🚆 Transport Options")
         transport_opts = plan.get("transport_options", [])
         if transport_opts:
@@ -2099,9 +2168,9 @@ elif st.session_state.plan is not None:
             for idx, opt in enumerate(transport_opts):
                 with tcols[idx % len(tcols)]:
                     html = f"""
-<div style="font-weight: 600; margin-bottom: 4px;">{opt["mode"]}</div>
-<div style="font-size: 13px; color: var(--ms-blue); font-weight: 600; margin-bottom: 8px;">💵 {opt["cost"]}</div>
-<div style="font-size: 13px; color: #3a3a3c; line-height: 1.5;">{opt["description"]}</div>
+<div style="font-weight: 600; margin-bottom: 4px;">{html_escape(opt["mode"])}</div>
+<div style="font-size: 13px; color: var(--ms-blue); font-weight: 600; margin-bottom: 8px;">💵 {render_highlighted(opt["cost"])}</div>
+<div style="font-size: 13px; color: #3a3a3c; line-height: 1.5;">{render_highlighted(opt["description"])}</div>
 """
                     st.markdown(fluent_card("Option", "cyan", clean_html(html)), unsafe_allow_html=True)
         else:
@@ -2120,27 +2189,55 @@ elif st.session_state.plan is not None:
         st.markdown("### 📍 Trip Route Map")
 
         try:
-            from agentic_tour_planner.tools.map_tool import MapTool
             from streamlit.components.v1 import html as st_html
+
+            from agentic_tour_planner.tools.map_tool import MapTool
         except ImportError as imp_err:
             st.error(f"Map dependencies not available: {imp_err}")
         else:
+            loading_placeholder = st.empty()
+            loading_placeholder.markdown(
+                _render_loading_animation(
+                    "World_map.svg",
+                    "Plotting your route...",
+                    "Geocoding your itinerary places and building the interactive map.",
+                ),
+                unsafe_allow_html=True,
+            )
             try:
                 map_tool = MapTool()
                 folium_map = map_tool.render_itinerary_map(
                     itinerary=plan.get("itinerary", []),
                     origin=plan.get("origin"),
+                    destination=plan.get("destination", ""),
                 )
                 map_html = folium_map.get_root().render()
+                loading_placeholder.empty()
                 st_html(map_html, height=620, scrolling=False)
+
+                unresolved = [n for n in getattr(map_tool, "unresolved_locations", []) if n]
+                if unresolved:
+                    names = "".join(f"<div style='padding:4px 0;'>• {n}</div>" for n in unresolved)
+                    st.error(
+                        clean_html(
+                            f"""
+                            <div style='font-weight:600; margin-bottom:6px;'>
+                                ⚠️ Could not locate the following places on the map:
+                            </div>
+                            {names}
+                            """
+                        ),
+                        icon="🚩",
+                    )
 
                 st.markdown("<div style='margin-bottom: 16px;'></div>", unsafe_allow_html=True)
                 st.info(
-                    "ⓘ Markers are color-coded by day with route lines. "
+                    "ⓘ Markers are color-coded by day. "
                     "Use the layer control (top-right) to toggle days on/off. "
                     "Click a marker for details."
                 )
             except Exception as map_err:
+                loading_placeholder.empty()
                 st.warning(f"Map rendering failed: {map_err}")
                 st.info("Map visualization requires the itinerary to have geocodable place names.")
 
@@ -2162,6 +2259,15 @@ elif st.session_state.plan is not None:
 
         if st.session_state[news_key] is None:
             if st.button("🔍 Fetch Latest News", type="primary", use_container_width=True, key="fetch_news_btn"):
+                news_loading = st.empty()
+                news_loading.markdown(
+                    _render_loading_animation(
+                        "Notifications.svg",
+                        "Fetching the latest news...",
+                        f"Scanning the web for recent stories about {dest_name}.",
+                    ),
+                    unsafe_allow_html=True,
+                )
                 with st.spinner("Searching for recent news..."):
                     try:
                         news_svc = NewsService()
@@ -2175,9 +2281,11 @@ elif st.session_state.plan is not None:
                             )
                         finally:
                             loop.close()
+                        news_loading.empty()
                         st.session_state[news_key] = digest
                         st.rerun()
                     except Exception as news_err:
+                        news_loading.empty()
                         st.error(f"Failed to fetch news: {news_err}")
         else:
             digest = st.session_state[news_key]
@@ -2228,10 +2336,13 @@ elif st.session_state.plan is not None:
 
 def run() -> None:
     import sys
-    from pathlib import Path
 
+    from agentic_tour_planner.config.settings import get_settings
+
+    _settings = get_settings()
+    api_host = getattr(_settings, "api_host", "127.0.0.1")
     app_path = Path(__file__).resolve()
-    os.execvp(
+    os.execvp(  # noqa: S606 - argv-form execvp (no shell); required to re-launch streamlit in-process
         sys.executable,
         [
             sys.executable,
@@ -2242,7 +2353,7 @@ def run() -> None:
             "--server.port",
             "8501",
             "--server.address",
-            "0.0.0.0",
+            api_host,
             "--theme.base",
             "light",
         ],

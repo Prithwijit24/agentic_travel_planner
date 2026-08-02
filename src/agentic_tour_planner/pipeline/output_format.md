@@ -66,10 +66,16 @@ places within a day in visiting order.
   `place` (locations, landmark names), `altitude` (elevation, height in m/ft),
   `person` (famous/historical people), `deity` (gods, saints, religious figures),
   `other` (any other locally important term). The renderer colours these by
-  category, so do not also wrap them in `**` markdown — write plain text and let
-  the renderer do the styling.
-- Within `description` and `key_note`, you MAY wrap a short evocative phrase in
-  *italics* for flavour, but do NOT use `**bold**` markdown.
+  category. The `text` values must match the description **exactly** so the
+  renderer's highlighter can find them.
+- **Emphasis is welcome**: in `description`, `key_note`, `transport`, and
+  `best_time`, wrap important real names (places, mountains, lakes, people,
+  dishes, prices) in `**bold**` and add *italics* for atmospheric or secondary
+  emphasis. This makes the rendered CLI/UI output lively. Only wrap terms that
+  actually appear in the surrounding sentence, and keep the emphasis sparing so
+  prose still reads naturally.
+- The values in the `keywords` array are then ALSO colour-coded by the renderer;
+  there is no conflict with the `**bold**` markdown above.
 - Follow the route end-to-end; do not reorder places illogically.
 - Use ONLY the REAL opening hours and fares supplied in the tool-output section;
   do not guess or hallucinate them.

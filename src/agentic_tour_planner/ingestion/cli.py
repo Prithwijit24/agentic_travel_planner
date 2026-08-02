@@ -4,29 +4,34 @@ import asyncio
 
 import typer
 
+from agentic_tour_planner.domain.models import IngestedSourceRecord
 from agentic_tour_planner.ingestion.service import IngestionService
 
 app = typer.Typer(help="Knowledge ingestion commands.")
 
 
+def _echo_record(record: IngestedSourceRecord | None) -> None:
+    typer.echo(record.model_dump_json(indent=2) if record is not None else "null")
+
+
 @app.command()
 def wikivoyage(destination: str) -> None:
-    typer.echo(asyncio.run(IngestionService().ingest_wikivoyage(destination)).model_dump_json(indent=2))
+    _echo_record(asyncio.run(IngestionService().ingest_wikivoyage(destination)))
 
 
 @app.command()
 def web(url: str) -> None:
-    typer.echo(asyncio.run(IngestionService().ingest_web(url)).model_dump_json(indent=2))
+    _echo_record(asyncio.run(IngestionService().ingest_web(url)))
 
 
 @app.command()
 def youtube(url: str) -> None:
-    typer.echo(asyncio.run(IngestionService().ingest_youtube(url)).model_dump_json(indent=2))
+    _echo_record(asyncio.run(IngestionService().ingest_youtube(url)))
 
 
 @app.command()
 def file(path: str) -> None:
-    typer.echo(asyncio.run(IngestionService().ingest_file(path)).model_dump_json(indent=2))
+    _echo_record(asyncio.run(IngestionService().ingest_file(path)))
 
 
 @app.command()

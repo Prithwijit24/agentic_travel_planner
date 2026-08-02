@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from agentic_tour_planner.domain.models import DayPlan, PlanningRequest
 
-
 FAR_APART_KM: float = 50.0
 FAR_APART_MIN: float = 120.0
 DAILY_TRAVEL_BUDGET_MIN: float = 240.0
@@ -18,9 +17,7 @@ class TravelLeg:
     duration_minutes: float
 
 
-async def lookup_travel_leg(
-    origin: str, destination: str, request: PlanningRequest
-) -> TravelLeg:
+async def lookup_travel_leg(origin: str, destination: str, _request: PlanningRequest) -> TravelLeg:
     return TravelLeg(
         origin=origin,
         destination=destination,
@@ -29,9 +26,7 @@ async def lookup_travel_leg(
     )
 
 
-async def annotate_travel_constraints(
-    request: PlanningRequest, itinerary: list[DayPlan]
-) -> list[DayPlan]:
+async def annotate_travel_constraints(request: PlanningRequest, itinerary: list[DayPlan]) -> list[DayPlan]:
     for day in itinerary:
         spots = day.spots
         total_duration = 0.0
@@ -44,7 +39,7 @@ async def annotate_travel_constraints(
             if leg.distance_km > FAR_APART_KM or leg.duration_minutes > FAR_APART_MIN:
                 has_long_leg = True
                 msg = (
-                    f"{spots[i].name} and {spots[i+1].name} are {leg.distance_km:.0f} km apart "
+                    f"{spots[i].name} and {spots[i + 1].name} are {leg.distance_km:.0f} km apart "
                     f"({leg.duration_minutes:.0f} min) — these spots are far apart; "
                     f"consider adjusting your route."
                 )

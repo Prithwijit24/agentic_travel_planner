@@ -87,7 +87,7 @@ def run_calculator(args: dict[str, Any]) -> dict[str, Any]:
             "result": result,
             "steps": steps,
         }
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(f"run_calculator failed for {expression!r}: {exc}")
         return {"label": label, "expression": expression, "error": str(exc)}
 

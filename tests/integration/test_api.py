@@ -89,7 +89,12 @@ async def test_run_plan_job_streams_error_status_on_failure(mock_make_pipeline, 
 @pytest.mark.asyncio
 async def test_run_plan_job_streams_completed_plan(mock_make_pipeline, mock_store_cls):
     mock_pipeline = mock_make_pipeline.return_value
-    mock_pipeline.context_summary = {"documents_count": 5, "search_results_count": 3, "place_hours_count": 2, "weather": "Sunny"}
+    mock_pipeline.context_summary = {
+        "documents_count": 5,
+        "search_results_count": 3,
+        "place_hours_count": 2,
+        "weather": "Sunny",
+    }
     mock_pipeline.profiler.as_table.return_value = [{"stage": "Gather Context", "elapsed_s": 1.5, "pct": 25.0}]
     mock_store = mock_store_cls.return_value
     plan = _make_plan_response()

@@ -8,6 +8,18 @@
 # Secrets (API keys) come from the local .env file via `env_file`.
 
 services:
+  neo4j:
+    image: neo4j:5.26-community
+    container_name: neo4j-test
+    environment:
+      NEO4J_AUTH: "neo4j/changeme"
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - ./src/agentic_tour_planner/data/neo4j_data:/data
+    restart: unless-stopped
+
   api:
     build: .
     image: agentic-travel-planner:latest

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import atexit
-import os
 import pickle
 import time
 from pathlib import Path
@@ -21,7 +20,7 @@ from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-INDEX_DIR = Path(__file__).resolve().parents[3] / "data" / "ui"
+INDEX_DIR = Path(__file__).resolve().parents[1] / "data" / "ui"
 
 _SUGGESTION_LIMIT = 10
 
@@ -43,15 +42,13 @@ def _next_id() -> int:
     return _ID_COUNTER[0]
 
 
-def _build_index() -> (
-    tuple[
-        list[City],
-        marisa_trie.Trie,
-        dict[str, list[int]],
-        dict[str, str],
-        dict[str, tuple[str, int]],
-    ]
-):
+def _build_index() -> tuple[
+    list[City],
+    marisa_trie.Trie,
+    dict[str, list[int]],
+    dict[str, str],
+    dict[str, tuple[str, int]],
+]:
     t0 = time.time()
 
     logger.info("Parsing cities1000 ...")
@@ -154,7 +151,7 @@ def _save_index(
     admin1_map: dict[str, str],
     country_data: dict[str, tuple[str, int]],
 ) -> None:
-    os.makedirs(INDEX_DIR, exist_ok=True)
+    INDEX_DIR.mkdir(parents=True, exist_ok=True)
     pickle_path = INDEX_DIR / "geonames_index.pkl"
     trie_path = INDEX_DIR / "geonames_trie.marisa"
 
@@ -165,7 +162,7 @@ def _save_index(
         "country_data": country_data,
         "version": 3,
     }
-    with open(pickle_path, "wb") as f:
+    with pickle_path.open("wb") as f:
         pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
     trie.save(str(trie_path))
     logger.info(f"Index saved to {pickle_path} and {trie_path}")
@@ -186,17 +183,14 @@ def _load_index() -> (
     if not pickle_path.exists() or not trie_path.exists():
         return None
 
-    with open(pickle_path, "rb") as f:
-        payload = pickle.load(f)
+    with pickle_path.open("rb") as f:
+        payload = pickle.load(f)  # noqa: S301 -- local self-generated cache index
     if payload.get("version") != 3:
         logger.info("Index version mismatch, rebuilding ...")
         return None
     trie = marisa_trie.Trie()
     trie.load(str(trie_path))
-    logger.info(
-        f"Index loaded: {len(payload['cities'])} entries, "
-        f"{len(trie):,} trie keys"
-    )
+    logger.info(f"Index loaded: {len(payload['cities'])} entries, {len(trie):,} trie keys")
     country_data = payload.get("country_data", {})
     return (
         payload["cities"],
@@ -259,7 +253,7 @@ def search_places(query: str, limit: int = _SUGGESTION_LIMIT) -> list[Suggestion
 
     results: list[Suggestion] = []
     seen: set[int] = set()
-    for idx, score in sorted_idxs:
+    for idx, _ in sorted_idxs:
         city = cities[idx]
         if city.geonameid in seen:
             continue

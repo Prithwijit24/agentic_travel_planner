@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from typing import cast
 from uuid import uuid4
 
 import uvicorn
@@ -14,6 +15,7 @@ from agentic_tour_planner.api.events import EventEmitter, get_emitter, register_
 from agentic_tour_planner.api.images import collect_places_for_images, resolve_images
 from agentic_tour_planner.config.settings import Settings, get_settings
 from agentic_tour_planner.domain.models import (
+    DetailedPlan,
     ImageResponse,
     IngestedSourceRecord,
     LogEvent,
@@ -46,7 +48,7 @@ REQUEST_LATENCY = Histogram(
 
 def _export_metrics() -> bytes:
     logger.debug("Exporting Prometheus metrics")
-    return generate_latest()
+    return cast(bytes, generate_latest())
 
 
 def _make_pipeline():
@@ -76,9 +78,11 @@ async def health() -> dict:
     try:
         if _stack_client is None:
             from agentic_tour_planner.tools.ai_stack_client import AiStackClient
+
             _stack_client = AiStackClient()
         stack_health = await asyncio.wait_for(
-            _stack_client.health(), timeout=5.0,
+            _stack_client.health(),
+            timeout=5.0,
         )
         result["stack"] = "ok" if stack_health.get("status") == "healthy" else "degraded"
     except Exception as e:
@@ -87,7 +91,7 @@ async def health() -> dict:
     return result
 
 
-PLAN_TIMEOUT_SECONDS = 600
+PLAN_TIMEOUT_SECONDS = 900
 
 
 @app.post("/plans", response_model=PlanAPIResponse)
@@ -114,32 +118,70 @@ async def _run_plan_job(request_id: str, request: PlanningRequest, emitter: Even
             timeout=PLAN_TIMEOUT_SECONDS,
         )
         detailed = None
-        # Generate detailed places (rich guidebook-style descriptions) for the UI
+        images_result: list = []
         try:
-            emitter.emit(
-                LogEvent(event="step", step="Detailed Places", message="Generating detailed place descriptions...")
-            )
-            detailed = await pipeline.run_detailed_places(request, response, insights=response.insights)
-            if detailed is not None:
-                logger.info(f"Detailed places generated for plan_id={response.plan_id}")
-        except Exception as det_err:
-            logger.warning(f"Detailed places generation skipped (non-fatal): {det_err}")
-            # Non-fatal — UI will fall back to standard spot data
+            places_for_images = collect_places_for_images(response, destination=request.destination)
+        except Exception as img_err:
+            logger.warning(f"Image place collection failed (non-fatal): {img_err}")
+            places_for_images = []
+
+        # Detailed places (LLM, minutes) and image resolution (I/O, minutes) are
+        # independent of each other — run them concurrently to cut wall-clock time.
+        async def _generate_detailed() -> DetailedPlan | None:
+            nonlocal detailed
+            try:
+                emitter.emit(
+                    LogEvent(event="step", step="Detailed Places", message="Generating detailed place descriptions...")
+                )
+                detailed = await pipeline.run_detailed_places(request, response, insights=response.insights)
+                if detailed is not None:
+                    logger.info(f"Detailed places generated for plan_id={response.plan_id}")
+            except Exception as det_err:
+                logger.warning(f"Detailed places generation skipped (non-fatal): {det_err}")
+            return detailed
+
+        async def _resolve_images() -> list:
+            import asyncio as _asyncio
+
+            try:
+                if places_for_images:
+                    logger.info(f"Resolving images for {len(places_for_images)} places")
+                    return await _asyncio.wait_for(resolve_images(places_for_images), timeout=180)
+            except Exception as img_err:
+                logger.warning(f"Image resolution failed (non-fatal): {img_err}")
+            return []
+
+        detailed_task = asyncio.create_task(_generate_detailed())
+        images_task = asyncio.create_task(_resolve_images())
+
+        # Heartbeat: emit a lightweight progress event periodically so the SSE
+        # stream never sits idle long enough to hit the (600s) idle timeout while
+        # the two heavy phases above run concurrently.
+        async def _heartbeat() -> None:
+            try:
+                while True:
+                    await asyncio.sleep(60)
+                    emitter.emit(
+                        LogEvent(
+                            event="progress",
+                            step="Refinements",
+                            message="Still working — compiling detailed descriptions and imagery…",
+                        )
+                    )
+            except asyncio.CancelledError:
+                return
+
+        heartbeat_task = asyncio.create_task(_heartbeat())
+        try:
+            detailed = await detailed_task
+            images_result = await images_task
+        finally:
+            heartbeat_task.cancel()
 
         store.save_plan(request, response)
         elapsed = time.perf_counter() - start
         REQUEST_LATENCY.labels(endpoint="/plans").observe(elapsed)
         logger.info(f"POST /plans completed plan_id={response.plan_id} in {elapsed:.2f}s")
-
-        # Resolve images for all spots in the itinerary
-        images_result = []
-        try:
-            places_for_images = collect_places_for_images(response)
-            if places_for_images:
-                logger.info(f"Resolving images for {len(places_for_images)} places")
-                images_result = await resolve_images(places_for_images)
-        except Exception as img_err:
-            logger.warning(f"Image resolution failed (non-fatal): {img_err}")
 
         base_result = build_output(
             request=request,
@@ -189,12 +231,7 @@ async def get_plan_images(plan_id: str) -> ImageResponse:
     if record is None:
         raise HTTPException(status_code=404, detail="Plan not found")
 
-    places = []
-    for day in record.response.itinerary:
-        for spot in day.spots:
-            if spot.image_query:
-                places.append({"place_name": spot.name, "image_query": spot.image_query})
-
+    places = collect_places_for_images(record.response, destination=record.destination)
     images = await resolve_images(places)
     return ImageResponse(plan_id=plan_id, images=images)
 
@@ -239,7 +276,6 @@ async def stream_plan(request_id: str):
 
 
 def run() -> None:
-    logger.info(f"Starting API server on 0.0.0.0:8000 (env={settings.app_env})")
-    uvicorn.run(
-        "agentic_tour_planner.api.main:app", host="0.0.0.0", port=8000, reload=settings.app_env == "development"
-    )
+    api_host = getattr(settings, "api_host", "127.0.0.1")
+    logger.info(f"Starting API server on {api_host}:8000 (env={settings.app_env})")
+    uvicorn.run("agentic_tour_planner.api.main:app", host=api_host, port=8000, reload=settings.app_env == "development")

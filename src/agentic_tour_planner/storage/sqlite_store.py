@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime
 
 from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import PlanFeedback, PlanningRequest, PlanningResponse, StoredPlanRecord
@@ -20,7 +20,10 @@ class SQLitePlanStore:
         logger.debug("SQLitePlanStore ready")
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.settings.operations_db_path)
+        db_path = self.settings.operations_db_path
+        if db_path is None:
+            raise RuntimeError("operations_db_path is not configured in config/storage.yml")
+        conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -163,5 +166,5 @@ class SQLitePlanStore:
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO plan_feedback VALUES (?, ?, ?, ?)",
-                (feedback.plan_id, feedback.rating, feedback.comments, datetime.utcnow().isoformat()),
+                (feedback.plan_id, feedback.rating, feedback.comments, datetime.now(UTC).isoformat()),
             )

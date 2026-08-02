@@ -1,4 +1,5 @@
 """Tests for extended PlaceImage model."""
+
 from __future__ import annotations
 
 from agentic_tour_planner.domain.models import PlaceImage

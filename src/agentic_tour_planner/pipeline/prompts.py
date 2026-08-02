@@ -43,9 +43,7 @@ def _is_real_place_name(name: str) -> bool:
     stripped = name.strip()
     if len(stripped) < 3:
         return False
-    if _LOGISTICS_NAME_PATTERNS.match(stripped):
-        return False
-    return True
+    return not _LOGISTICS_NAME_PATTERNS.match(stripped)
 
 
 def _format_live_brief(brief: LiveWebBrief) -> str:
@@ -162,9 +160,16 @@ def build_itinerary_prompt(
 
         STRICT PLANNING RULES:
         - PLACES PER DAY: {places_rule}  (do NOT default to exactly 2; follow this rate)
-        - GEOGRAPHIC CLUSTERING FIRST: Before assigning places to days, group selected places into
-          clusters by realistic road/transit proximity, not input order. Places in the same day should
-          normally sit within a 1-2 hour travel radius.
+        - GEOGRAPHIC CLUSTERING FIRST (MANDATORY): Before assigning places to days, group selected places into
+          clusters by realistic road/transit proximity, NOT input order and NOT the same name everywhere.
+          Places in the same day MUST sit within a 1-2 hour travel radius.
+        - ONE REGION PER DAY (MANDATORY): Every day MUST be built from places lying in a SINGLE, contiguous
+          geographic region/direction of the destination. Never mix two distant directions (e.g. north AND
+          south Sikkim, or east AND south) in the same day. If a destination is commonly divided into named
+          regions (e.g. North/East/West/South Sikkim, districts, valleys), tag each place with its region and
+          assign the entire day to one region. Move a place to a neighbouring day rather than mixing regions
+          in one day. The itinerary as a whole should sweep through regions in a sensible route order (one
+          region per day, visiting them sequentially), not hop back and forth.
         - DAILY TRAVEL BUDGET: Keep each day's total local transit around 3-4 hours unless the user
           explicitly accepts a long-travel day. Do not add a place to a day when it pushes that day
           beyond this budget.
@@ -218,6 +223,13 @@ def build_itinerary_prompt(
         - WEATHER: Provide an estimated monthly_weather string for {request.travel_month or "the travel month"}
           and a per-day weather block with temperature_c (day), temperature_night_c (night),
           sunrise, sunset, humidity_percent, rainfall_chance_percent.
+        - MARKDOWN HIGHLIGHTING (rendered by the UI/CLI): Wrap the most important proper nouns —
+          real place names, landmarks, mountains, lakes, neighbourhoods, people, dish names and
+          monetary amounts/prices — in **bold** markdown across `overview`, each day's `summary`,
+          `transport`, most of the morning/afternoon/evening activity text, `practical_tips`,
+          and `transport_options` descriptions. Use *italics* sparingly (e.g. for mood or seasonal
+          flavour). Bold should be tasteful and not on every word; bold the standout nouns per
+          sentence so the rendered plan looks highlighted and colour-rich.
         - DAY STRUCTURE (render-ready): For each day provide:
             * summary: a 3-4 sentence overview of the day's plan and mood.
             * transport: how to get around that day (car route, metro lines, taxi notes).
@@ -279,17 +291,21 @@ def build_detailed_places_prompt(
     live_brief: LiveWebBrief | None,
     place_hours_map: dict[str, Any],
     insights: PlanningInsights,
+    target_day: int | None = None,
 ) -> str:
     """Build the prompt for the detailed place-by-place markdown itinerary.
 
     Uses the canonical ``output_format.md`` contract plus the REAL opening hours
     fetched via the Google Places tool and the per-day core places already chosen
     by the standard planner.
+
+    If ``target_day`` is set, only that day's core places are included and the
+    model is told to return just that single day (used for parallel generation).
     """
     logger.debug(
         f"Building detailed-places prompt destination={request.destination!r} "
         f"core_places_by_day={len(getattr(response, 'itinerary', []))} "
-        f"hours_fetched={len(place_hours_map)}"
+        f"hours_fetched={len(place_hours_map)} target_day={target_day}"
     )
     spec = _load_output_format_spec()
 
@@ -304,10 +320,7 @@ def build_detailed_places_prompt(
         else:
             status = getattr(ph, "status", None)
             hours = getattr(ph, "opening_hours", None) or []
-        if hours:
-            joined = "; ".join(str(h) for h in hours)
-        else:
-            joined = status or "Not available"
+        joined = "; ".join(str(h) for h in hours) if hours else status or "Not available"
         hours_lines.append(f"- {venue}: {joined}")
     hours_block = "\n".join(hours_lines) if hours_lines else "No opening-hour data was retrieved."
 
@@ -318,13 +331,13 @@ def build_detailed_places_prompt(
     core_lines: list[str] = []
     dropped_logistics: list[str] = []
     for day in getattr(response, "itinerary", []):
+        day_num = getattr(day, "day", None)
+        if target_day is not None and day_num != target_day:
+            continue
         spots = getattr(day, "spots", None) or []
         names: list[str] = []
         for s in spots:
-            if isinstance(s, dict):
-                n = s.get("name")
-            else:
-                n = getattr(s, "name", None)
+            n = s.get("name") if isinstance(s, dict) else getattr(s, "name", None)
             if not n:
                 continue
             if _is_real_place_name(n):
@@ -334,7 +347,7 @@ def build_detailed_places_prompt(
         names = names[:place_hi]
         if not names:
             names = [f"(let the model choose a real place in {request.destination})"]
-        core_lines.append(f"Day {getattr(day, 'day', '?')} core places: " + " | ".join(names))
+        core_lines.append(f"Day {day_num} core places: " + " | ".join(names))
     if dropped_logistics:
         logger.debug(
             f"Dropped {len(dropped_logistics)} logistics/day-phase labels from core places: {dropped_logistics}"
@@ -357,6 +370,13 @@ def build_detailed_places_prompt(
             "Use the LIVE WEB INTELLIGENCE 'Fair charges' and 'Public transport availability' "
             "sections below as the authoritative source for fares and transport options per place."
         )
+
+    if target_day is not None:
+        scope_instruction = (
+            f"Return ONLY the single Day {target_day} object inside the 'days' array - nothing for the other days."
+        )
+    else:
+        scope_instruction = f"Begin at Day 1 and continue through Day {request.trip_length_days}."
 
     return dedent(
         f"""
@@ -387,12 +407,13 @@ def build_detailed_places_prompt(
 
         {fare_source}
 
-        Return ONLY valid JSON matching the schema at the top (root key "days"). Begin at
-        Day 1 and continue through Day {request.trip_length_days}. Every CORE place must
+        Return ONLY valid JSON matching the schema at the top (root key "days"). {scope_instruction}
+        Every CORE place must
         include description, opening_closing, best_time, transport, key_note,
         "is_optional": false and a "keywords" array. Optional extra places use
         "is_optional": true with description, key_note and keywords only
         (no opening_closing or transport).
+        Ensure the returned day object has "day": {target_day if target_day is not None else "N"} where N is the day number.
 
         Never output a "place" entry for arrival, departure, transit, packing, or
         check-in/out phases — these belong only in the day-level summary/transport text,
@@ -400,7 +421,8 @@ def build_detailed_places_prompt(
 
         CRITICAL WORD COUNT REQUIREMENTS:
         - description: MUST be 180-220 words. This is STRICTLY enforced.
-        - key_note: approximately 100 words.
+        - key_note: MUST be a single concise sentence of 20-30 words only.
+          Keep it to one line; no multiple sentences or elaboration.
 
         Each description must include:
         1. History and cultural significance
@@ -416,8 +438,14 @@ def build_detailed_places_prompt(
         "other" (any other locally important term). These are used by the renderer to
         colour the text, so the "text" values must match the description exactly.
 
-        Write every field as plain prose. Do NOT use markdown emphasis (no ** or *);
-        the renderer applies its own bold/italic/colour styling.
+        Add light markdown emphasis to every narrative field (description, key_note,
+        transport, best_time AND the day-level summary in "days"): wrap real proper
+        nouns (place names, mountains, lakes, famous people, landmarks, dish names,
+        prices/amounts, the destination itself) in **bold** for emphasis, and use
+        *italics* sparingly for atmospheric or secondary phrasing. This makes the
+        CLI and web UI render the itinerary with eye-catching highlights. Keep it
+        terse and natural — do not bold every word; bold only a handful of the most
+        important nouns per field.
         """
     ).strip()
 
@@ -442,7 +470,13 @@ DETAILED_SYSTEM_PROMPT = dedent(
     If your description is under 180 words, you MUST expand it with more details.
     If your description is over 220 words, you MUST trim it.
 
-    KEY_NOTE fields must be approximately 100 words (2-3 sentences).
+    KEY_NOTE fields must be a single concise sentence of 20-30 words only (one line).
+
+    EMPHASIS: In description, key_note, transport, best_time and the "days" day
+    summary, you MUST wrap the most important proper nouns (place names, landmarks,
+    mountains, lakes, people, dish names, monetary amounts/prices) in **bold**
+    markdown, and you may use *italics* sparingly for atmosphere. This bold is what
+    the UI and CLI highlight, so use generous but tasteful bold on real names.
 
     Example of a good 200-word description:
     "Kinkaku-ji, officially named Rokuon-ji, is a Zen Buddhist temple in Kyoto, Japan.

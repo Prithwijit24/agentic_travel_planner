@@ -1,6 +1,6 @@
 """Tests for the output_builder module."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from agentic_tour_planner.domain.models import (
     BudgetGuidance,
@@ -82,7 +82,7 @@ def _make_response() -> PlanningResponse:
         ],
         practical_tips=["Carry cash", "Wear comfortable shoes"],
         citations=[Citation(title="Kyoto Guide", url="https://example.com")],
-        generated_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+        generated_at=datetime(2026, 10, 1, tzinfo=UTC),
         provider_used="openai",
         model_used="gpt-4",
         monthly_weather="15-22°C",

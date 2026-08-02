@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from agentic_tour_planner.utils.logging import get_logger
@@ -80,7 +80,9 @@ class MetricsBus:
         self.token_hook.record(m)
         self.time_hook.record(m)
         self.call_log.append(m)
-        logger.info("MetricsBus.record total_calls={} total_tokens={}", len(self.call_log), self.token_hook.total_tokens)
+        logger.info(
+            "MetricsBus.record total_calls={} total_tokens={}", len(self.call_log), self.token_hook.total_tokens
+        )
 
     def summary(self) -> dict[str, Any]:
         return {

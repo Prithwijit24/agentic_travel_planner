@@ -5,8 +5,16 @@ enable_trace_logs: false
 
 # Graph store backend: neo4j, memory, or disabled
 graph_store_backend: memory
+# Bind host for the FastAPI server. Use 127.0.0.1 for local-only access;
+# 0.0.0.0 exposes the API on all interfaces (needed when serving the UI
+# from a different host/container).
+api_host: "0.0.0.0"
 # AI Infra Stack integration
-ai_stack_base_url: "http://localhost:8000"
+ai_stack_base_url: "https://aistackapi.duckdns.org"
 ai_stack_admin_user: "admin"
 ai_stack_admin_pass: ""
 ai_stack_token: ""
+# Client-side request timeout in seconds (server-side cap is 1000s).
+# Pipeline (search -> crawl -> rerank) can take minutes, so don't use the
+# old 60s default here.
+ai_stack_timeout_seconds: 1000.0

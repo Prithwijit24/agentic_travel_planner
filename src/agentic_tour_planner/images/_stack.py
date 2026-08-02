@@ -1,4 +1,5 @@
 """Shared AiStackClient singleton for the images module."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -14,5 +15,6 @@ def get_ai_stack() -> AiStackClient:
     global _ai_stack
     if _ai_stack is None:
         from agentic_tour_planner.tools.ai_stack_client import AiStackClient
+
         _ai_stack = AiStackClient()
     return _ai_stack

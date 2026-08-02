@@ -8,11 +8,11 @@ import concurrent.futures
 import json
 import logging
 import re
-from datetime import datetime
-from enum import Enum
-from typing import Any, Coroutine, TypeVar
-
-from typer.models import OptionInfo
+from collections.abc import Coroutine
+from datetime import UTC, datetime
+from enum import StrEnum
+from pathlib import Path
+from typing import Any, TypeVar, cast
 
 import click
 import typer
@@ -20,11 +20,12 @@ from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
 from rich.text import Text
+from typer.models import OptionInfo
 
 from agentic_tour_planner.config.settings import get_settings
-from agentic_tour_planner.domain.models import PlanningRequest, parse_place_range
+from agentic_tour_planner.domain.models import BudgetLevel, PlanningRequest, parse_place_range
 from agentic_tour_planner.llm.hooks import metrics_bus
-from agentic_tour_planner.llm.provider import LLMProvider
+from agentic_tour_planner.llm.provider import LLMProvider, LLMUnavailableError
 from agentic_tour_planner.pipeline.agentic_pipeline import AgenticTourPlannerPipeline
 from agentic_tour_planner.pipeline.output_builder import build_output
 from agentic_tour_planner.utils.logging import configure_logging, get_logger
@@ -66,7 +67,7 @@ def _run_async(coro: Coroutine[Any, Any, T]) -> T:
         return asyncio.run(coro)
 
 
-class LogLevel(str, Enum):
+class LogLevel(StrEnum):
     DEBUG = "DEBUG"
     INFO = "INFO"
     WARNING = "WARNING"
@@ -75,14 +76,13 @@ class LogLevel(str, Enum):
 
 class _LiteLLMFilter(logging.Filter):
     """Suppress non-critical LiteLLM logging worker timeout errors."""
+
     _attached = False
 
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
         # Match litellm logger names and messages mentioning LoggingWorker
-        if (record.name.startswith("litellm") or "litellm" in record.name.lower()) and "LoggingWorker" in msg:
-            return False
-        return True
+        return not ((record.name.startswith("litellm") or "litellm" in record.name.lower()) and "LoggingWorker" in msg)
 
     @classmethod
     def attach(cls) -> None:
@@ -133,7 +133,7 @@ def _select_provider_interactive() -> str | None:
         default=default_provider,
         type=click.Choice(providers),
     )
-    return provider
+    return str(provider)
 
 
 # Category -> rich colour used for keyword highlighting in description paragraphs.
@@ -229,7 +229,7 @@ def _render_weather(w: dict | None) -> str:
     return "  " + "   ·   ".join(parts) if parts else ""
 
 
-def _match_spot(activity: str, spot_by_name: dict) -> dict | None:
+def _match_spot(activity: str, spot_by_name: dict[str, dict]) -> dict | None:
     for name, spot in spot_by_name.items():
         if name and name in activity:
             return spot
@@ -384,7 +384,7 @@ def render_plan(response: dict) -> None:
         console.print("🛠️ [bold]Worker routing (per role):[/bold]")
         role_icons = {"route": "🗺️", "budget": "💰", "timing": "⏰"}
         for role, meta in worker_routing.items():
-            if isinstance(meta, (list, tuple)) and len(meta) == 2:
+            if isinstance(meta, list | tuple) and len(meta) == 2:
                 console.print(
                     f"    {role_icons.get(role, '•')} [bold]{escape(role)}:[/bold] "
                     f"{escape(str(meta[0]))}/{escape(str(meta[1]))}"
@@ -423,35 +423,41 @@ def render_plan(response: dict) -> None:
         if breakfast:
             timeline.append(f"  🍳 [bold bright_green]Breakfast:[/bold bright_green] {escape(_clean_meal(breakfast))}")
 
-        spot_counter = 0
+        state = {"n": 0}
 
-        def _render_acts(acts: list[str]) -> None:
-            nonlocal spot_counter
+        def _render_acts(
+            acts: list[str],
+            spot_counter_ctx: dict[str, int],
+            spot_by_name_ctx: dict,
+            spot_names_ctx: list[str],
+            timeline_ctx: list[str],
+        ) -> None:
             for act in acts:
-                spot_counter += 1
-                is_full = spot_counter % 3 == 1  # 1st, 4th, 7th, 10th spot
-                spot = _match_spot(act, spot_by_name) if is_full else None
+                spot_counter_ctx["n"] += 1
+                is_full = spot_counter_ctx["n"] % 3 == 1  # 1st, 4th, 7th, 10th spot
+                spot = _match_spot(act, spot_by_name_ctx) if is_full else None
                 if spot:
-                    timeline.append(f"  📍 [bold bright_green]{escape(act)}[/bold bright_green]")
+                    timeline_ctx.append(f"  📍 [bold bright_green]{escape(act)}[/bold bright_green]")
                     name = escape(spot.get("name", "?"))
-                    timeline.append(f"     🏛️ [bold cyan]{name}[/bold cyan]")
+                    timeline_ctx.append(f"     🏛️ [bold cyan]{name}[/bold cyan]")
                     if spot.get("history"):
-                        timeline.append(f"     📜 {escape(spot['history'])}")
+                        timeline_ctx.append(f"     📜 {escape(spot['history'])}")
                     oh, ch = spot.get("opening_hours"), spot.get("closing_hours")
                     if oh or ch:
-                        timeline.append(f"     🕒 {escape(oh or '?')} – {escape(ch or '?')}")
+                        timeline_ctx.append(f"     🕒 {escape(oh or '?')} \u2013 {escape(ch or '?')}")
                     if spot.get("best_time"):
-                        timeline.append(f"     ⏰ [green]Best time: {escape(spot['best_time'])}[/green]")
+                        timeline_ctx.append(f"     ⏰ [green]Best time: {escape(spot['best_time'])}[/green]")
                     if spot.get("description"):
-                        timeline.append(f"     🌄 {escape(spot['description'])}")
+                        timeline_ctx.append(f"     🌄 {escape(spot['description'])}")
                 else:
-                    timeline.append(f"  📍 {_highlight_names(escape(act), spot_names)}")
+                    timeline_ctx.append(f"  📍 {_highlight_names(escape(act), spot_names_ctx)}")
 
-        _render_acts(morning_acts)
+        state = {"n": 0}
+        _render_acts(morning_acts, state, spot_by_name, spot_names, timeline)
         if lunch:
             timeline.append(f"  🍴 [bold bright_green]Lunch:[/bold bright_green] {escape(_clean_meal(lunch))}")
-        _render_acts(afternoon_acts)
-        _render_acts(evening_acts)
+        _render_acts(afternoon_acts, state, spot_by_name, spot_names, timeline)
+        _render_acts(evening_acts, state, spot_by_name, spot_names, timeline)
         if dinner and dinner is not lunch:
             timeline.append(f"  🍽️ [bold bright_green]Dinner:[/bold bright_green] {escape(_clean_meal(dinner))}")
 
@@ -689,9 +695,7 @@ def _render_profile(profile_rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
-async def run_pipeline(
-    request: PlanningRequest, verbose: bool = True, profile: bool = False
-) -> dict[str, Any]:
+async def run_pipeline(request: PlanningRequest, verbose: bool = True, profile: bool = False) -> dict[str, Any]:
     """Run the full pipeline with detailed logging.
 
     Always generates the detailed place-by-place itinerary with real opening hours.
@@ -762,9 +766,9 @@ async def run_pipeline(
     if verbose:
         print_step(4, "Generate Plan", "Creating itinerary with LLM...")
 
-    start_time = datetime.now()
+    start_time = datetime.now(tz=UTC)
     response = await pipeline.run(request, context=context, insights=insights)
-    elapsed = (datetime.now() - start_time).total_seconds()
+    elapsed = (datetime.now(tz=UTC) - start_time).total_seconds()
 
     if verbose:
         print_step_done("Generate Plan", elapsed)
@@ -777,9 +781,9 @@ async def run_pipeline(
 
     if verbose:
         print_step(5, "Detailed Places", "Fetching real hours + writing place-by-place itinerary...")
-    start_time = datetime.now()
+    start_time = datetime.now(tz=UTC)
     detailed_obj = await pipeline.run_detailed_places(request, response, context=context, insights=insights)
-    elapsed = (datetime.now() - start_time).total_seconds()
+    elapsed = (datetime.now(tz=UTC) - start_time).total_seconds()
     if verbose:
         print_step_done("Detailed Places", elapsed)
     if profile:
@@ -835,11 +839,12 @@ def plan(
     output_file: str = typer.Option("", "--output", "-f", help="Output file for JSON result"),
 ):
     """Generate a travel plan using the agentic pipeline."""
+
     # When called directly from Python (not CLI), typer.Option objects are passed
     # instead of their values. Extract actual values if needed.
     def _resolve(val: Any, default: Any = None) -> Any:
         return default if isinstance(val, OptionInfo) else val
-    
+
     destination = _resolve(destination, "")
     days = _resolve(days, 4)
     interests = _resolve(interests, "landmarks,food,walks")
@@ -856,7 +861,7 @@ def plan(
     profile = _resolve(profile, True)
     log_level = _resolve(log_level, LogLevel.INFO)
     output_file = _resolve(output_file, "")
-    
+
     setup_logging(log_level)
     logger.info(f"plan command invoked destination={destination} days={days} provider={provider or 'default'}")
 
@@ -865,7 +870,7 @@ def plan(
         origin=origin or None,
         trip_length_days=days,
         interests=[i.strip() for i in interests.split(",") if i.strip()],
-        budget_level=budget,
+        budget_level=cast(BudgetLevel, budget),
         travel_month=month,
         notes=notes or None,
         provider=provider or None,
@@ -890,16 +895,21 @@ def plan(
             console.print(profile_text)
 
         if output_file:
-            with open(output_file, "w") as f:
+            with Path(output_file).open("w") as f:
                 json.dump(result, f, indent=2, default=str)
             print(f"\nResults saved to: {output_file}")
             if result.get("detailed"):
                 det_path = re.sub(r"\.json$", "", output_file) + ".detailed.json"
-                with open(det_path, "w") as f:
+                with Path(det_path).open("w") as f:
                     json.dump(result["detailed"], f, indent=2, default=str)
                 print(f"Detailed places data saved to: {det_path}")
 
         return 0
+
+    except LLMUnavailableError as e:
+        console.print(f"[bold red]⚠ {e}[/bold red]")
+        logger.error(f"Pipeline failed: {e}")
+        return 1
 
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
@@ -933,7 +943,7 @@ def interactive():
         default="midrange",
         type=click.Choice(["budget", "midrange", "luxury"]),
     )
-    month = typer.prompt("Travel month", default=datetime.now().strftime("%B"))
+    month = typer.prompt("Travel month", default=datetime.now(tz=UTC).strftime("%B"))
 
     origin = typer.prompt("Origin city (press Enter to skip)", default="")
     origin = origin if origin else None
@@ -982,10 +992,15 @@ def interactive():
             console.print()
             console.print(profile_text)
 
+    except LLMUnavailableError as e:
+        console.print(f"[bold red]⚠ {e}[/bold red]")
+        logger.error(f"Pipeline failed: {e}")
+        raise typer.Exit(code=1) from None
+
     except Exception as e:
         logger.error(f"Pipeline failed: {e}")
         logger.exception("Full traceback:")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -1026,7 +1041,6 @@ def news(
         console.print(f"\n[dim]Fetched at: {digest.fetched_at}[/dim]")
 
 
-
 @app.command()
 def test():
     """Run a quick test with default parameters."""
@@ -1050,7 +1064,7 @@ def test():
         print(f"Generated at: {result['response']['generated_at']}")
     except Exception as e:
         logger.error(f"Test failed: {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 if __name__ == "__main__":

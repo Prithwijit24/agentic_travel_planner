@@ -21,17 +21,17 @@ logger = logging.getLogger(__name__)
 _RETRYABLE = (httpx.TransportError,)
 
 
-async def aretry_get(client: httpx.AsyncClient, url: str, *, attempts: int = 3, backoff: float = 1.0, **kwargs) -> httpx.Response:
+async def aretry_get(
+    client: httpx.AsyncClient, url: str, *, attempts: int = 3, backoff: float = 1.0, **kwargs
+) -> httpx.Response:
     """``client.get(url, **kwargs)`` with retries on transport errors (backoff)."""
     last_exc: Exception | None = None
     for attempt in range(attempts):
         try:
             return await client.get(url, **kwargs)
-        except _RETRYABLE as exc:  # noqa: BLE001 - retry transient network failures
+        except _RETRYABLE as exc:
             last_exc = exc
-            logger.warning(
-                f"[http] GET {url} transport error (attempt {attempt + 1}/{attempts}): {exc}"
-            )
+            logger.warning(f"[http] GET {url} transport error (attempt {attempt + 1}/{attempts}): {exc}")
             if attempt < attempts - 1:
                 await asyncio.sleep(backoff * (attempt + 1))
     assert last_exc is not None
@@ -44,11 +44,9 @@ def retry_get(client: httpx.Client, url: str, *, attempts: int = 3, backoff: flo
     for attempt in range(attempts):
         try:
             return client.get(url, **kwargs)
-        except _RETRYABLE as exc:  # noqa: BLE001
+        except _RETRYABLE as exc:
             last_exc = exc
-            logger.warning(
-                f"[http] GET {url} transport error (attempt {attempt + 1}/{attempts}): {exc}"
-            )
+            logger.warning(f"[http] GET {url} transport error (attempt {attempt + 1}/{attempts}): {exc}")
             if attempt < attempts - 1:
                 time.sleep(backoff * (attempt + 1))
     assert last_exc is not None

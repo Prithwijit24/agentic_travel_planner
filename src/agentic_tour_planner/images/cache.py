@@ -2,9 +2,10 @@
 
 Uses AI Infra Stack /cache endpoints instead of local Redis.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.images._stack import get_ai_stack
@@ -71,7 +72,7 @@ async def set_cached_image(place_id: str, result: ImageResult) -> None:
             "verified": result.verified,
             "width": result.width,
             "height": result.height,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
         await stack.cache_set(
             _cache_key(place_id),

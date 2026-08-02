@@ -1,9 +1,11 @@
 """Unit tests for image post-processing pipeline (AiStackClient-based)."""
+
 from __future__ import annotations
 
 import io
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
 from PIL import Image
 
 from agentic_tour_planner.images.models import ImageCandidate, ProcessedImage
@@ -119,6 +121,7 @@ async def test_process_image_content_hash_dedup():
 
     # Create a content hash that matches the image bytes
     import hashlib
+
     content_hash = hashlib.sha256(mock_resp.content).hexdigest()[:16]
     existing_hashes = [content_hash]
 
@@ -144,8 +147,9 @@ async def test_clip_score_returns_zero_on_failure():
 
 @pytest.mark.asyncio
 async def test_clip_score_passes_base64():
-    """_clip_score should pass base64-encoded image to the stack."""
+    """_clip_score should pass base64-encoded image to the /clip/similarity endpoint."""
     import base64
+
     from agentic_tour_planner.images.processor import _clip_score
 
     mock_stack = AsyncMock()

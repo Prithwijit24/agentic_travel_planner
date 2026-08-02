@@ -2,6 +2,7 @@
 
 Uses AI Infra Stack for CLIP scoring instead of local torch/transformers.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -10,16 +11,17 @@ import io
 import httpx
 
 from agentic_tour_planner.config.settings import get_settings
-from agentic_tour_planner.images.models import ImageCandidate, ProcessedImage
 from agentic_tour_planner.images._stack import get_ai_stack
+from agentic_tour_planner.images.models import ImageCandidate, ProcessedImage
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 async def _clip_score(image_bytes: bytes, place_name: str, place_type: str = "") -> float:
-    """Compute CLIP relevance score via AI Infra Stack using base64 image."""
+    """Compute CLIP relevance score via AI Infra Stack /clip/similarity endpoint."""
     import base64
+
     settings = get_settings()
     threshold = getattr(settings, "image_clip_threshold", 0.20)
     try:
@@ -78,6 +80,7 @@ async def process_image(
     # Stage 3: Basic dimension check (parse headers)
     try:
         from PIL import Image
+
         img = Image.open(io.BytesIO(image_bytes))
         width, height = img.size
         if width < min_res or height < min_res:
@@ -91,8 +94,12 @@ async def process_image(
         logger.debug(f"Image parse failed: {e}")
         return None
 
-    # Stage 4: CLIP score via AI Infra Stack
-    score = await _clip_score(image_bytes, place_name, place_type)
+    # Stage 4: CLIP score — use pre-computed score if available (from /images endpoint)
+    if candidate.clip_score is not None:
+        score = candidate.clip_score
+        logger.debug(f"Using pre-computed CLIP score for {place_name!r}: {score:.3f}")
+    else:
+        score = await _clip_score(image_bytes, place_name, place_type)
 
     # Stage 5: NSFW check (skip for now — stack doesn't have NSFW endpoint)
     # TODO: Add NSFW check when stack supports it

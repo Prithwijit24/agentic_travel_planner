@@ -52,9 +52,54 @@ def _is_secret_field(name: str) -> bool:
 class Settings:
     """Configuration loaded entirely from per-module YAML files.
 
-    No field declarations — every attribute is populated from YAML
-    config files with optional env-var overrides.
+    Every attribute is populated from YAML config files with optional
+    env-var overrides. The annotations below document the settings that
+    are accessed across the codebase so static type checkers can verify
+    attribute access; instance attributes set from YAML always win.
     """
+
+    # ── General / server ───────────────────────────────────────────
+    app_name: str = "Agentic Travel Planner"
+    app_env: str = "development"
+    log_level: str = "INFO"
+    api_host: str = "127.0.0.1"
+    enable_prometheus_metrics: bool = True
+    default_llm_provider: str | None = None
+
+    # ── Cache / Redis ──────────────────────────────────────────────
+    redis_url: str = "redis://localhost:6379/0"
+    redis_cache_enabled: bool = False
+    redis_cache_namespace: str = "agentic-travel-planner"
+    redis_cache_ttl_seconds: int = 3600
+    redis_socket_timeout_seconds: float = 1.0
+
+    # ── Storage / knowledge paths (resolved to absolute Path at load) ─
+    operations_db_path: Path | None = None
+    knowledge_base_dir: Path | None = None
+    evaluation_dir: Path | None = None
+
+    # ── Retrieval / graph ──────────────────────────────────────────
+    retrieval_top_k: int = 8
+    chunk_size: int = 850
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    # Empty fallback; the real value always comes from config/retrieval.yml.
+    neo4j_password: str = ""
+
+    # ── Ingestion ──────────────────────────────────────────────────
+    crawl_max_concurrency: int = 4
+    request_timeout_seconds: float = 20.0
+
+    # ── External API keys (env-overridable, may be unset) ──────────
+    google_maps_api_key: str | None = None
+    openweather_api_key: str | None = None
+    unsplash_access_key: str | None = None
+    pexels_api_key: str | None = None
+
+    # ── Image pipeline ─────────────────────────────────────────────
+    image_openverse_enabled: bool = True
+    image_mapillary_token: str | None = None
+    image_cache_ttl_seconds: int = 2592000
 
     def __init__(self, **kwargs: Any) -> None:
         for key, value in kwargs.items():
@@ -77,7 +122,7 @@ def _load_yaml_configs() -> dict[str, Any]:
     merged: dict[str, Any] = {}
     for yaml_file in sorted(config_dir.glob("*.yml")):
         try:
-            with open(yaml_file) as f:
+            with yaml_file.open() as f:
                 data = yaml.safe_load(f)
                 if data:
                     merged.update(data)
@@ -116,6 +161,12 @@ def _coerce_env_overrides(yaml_data: dict[str, Any], env_data: dict[str, Any]) -
                 coerced[key] = float(value)
             elif isinstance(default, list) and isinstance(value, str):
                 coerced[key] = [item.strip() for item in value.split(",") if item.strip()]
+            elif isinstance(default, dict):
+                # A scalar env var must never clobber a structured config block
+                # (e.g. an LLM provider dict). This guards against accidental
+                # collisions such as `OPENCODE=1` overwriting the `opencode`
+                # provider in llm.yml.
+                continue
             else:
                 coerced[key] = value
         except (ValueError, TypeError):
@@ -145,6 +196,9 @@ def get_settings() -> Settings:
     merged.setdefault("image_smart_crop_enabled", True)
     merged.setdefault("image_mapillary_token", None)
     merged.setdefault("image_openverse_enabled", True)
+    merged.setdefault("llm_provider_cooldown_seconds", 30)
+    merged.setdefault("llm_call_timeout_seconds", 120)
+    merged.setdefault("llm_planner_timeout_seconds", 600)
 
     applied_overrides = [
         key

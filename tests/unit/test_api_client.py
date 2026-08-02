@@ -1,16 +1,17 @@
 """Unit tests for the synchronous ApiClient wrapper."""
+
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
-from agentic_tour_planner.tools.api_client import ApiClient, DEFAULT_BASE_URL, DEFAULT_ADMIN_USER
-
+from agentic_tour_planner.tools.api_client import DEFAULT_ADMIN_USER, DEFAULT_BASE_URL, ApiClient
 
 # ── helpers ──────────────────────────────────────────────────────────
+
 
 def _mock_response(json_data=None, status_code=200, text=""):
     """Create a mock httpx.Response."""
@@ -38,6 +39,7 @@ def _make_client(**kwargs) -> ApiClient:
 
 
 # ── initialization ───────────────────────────────────────────────────
+
 
 class TestApiClientInit:
     def test_default_base_url(self):
@@ -70,6 +72,7 @@ class TestApiClientInit:
 
 # ── lifecycle ────────────────────────────────────────────────────────
 
+
 class TestApiClientLifecycle:
     def test_close(self):
         client, mock_client = _make_client()
@@ -85,12 +88,21 @@ class TestApiClientLifecycle:
 
 # ── endpoint index ───────────────────────────────────────────────────
 
+
 class TestEndpointIndex:
     def test_all_expected_endpoints_exist(self):
         expected = [
-            "login", "search", "crawl", "pipeline", "embed",
-            "clip_similarity", "cache_get", "vector_upsert",
-            "youtube_info", "duckdb_query", "storage_list",
+            "login",
+            "search",
+            "crawl",
+            "pipeline",
+            "embed",
+            "clip_similarity",
+            "cache_get",
+            "vector_upsert",
+            "youtube_info",
+            "duckdb_query",
+            "storage_list",
         ]
         for name in expected:
             assert name in ApiClient.ENDPOINT_INDEX
@@ -102,6 +114,7 @@ class TestEndpointIndex:
 
 
 # ── auth ─────────────────────────────────────────────────────────────
+
 
 class TestApiClientAuth:
     def test_login(self):
@@ -135,6 +148,7 @@ class TestApiClientAuth:
 
 
 # ── core endpoints ───────────────────────────────────────────────────
+
 
 class TestApiClientCore:
     def test_root(self):
@@ -259,6 +273,7 @@ class TestApiClientCore:
 
 # ── error handling ───────────────────────────────────────────────────
 
+
 class TestApiClientErrors:
     def test_http_error_raises(self):
         client, mock_client = _make_client(token="tok")
@@ -269,6 +284,7 @@ class TestApiClientErrors:
 
 # ── list_endpoints ───────────────────────────────────────────────────
 
+
 class TestListEndpoints:
     def test_list_endpoints_runs(self, capsys):
         ApiClient.list_endpoints()
@@ -278,6 +294,7 @@ class TestListEndpoints:
 
 
 # ── stream_pipeline ──────────────────────────────────────────────────
+
 
 class TestStreamPipeline:
     def test_stream_pipeline_parses_sse(self):
@@ -302,4 +319,3 @@ data: {"url": "https://example.com"}
         assert events[0]["data"] == {"query": "test"}
         assert events[1]["event"] == "result"
         assert events[1]["data"] == {"url": "https://example.com"}
-

@@ -1,8 +1,8 @@
 """Unit tests for image pipeline settings."""
+
 from __future__ import annotations
 
-import pytest
-from agentic_tour_planner.config.settings import get_settings, clear_config
+from agentic_tour_planner.config.settings import clear_config, get_settings
 
 
 def test_image_settings_defaults():

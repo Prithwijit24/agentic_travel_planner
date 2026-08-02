@@ -13,6 +13,7 @@ Run everything (all providers, planner + worker probes, plus a live fallback tes
 Run all models for every provider (slower):
     uv run python scripts/test_all_providers.py --all
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,8 +26,8 @@ _SRC = str(Path(__file__).resolve().parents[1] / "src")
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
-from agentic_tour_planner.llm.provider import LLMProvider
-from agentic_tour_planner.domain.models import PlanningRequest
+from agentic_tour_planner.domain.models import PlanningRequest  # noqa: E402 -- after sys.path bootstrap
+from agentic_tour_planner.llm.provider import LLMProvider  # noqa: E402 -- after sys.path bootstrap
 
 
 async def test_provider(
@@ -86,31 +87,29 @@ async def test_fallback_chain(include_ollama: bool = False) -> None:
     )
     w_elapsed = round(time.perf_counter() - start, 2)
     worker_ok = "error" not in worker_out
-    print(f"{'✅' if worker_ok else '❌'} worker(route)  ({w_elapsed}s)  "
-          f"{'OK' if worker_ok else 'FAILED'}: {str(worker_out)[:120]}")
+    print(
+        f"{'✅' if worker_ok else '❌'} worker(route)  ({w_elapsed}s)  "
+        f"{'OK' if worker_ok else 'FAILED'}: {str(worker_out)[:120]}"
+    )
 
     # Planner (JSON itinerary) call.
     request = PlanningRequest(destination="Tokyo", trip_length_days=2, interests=["food", "walks"])
-    prompt = (
-        "Create a 2-day Tokyo itinerary focused on food and walks. "
-        "Respond with strict JSON only."
-    )
+    prompt = "Create a 2-day Tokyo itinerary focused on food and walks. Respond with strict JSON only."
     start = time.perf_counter()
     plan = await provider.complete_json(prompt, request)
     p_elapsed = round(time.perf_counter() - start, 2)
     planner_ok = isinstance(plan, dict) and bool(plan.get("itinerary"))
-    print(f"{'✅' if planner_ok else '❌'} planner(itinerary) ({p_elapsed}s)  "
-          f"{'OK' if planner_ok else 'FAILED'}: days={len(plan.get('itinerary', []))}")
+    print(
+        f"{'✅' if planner_ok else '❌'} planner(itinerary) ({p_elapsed}s)  "
+        f"{'OK' if planner_ok else 'FAILED'}: days={len(plan.get('itinerary', []))}"
+    )
 
 
 async def main(provider_name: str | None = None, all_models: bool = False) -> int:
     include_ollama = "--ollama" in sys.argv
     provider = LLMProvider(include_ollama=include_ollama)
 
-    if provider_name:
-        targets = [provider_name]
-    else:
-        targets = list(provider.providers.keys())
+    targets = [provider_name] if provider_name else list(provider.providers.keys())
 
     print(f"Providers configured: {provider.list_providers()}")
     print(f"Fallback priority   : {provider._provider_chain()}")

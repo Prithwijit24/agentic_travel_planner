@@ -21,7 +21,7 @@ COST_SYSTEM_PROMPT = (
     "HOTEL (per room per night):\n"
     "- Budget: ₹800-1200, Mid: ₹1500-2500, Premium: ₹3000-5000\n"
     "- SAME PRICE for 1-2 people sharing (do NOT multiply by members)\n"
-    "- For 3+ people: rent enough rooms, total cost = room_rate × rooms_needed\n"
+    "- For 3+ people: rent enough rooms, total cost = room_rate x rooms_needed\n"
     "FOOD (per person per day):\n"
     "- Budget: ₹250, Mid: ₹600, Premium: ₹1200\n"
     "TRANSPORT (per leg):\n"
@@ -51,7 +51,6 @@ class CostEstimator:
             len(plan_json.get("itinerary", []) or []),
         )
         members = request.travelers
-        transport = request.transport_mode or "unspecified"
         days = plan_json.get("itinerary", []) or []
 
         day_summaries = []
@@ -96,24 +95,35 @@ class CostEstimator:
     @staticmethod
     def _parse(data: dict[str, Any], records: list[dict[str, Any]], request: PlanningRequest) -> CostEstimate:
         logger.debug(
-            "_parse daily_count={} has_error={}", len(data.get("daily", []) or []), ("error" in data or "raw" in data)
+            "_parse daily_count={} has_error={}",
+            len(data.get("daily", data.get("daily_items", [])) or []),
+            ("error" in data or "raw" in data),
         )
         if "error" in data or "raw" in data:
             return CostEstimate(calculations=records)
+
+        # The model occasionally returns a different (but equally valid) shape:
+        #   {"daily_items": [{"day", "items": [{"category", "amount"}], "day_total"}], "grand_total"}
+        # Accept both the canonical "daily"/"subtotal"/"overall" and this variant.
+        daily_rows = data.get("daily", data.get("daily_items", [])) or []
         daily: list[DailyCost] = []
-        for d in data.get("daily", []) or []:
+        for d in daily_rows:
+            if not isinstance(d, dict):
+                continue
+            raw_items = d.get("items") or []
             items = [
                 CostLineItem(
-                    label=i.get("label", ""),
+                    label=i.get("label") or i.get("category") or i.get("name") or "",
                     amount=float(
                         i.get("amount", 0)
                         if not isinstance(i.get("amount"), str)
                         else _amount_to_num(i.get("amount", "0"))
                     ),
                 )
-                for i in (d.get("items") or [])
+                for i in raw_items
+                if isinstance(i, dict)
             ]
-            subtotal = d.get("subtotal")
+            subtotal = d.get("subtotal", d.get("day_total"))
             if isinstance(subtotal, str):
                 subtotal = _amount_to_num(subtotal)
             daily.append(
@@ -124,16 +134,21 @@ class CostEstimator:
                     steps=d.get("steps") or [],
                 )
             )
+
         overall_data = data.get("overall") or {}
-        ppt = overall_data.get("per_person_total")
+        ppt = overall_data.get("per_person_total", data.get("grand_total"))
         if isinstance(ppt, str):
             ppt = _amount_to_num(ppt)
-        grand = overall_data.get("grand_total")
+        grand = overall_data.get("grand_total", data.get("grand_total"))
         if isinstance(grand, str):
             grand = _amount_to_num(grand)
+        members = overall_data.get("members")
+        if members is None:
+            trip = data.get("trip") or {}
+            members = trip.get("people", request.travelers)
         overall = OverallCost(
             per_person_total=ppt,
-            members=int(overall_data.get("members", request.travelers)),
+            members=int(members or request.travelers),
             grand_total=grand,
             steps=overall_data.get("steps") or [],
         )
@@ -143,12 +158,9 @@ class CostEstimator:
         logger.info("estimate start destination={} provider_override={}", request.destination, request.provider)
         prompt = self._build_prompt(request, plan_json)
 
-        # Single pass: produce the structured JSON (daily + overall breakdown) with the
-        # calculator tool available so the model does its arithmetic. We intentionally do
-        # NOT run a second forced-proof phase — the step-by-step math is not shown to the
-        # user, so generating it would only waste time and tokens.
-        logger.info("estimate: requesting structured cost JSON (single pass)")
-        data, _ = await self.llm.complete_with_tools(
+        # Use the calculator tool so the model does reliable arithmetic on the fixed
+        # price ranges instead of free-form guesswork (keeps totals consistent).
+        data, records = await self.llm.complete_with_tools(
             prompt,
             COST_SYSTEM_PROMPT,
             [CALCULATOR_TOOL],
@@ -158,7 +170,7 @@ class CostEstimator:
             max_tool_rounds=3,
         )
 
-        result = self._parse(data, [], request)
+        result = self._parse(data, records, request)
         logger.info("estimate done daily_count={}", len(result.daily))
         return result
 

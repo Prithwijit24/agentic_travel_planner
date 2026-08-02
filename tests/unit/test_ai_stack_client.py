@@ -1,9 +1,10 @@
 """Unit tests for the async AiStackClient wrapper."""
+
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from agentic_tour_planner.tools.ai_stack_client import AiStackClient
@@ -21,6 +22,10 @@ def _mock_api_client(**overrides):
     mock.clip_similarity.return_value = {"scores": [0.9]}
     mock.clip_text_embedding.return_value = {"embeddings": [[0.1]]}
     mock.clip_image_embedding.return_value = {"embeddings": [[0.1]]}
+    mock.images.return_value = {"images": [{"url": "http://img.jpg", "clip_score": 0.9}]}
+    mock.news.return_value = {
+        "articles": [{"title": "Test News", "url": "http://news.example.com", "source": "test", "snippet": "..."}]
+    }
     mock.rerank.return_value = {"ranked": []}
     mock.cache_get.return_value = {"value": {"key": "val"}}
     mock.cache_set.return_value = {"ok": True}
@@ -55,21 +60,50 @@ def _mock_api_client(**overrides):
 def client_with_mock():
     """Create an AiStackClient with a mocked ApiClient."""
     mock_api = _mock_api_client()
-    with patch(
-        "agentic_tour_planner.tools.ai_stack_client.get_settings"
-    ) as mock_settings:
+    with patch("agentic_tour_planner.tools.ai_stack_client.get_settings") as mock_settings:
         mock_settings.return_value = MagicMock(
             ai_stack_base_url="http://localhost:8000",
             ai_stack_admin_user="admin",
             ai_stack_admin_pass="pass",
             ai_stack_token="",
+            ai_stack_timeout_seconds=1000.0,
         )
         c = AiStackClient()
     c._client = mock_api
     return c, mock_api
 
 
+# ── init ─────────────────────────────────────────────────────────────
+
+
+class TestAiStackClientInit:
+    def test_timeout_passed_through(self):
+        with patch("agentic_tour_planner.tools.ai_stack_client.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(
+                ai_stack_base_url="http://localhost:8000",
+                ai_stack_admin_user="admin",
+                ai_stack_admin_pass="pass",
+                ai_stack_token="",
+                ai_stack_timeout_seconds=1000.0,
+            )
+            c = AiStackClient()
+        assert c._client._client.timeout == httpx.Timeout(1000.0)
+
+    def test_timeout_defaults_to_1000_when_unset(self):
+        with patch("agentic_tour_planner.tools.ai_stack_client.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(
+                ai_stack_base_url="http://localhost:8000",
+                ai_stack_admin_user="admin",
+                ai_stack_admin_pass="pass",
+                ai_stack_token="",
+                ai_stack_timeout_seconds=None,
+            )
+            c = AiStackClient()
+        assert c._client._client.timeout == httpx.Timeout(1000.0)
+
+
 # ── lifecycle ────────────────────────────────────────────────────────
+
 
 class TestAiStackClientLifecycle:
     def test_close(self, client_with_mock):
@@ -86,52 +120,59 @@ class TestAiStackClientLifecycle:
 
 # ── core ─────────────────────────────────────────────────────────────
 
+
 class TestAiStackClientCore:
     @pytest.mark.asyncio
     async def test_health(self, client_with_mock):
-        c, mock_api = client_with_mock
+        c, _mock_api = client_with_mock
         result = await c.health()
         assert result["status"] == "healthy"
 
     @pytest.mark.asyncio
     async def test_search(self, client_with_mock):
         c, mock_api = client_with_mock
-        result = await c.search("tokyo", categories="images", max_results=5)
+        await c.search("tokyo", categories="images", max_results=5)
         mock_api.search.assert_called_once_with(
-            "tokyo", categories="images", language="en", max_results=5,
+            "tokyo",
+            categories="images",
+            language="en",
+            max_results=5,
         )
 
     @pytest.mark.asyncio
     async def test_browse(self, client_with_mock):
         c, mock_api = client_with_mock
-        result = await c.browse("https://example.com", action="screenshot")
+        await c.browse("https://example.com", action="screenshot")
         mock_api.browse.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_crawl(self, client_with_mock):
         c, mock_api = client_with_mock
-        result = await c.crawl("https://example.com")
+        await c.crawl("https://example.com")
         mock_api.crawl.assert_called_once_with("https://example.com")
 
     @pytest.mark.asyncio
     async def test_pipeline(self, client_with_mock):
         c, mock_api = client_with_mock
-        result = await c.pipeline("best hotels", top_k=3, crawl_limit=5)
+        await c.pipeline("best hotels", top_k=3, crawl_limit=5)
         mock_api.pipeline.assert_called_once_with(
-            "best hotels", top_k=3, crawl_limit=5, max_search_results=15,
+            "best hotels",
+            top_k=3,
+            crawl_limit=5,
+            max_search_results=15,
         )
 
     @pytest.mark.asyncio
     async def test_stream_pipeline(self, client_with_mock):
         c, mock_api = client_with_mock
-        # stream_pipeline returns the sync client's iterator directly
-        mock_api.stream_pipeline.return_value = iter([
-            {"event": "search", "data": {"query": "test"}},
-            {"event": "result", "data": {"url": "https://example.com"}},
-        ])
+        mock_api.stream_pipeline.return_value = iter(
+            [
+                {"event": "search", "data": {"query": "test"}},
+                {"event": "result", "data": {"url": "https://example.com"}},
+            ]
+        )
         result = await c.stream_pipeline("test query", top_k=5)
         mock_api.stream_pipeline.assert_called_once_with("test query", top_k=5)
-        # Verify it returns the iterator
         events = list(result)
         assert len(events) == 2
         assert events[0]["event"] == "search"
@@ -140,17 +181,18 @@ class TestAiStackClientCore:
     @pytest.mark.asyncio
     async def test_embed(self, client_with_mock):
         c, mock_api = client_with_mock
-        result = await c.embed(["hello", "world"])
+        await c.embed(["hello", "world"])
         mock_api.embed.assert_called_once_with(["hello", "world"])
 
     @pytest.mark.asyncio
     async def test_rerank(self, client_with_mock):
         c, mock_api = client_with_mock
-        result = await c.rerank("query", ["doc1", "doc2"], top_k=2)
+        await c.rerank("query", ["doc1", "doc2"], top_k=2)
         mock_api.rerank.assert_called_once_with("query", ["doc1", "doc2"], top_k=2)
 
 
 # ── CLIP ─────────────────────────────────────────────────────────────
+
 
 class TestAiStackClientCLIP:
     @pytest.mark.asyncio
@@ -164,7 +206,8 @@ class TestAiStackClientCLIP:
         c, mock_api = client_with_mock
         await c.clip_image_embedding(image_urls=["http://img.jpg"])
         mock_api.clip_image_embedding.assert_called_once_with(
-            image_urls=["http://img.jpg"], images_base64=None,
+            image_urls=["http://img.jpg"],
+            images_base64=None,
         )
 
     @pytest.mark.asyncio
@@ -172,7 +215,8 @@ class TestAiStackClientCLIP:
         c, mock_api = client_with_mock
         await c.clip_image_embedding(images_base64=["abc123"])
         mock_api.clip_image_embedding.assert_called_once_with(
-            image_urls=None, images_base64=["abc123"],
+            image_urls=None,
+            images_base64=["abc123"],
         )
 
     @pytest.mark.asyncio
@@ -180,7 +224,9 @@ class TestAiStackClientCLIP:
         c, mock_api = client_with_mock
         await c.clip_similarity("query", image_urls=["http://img.jpg"])
         mock_api.clip_similarity.assert_called_once_with(
-            "query", image_urls=["http://img.jpg"], images_base64=None,
+            "query",
+            image_urls=["http://img.jpg"],
+            images_base64=None,
         )
 
     @pytest.mark.asyncio
@@ -188,11 +234,47 @@ class TestAiStackClientCLIP:
         c, mock_api = client_with_mock
         await c.clip_similarity("query", images_base64=["abc123"])
         mock_api.clip_similarity.assert_called_once_with(
-            "query", image_urls=None, images_base64=["abc123"],
+            "query",
+            image_urls=None,
+            images_base64=["abc123"],
+        )
+
+    @pytest.mark.asyncio
+    async def test_images(self, client_with_mock):
+        c, mock_api = client_with_mock
+        mock_api.images.return_value = {"results": [{"url": "http://img.jpg", "clip_score": 0.9}]}
+        await c.images("eiffel tower", max_results=5, use_clip=True)
+        mock_api.images.assert_called_once_with(
+            "eiffel tower",
+            max_results=5,
+            use_clip=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_images_defaults(self, client_with_mock):
+        c, mock_api = client_with_mock
+        mock_api.images.return_value = {"results": []}
+        await c.images("query")
+        mock_api.images.assert_called_once_with(
+            "query",
+            max_results=10,
+            use_clip=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_news(self, client_with_mock):
+        c, mock_api = client_with_mock
+        mock_api.news.return_value = {"articles": [{"title": "Test News"}]}
+        await c.news("tokyo", max_results=5, timelimit="m")
+        mock_api.news.assert_called_once_with(
+            "tokyo",
+            max_results=5,
+            timelimit="m",
         )
 
 
 # ── cache ────────────────────────────────────────────────────────────
+
 
 class TestAiStackClientCache:
     @pytest.mark.asyncio
@@ -204,7 +286,7 @@ class TestAiStackClientCache:
     @pytest.mark.asyncio
     async def test_cache_get(self, client_with_mock):
         c, mock_api = client_with_mock
-        result = await c.cache_get("key1")
+        await c.cache_get("key1")
         mock_api.cache_get.assert_called_once_with("key1")
 
     @pytest.mark.asyncio
@@ -215,6 +297,7 @@ class TestAiStackClientCache:
 
 
 # ── vector ───────────────────────────────────────────────────────────
+
 
 class TestAiStackClientVector:
     @pytest.mark.asyncio
@@ -238,6 +321,7 @@ class TestAiStackClientVector:
 
 # ── graph ────────────────────────────────────────────────────────────
 
+
 class TestAiStackClientGraph:
     @pytest.mark.asyncio
     async def test_graph_query(self, client_with_mock):
@@ -260,6 +344,7 @@ class TestAiStackClientGraph:
 
 # ── YouTube ──────────────────────────────────────────────────────────
 
+
 class TestAiStackClientYouTube:
     @pytest.mark.asyncio
     async def test_youtube_info(self, client_with_mock):
@@ -272,7 +357,8 @@ class TestAiStackClientYouTube:
         c, mock_api = client_with_mock
         await c.youtube_transcript("https://youtube.com/watch?v=abc", language="ja")
         mock_api.youtube_transcript.assert_called_once_with(
-            "https://youtube.com/watch?v=abc", language="ja",
+            "https://youtube.com/watch?v=abc",
+            language="ja",
         )
 
     @pytest.mark.asyncio
@@ -302,6 +388,7 @@ class TestAiStackClientYouTube:
 
 # ── DuckDB ───────────────────────────────────────────────────────────
 
+
 class TestAiStackClientDuckDB:
     @pytest.mark.asyncio
     async def test_duckdb_query(self, client_with_mock):
@@ -323,6 +410,7 @@ class TestAiStackClientDuckDB:
 
 
 # ── storage ──────────────────────────────────────────────────────────
+
 
 class TestAiStackClientStorage:
     @pytest.mark.asyncio

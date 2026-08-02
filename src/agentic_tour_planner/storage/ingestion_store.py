@@ -21,7 +21,10 @@ class SQLiteIngestionStore:
         logger.debug("SQLiteIngestionStore ready")
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.settings.operations_db_path)
+        db_path = self.settings.operations_db_path
+        if db_path is None:
+            raise RuntimeError("operations_db_path is not configured in config/storage.yml")
+        conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         return conn
 

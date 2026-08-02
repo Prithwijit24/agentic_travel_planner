@@ -41,11 +41,11 @@ class PlanningRequest(BaseModel):
 
 
 def parse_place_range(value: str | int | None, default: tuple[int, int] = (3, 5)) -> tuple[int, int]:
-    """Normalize a natural place-count range like '3-5', '3 to 5', '3 – 5' into (min, max)."""
+    """Normalize a natural place-count range like '3-5', '3 to 5', '3 - 5' into (min, max)."""
     if value is None:
         return default
     text = str(value)
-    match = re.search(r"(\d+)\s*(?:-|–|—|to|and)?\s*(\d+)", text)
+    match = re.search(r"(\d+)\s*(?:-|[\u2013\u2014]|to|and)?\s*(\d+)", text)
     if match:
         lo, hi = int(match.group(1)), int(match.group(2))
         if lo > hi:
@@ -354,7 +354,7 @@ class RagEvaluationReport(BaseModel):
 class LogEvent(BaseModel):
     """A single event in the SSE stream."""
 
-    event: Literal["step", "debug", "metric", "error", "done"]
+    event: Literal["step", "debug", "metric", "progress", "error", "done"]
     step: str | None = None
     message: str
     detail: dict[str, Any] | None = None

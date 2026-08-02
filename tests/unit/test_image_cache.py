@@ -1,19 +1,21 @@
 """Unit tests for image cache layer (AiStackClient-based)."""
+
 from __future__ import annotations
 
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
-from datetime import datetime
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from agentic_tour_planner.images.models import ImageResult
+import pytest
+
 from agentic_tour_planner.images.cache import (
-    get_cached_image,
-    set_cached_image,
-    get_dedup_hashes,
-    add_dedup_hash,
     _cache_key,
     _hash_key,
+    add_dedup_hash,
+    get_cached_image,
+    get_dedup_hashes,
+    set_cached_image,
 )
+from agentic_tour_planner.images.models import ImageResult
 
 
 def test_cache_key_format():
@@ -62,7 +64,7 @@ async def test_get_cached_image_returns_result_on_hit():
         "verified": True,
         "width": 800,
         "height": 600,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
     mock_stack = AsyncMock()
     mock_stack.cache_get = AsyncMock(return_value={"value": cached_data})
@@ -95,9 +97,7 @@ async def test_set_cached_image_stores_result():
         patch("agentic_tour_planner.images.cache.get_settings") as mock_settings,
         patch("agentic_tour_planner.images.cache.get_ai_stack", return_value=mock_stack),
     ):
-        mock_settings.return_value = MagicMock(
-            redis_cache_enabled=True, image_cache_ttl_seconds=2592000
-        )
+        mock_settings.return_value = MagicMock(redis_cache_enabled=True, image_cache_ttl_seconds=2592000)
         await set_cached_image("Q243", result)
         mock_stack.cache_set.assert_called_once()
 
@@ -137,10 +137,6 @@ async def test_add_dedup_hash_appends():
         patch("agentic_tour_planner.images.cache.get_settings") as mock_settings,
         patch("agentic_tour_planner.images.cache.get_ai_stack", return_value=mock_stack),
     ):
-        mock_settings.return_value = MagicMock(
-            redis_cache_enabled=True, image_cache_ttl_seconds=2592000
-        )
+        mock_settings.return_value = MagicMock(redis_cache_enabled=True, image_cache_ttl_seconds=2592000)
         await add_dedup_hash("Q243", "def456")
-        mock_stack.cache_set.assert_called_once_with(
-            "img:hashes:Q243", ["abc123", "def456"], ttl_seconds=2592000
-        )
+        mock_stack.cache_set.assert_called_once_with("img:hashes:Q243", ["abc123", "def456"], ttl_seconds=2592000)

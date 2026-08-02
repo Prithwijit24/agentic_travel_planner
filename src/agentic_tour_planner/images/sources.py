@@ -3,6 +3,7 @@
 Each function returns a list of ImageCandidate objects. On any error,
 functions catch exceptions and return an empty list (never raise).
 """
+
 from __future__ import annotations
 
 from urllib.parse import quote
@@ -29,6 +30,7 @@ def _make_candidate(
     license_name: str | None = None,
     attribution: str | None = None,
     verified: bool = True,
+    clip_score: float | None = None,
 ) -> ImageCandidate:
     return ImageCandidate(
         url=url,
@@ -38,6 +40,7 @@ def _make_candidate(
         license=license_name,
         attribution=attribution,
         verified=verified,
+        clip_score=clip_score,
     )
 
 
@@ -47,9 +50,7 @@ def _make_candidate(
 async def fetch_wikidata(place_name: str) -> list[ImageCandidate]:
     """Resolve a place name to a Wikidata entity and return its P18 image."""
     try:
-        async with httpx.AsyncClient(
-            headers={"User-Agent": _USER_AGENT}, timeout=15
-        ) as client:
+        async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}, timeout=15) as client:
             # Step 1: Search for the entity
             search_resp = await client.get(
                 _WIKIDATA_API,
@@ -70,24 +71,15 @@ async def fetch_wikidata(place_name: str) -> list[ImageCandidate]:
             qid = results[0]["id"]
 
             # Step 2: Fetch entity data with P18 claim
-            entity_resp = await client.get(
-                f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
-            )
+            entity_resp = await client.get(f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json")
             entity_resp.raise_for_status()
             entity_data = entity_resp.json()
-            claims = (
-                entity_data.get("entities", {}).get(qid, {}).get("claims", {})
-            )
+            claims = entity_data.get("entities", {}).get(qid, {}).get("claims", {})
             p18_claims = claims.get("P18", [])
             if not p18_claims:
                 return []
 
-            filename = (
-                p18_claims[0]
-                .get("mainsnak", {})
-                .get("datavalue", {})
-                .get("value", "")
-            )
+            filename = p18_claims[0].get("mainsnak", {}).get("datavalue", {}).get("value", "")
             if not filename:
                 return []
 
@@ -105,9 +97,7 @@ async def fetch_wikidata(place_name: str) -> list[ImageCandidate]:
 async def fetch_wikimedia_commons(place_name: str) -> list[ImageCandidate]:
     """Search Wikimedia Commons category for candidate images."""
     try:
-        async with httpx.AsyncClient(
-            headers={"User-Agent": _USER_AGENT}, timeout=15
-        ) as client:
+        async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}, timeout=15) as client:
             # Search for category members
             cat_resp = await client.get(
                 _COMMONS_API,
@@ -143,9 +133,7 @@ async def fetch_wikipedia(place_name: str) -> list[ImageCandidate]:
         # Normalize page title (spaces to underscores)
         page_title = place_name.replace(" ", "_")
 
-        async with httpx.AsyncClient(
-            headers={"User-Agent": _USER_AGENT}, timeout=10
-        ) as client:
+        async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}, timeout=10) as client:
             resp = await client.get(f"{_WIKIPEDIA_REST}/{quote(page_title)}")
             if resp.status_code != 200:
                 return []
@@ -184,9 +172,7 @@ async def fetch_openverse(place_name: str) -> list[ImageCandidate]:
         return []
 
     try:
-        async with httpx.AsyncClient(
-            headers={"User-Agent": _USER_AGENT}, timeout=15
-        ) as client:
+        async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}, timeout=15, follow_redirects=True) as client:
             resp = await client.get(
                 _OPENVERSE_API,
                 params={
@@ -226,9 +212,7 @@ async def fetch_openverse(place_name: str) -> list[ImageCandidate]:
 # ── 5.5 Mapillary (Optional Fallback #4) ────────────────────────────
 
 
-async def fetch_mapillary(
-    place_name: str, lat: float | None = None, lng: float | None = None
-) -> list[ImageCandidate]:
+async def fetch_mapillary(place_name: str, lat: float | None = None, lng: float | None = None) -> list[ImageCandidate]:
     """Search Mapillary for street-level images near coordinates."""
     from agentic_tour_planner.config.settings import get_settings
 
@@ -238,9 +222,7 @@ async def fetch_mapillary(
         return []
 
     try:
-        async with httpx.AsyncClient(
-            headers={"User-Agent": _USER_AGENT}, timeout=15
-        ) as client:
+        async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}, timeout=15) as client:
             resp = await client.get(
                 "https://graph.mapillary.com/images",
                 params={
@@ -284,9 +266,7 @@ async def fetch_stock(place_name: str, place_type: str = "") -> list[ImageCandid
     # Try Unsplash
     if settings.unsplash_access_key:
         try:
-            async with httpx.AsyncClient(
-                headers={"User-Agent": _USER_AGENT}, timeout=10
-            ) as client:
+            async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}, timeout=10) as client:
                 resp = await client.get(
                     "https://api.unsplash.com/search/photos",
                     params={"query": place_type or place_name, "per_page": 3},
@@ -312,9 +292,7 @@ async def fetch_stock(place_name: str, place_type: str = "") -> list[ImageCandid
     # Try Pexels
     if settings.pexels_api_key:
         try:
-            async with httpx.AsyncClient(
-                headers={"User-Agent": _USER_AGENT}, timeout=10
-            ) as client:
+            async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}, timeout=10) as client:
                 resp = await client.get(
                     "https://api.pexels.com/v1/search",
                     params={"query": place_type or place_name, "per_page": 3},
@@ -340,7 +318,52 @@ async def fetch_stock(place_name: str, place_type: str = "") -> list[ImageCandid
     return candidates
 
 
-# ── 5.0 DuckDuckGo Images (Primary — no API key needed) ─────────────
+# ── 5.0 AI Infra Stack /images (Primary — CLIP-scored results) ────
+
+
+async def fetch_stack_images(place_name: str) -> list[ImageCandidate]:
+    """Search images via AI Infra Stack /images endpoint.
+
+    The endpoint performs web search + CLIP reranking in one call,
+    returning results with pre-computed clip_score (0-1).
+    Fallback chain: DDGS → Unsplash → Pexels.
+    """
+    from agentic_tour_planner.tools.ai_stack_client import AiStackClient
+
+    stack = AiStackClient()
+    try:
+        result = await stack.images(
+            query=place_name,
+            max_results=5,
+            use_clip=True,
+        )
+        images = result.get("images", []) or result.get("results", [])
+        candidates = []
+        for img in images:
+            url = img.get("image_url", "") or img.get("url", "")
+            if not url:
+                continue
+            candidates.append(
+                _make_candidate(
+                    url=url,
+                    source="aistack",
+                    width=img.get("width"),
+                    height=img.get("height"),
+                    license_name=img.get("license"),
+                    attribution=img.get("source") or img.get("source_url", ""),
+                    verified=True,
+                    clip_score=img.get("clip_score"),
+                )
+            )
+        return candidates
+    except Exception as exc:
+        logger.warning(f"fetch_stack_images failed for {place_name!r}: {exc}")
+        return []
+    finally:
+        stack.close()
+
+
+# ── 5.0b DuckDuckGo Images (Fallback — no API key needed) ────────────
 
 
 async def fetch_ddgs_images(place_name: str) -> list[ImageCandidate]:

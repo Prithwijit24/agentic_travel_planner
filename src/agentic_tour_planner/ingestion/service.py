@@ -144,15 +144,17 @@ class IngestionService:
             # Upsert to vector store
             await self.ai_stack.vector_upsert(
                 collection="documents",
-                records=[{
-                    "id": document.source_id,
-                    "embedding": embedding,
-                    "metadata": {
-                        "title": document.title,
-                        "url": str(document.url or ""),
-                        "source_type": document.source_type,
-                    },
-                }],
+                records=[
+                    {
+                        "id": document.source_id,
+                        "embedding": embedding,
+                        "metadata": {
+                            "title": document.title,
+                            "url": str(document.url or ""),
+                            "source_type": document.source_type,
+                        },
+                    }
+                ],
             )
             chunk_count = 1
         except Exception as e:
@@ -383,7 +385,10 @@ class IngestionService:
             if path.exists():
                 logger.debug(f"Resolved dump path (configured) path={path}")
                 return path
-        base_dir = Path(raw_dir) if raw_dir is not None else self.settings.knowledge_base_dir / "raw"
+        kb_dir = self.settings.knowledge_base_dir
+        if kb_dir is None:
+            raise RuntimeError("knowledge_base_dir is not configured in config/retrieval.yml")
+        base_dir = Path(raw_dir) if raw_dir is not None else kb_dir / "raw"
         candidates = [
             base_dir / "enwikivoyage-latest-pages-articles.xml.bz2",
             base_dir / "enwikivoyage-latest-pages-articles-multistream.xml.bz2",

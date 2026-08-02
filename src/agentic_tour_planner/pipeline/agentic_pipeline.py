@@ -11,9 +11,9 @@ from agentic_tour_planner.domain.models import (
     CostEstimate,
     DayPlan,
     DetailedPlan,
-    LiveWebBrief,
     LogEvent,
     PlaceHours,
+    PlanningInsights,
     PlanningRequest,
     PlanningResponse,
     RetrievedContext,
@@ -21,7 +21,7 @@ from agentic_tour_planner.domain.models import (
     SourceDocument,
     TransportOption,
 )
-from agentic_tour_planner.llm.provider import LLMProvider
+from agentic_tour_planner.llm.provider import LLMProvider, LLMUnavailableError
 from agentic_tour_planner.pipeline.place_constraints import enforce_minimum_daily_spots
 from agentic_tour_planner.pipeline.prompts import (
     DETAILED_SYSTEM_PROMPT,
@@ -84,14 +84,16 @@ class AgenticTourPlannerPipeline:
             for item in stack_result.get("results", []):
                 content = item.get("markdown", item.get("content", ""))
                 if content:
-                    docs.append(SourceDocument(
-                        source_id=item.get("url", ""),
-                        source_type="web",
-                        title=item.get("title", ""),
-                        content=content,
-                        url=item.get("url", ""),
-                        metadata={"score": item.get("score", 0.0)},
-                    ))
+                    docs.append(
+                        SourceDocument(
+                            source_id=item.get("url", ""),
+                            source_type="web",
+                            title=item.get("title", ""),
+                            content=content,
+                            url=item.get("url", ""),
+                            metadata={"score": item.get("score", 0.0)},
+                        )
+                    )
         except Exception as e:
             logger.warning(f"AI Infra Stack pipeline failed, using empty results: {e}")
 
@@ -172,10 +174,15 @@ class AgenticTourPlannerPipeline:
             if emitter:
                 emitter.emit(LogEvent(event="step", step="Generate Plan", message="Generating plan..."))
             try:
-                plan_json = await self.llm_provider.complete_json(prompt, request)
+                plan_json = await self.llm_provider.complete_json(
+                    prompt,
+                    request,
+                )
                 if not plan_json:
                     logger.warning("Planner returned empty result; using fallback plan.")
                     plan_json = self._fallback_plan(request)
+            except LLMUnavailableError:
+                raise
             except Exception as e:
                 logger.error(f"Planner failed, using fallback: {e}")
                 plan_json = self._fallback_plan(request)
@@ -222,15 +229,15 @@ class AgenticTourPlannerPipeline:
             ]
             if not citations:
                 citations = [
-                    Citation(title=document.get("title", ""), url=document.get("url", "https://example.local"))
+                    Citation(title=document.title, url=document.url or "https://example.local")
                     for document in context.documents[:5]
-                    if document.get("url")
+                    if document.url
                 ]
             logger.debug(f"Resolved {len(citations)} citations.")
 
         async with self.profiler.atrack("Parse Itinerary"):
             raw_itinerary = plan_json.get("itinerary", []) or []
-            itinerary = []
+            itinerary: list[DayPlan] = []
             for item in raw_itinerary:
                 if not isinstance(item, dict):
                     continue
@@ -301,9 +308,11 @@ class AgenticTourPlannerPipeline:
         request: PlanningRequest,
         base_response: Any,
         context: RetrievedContext | None = None,
-        insights: Any | None = None,
+        insights: PlanningInsights | None = None,
     ) -> DetailedPlan | None:
         """Generate the detailed, place-by-place itinerary as structured data."""
+        if insights is None:
+            raise RuntimeError("insights are required for detailed places generation")
         logger.info(f"Building detailed places itinerary for {request.destination!r}")
         async with self.profiler.atrack("Detailed Places: Gather"):
             names: list[str] = []
@@ -319,32 +328,73 @@ class AgenticTourPlannerPipeline:
             place_hours_map: dict[str, PlaceHours] = {}
             if names:
                 logger.info(f"Fetching info for {len(names)} places via AI Infra Stack")
-                for name in names[:5]:  # Limit to avoid rate limits
-                    try:
-                        result = await self.ai_stack.search(
-                            query=f"{name} {request.destination} opening hours",
-                            max_results=3,
-                        )
-                        if result and result.get("results"):
-                            info = result["results"][0]
-                            place_hours_map[name] = PlaceHours(
-                                venue=name,
-                                status="found",
-                                opening_hours=[info.get("snippet", "")],
-                                source=info.get("url", ""),
+
+                sem = asyncio.Semaphore(5)
+
+                async def _fetch(name: str) -> None:
+                    async with sem:
+                        try:
+                            result = await self.ai_stack.search(
+                                query=f"{name} {request.destination} opening hours",
+                                max_results=3,
                             )
-                    except Exception as e:
-                        logger.warning(f"Failed to search for {name}: {e}")
-                        place_hours_map[name] = PlaceHours(
-                            venue=name,
-                            status="unavailable",
-                        )
+                            if result and result.get("results"):
+                                info = result["results"][0]
+                                place_hours_map[name] = PlaceHours(
+                                    venue=name,
+                                    status="found",
+                                    opening_hours=[info.get("snippet", "")],
+                                    source=info.get("url", ""),
+                                )
+                        except Exception as e:
+                            logger.warning(f"Failed to search for {name}: {e}")
+                            place_hours_map[name] = PlaceHours(venue=name, status="unavailable")
+
+                await asyncio.gather(*(_fetch(n) for n in names[:5]))  # Limit to avoid rate limits
                 logger.debug(f"Fetched info for {len(place_hours_map)} places.")
 
         async with self.profiler.atrack("Detailed Places: LLM Generation"):
             live_brief = getattr(base_response, "live_web_brief", None)
-            prompt = build_detailed_places_prompt(request, base_response, live_brief, place_hours_map, insights)
-            raw = await self.llm_provider.complete_json(prompt, request, system_prompt=DETAILED_SYSTEM_PROMPT)
+            itinerary = list(getattr(base_response, "itinerary", []))
+            day_numbers = [getattr(d, "day", i + 1) for i, d in enumerate(itinerary)] or [1]
+
+            # Generate each day in parallel (each call returns only its own day),
+            # then merge. This turns a single ~350s serial generation into roughly
+            # one-day latency when the provider supports concurrent requests.
+            concurrency = max(1, min(4, len(day_numbers)))
+
+            async def _gen_day(day_num: int) -> dict | None:
+                prompt = build_detailed_places_prompt(
+                    request, base_response, live_brief, place_hours_map, insights, target_day=day_num
+                )
+                try:
+                    return await self.llm_provider.complete_json(
+                        prompt,
+                        request,
+                        system_prompt=DETAILED_SYSTEM_PROMPT,
+                    )
+                except Exception as exc:
+                    logger.warning(f"Detailed places generation failed for day {day_num}: {exc}")
+                    return None
+
+            semaphore = asyncio.Semaphore(concurrency)
+
+            async def _guarded(day_num: int) -> dict | None:
+                async with semaphore:
+                    return await _gen_day(day_num)
+
+            raw_days_list = await asyncio.gather(*(_guarded(d) for d in day_numbers))
+            raw: dict[str, list[dict]] = {"days": []}
+            for day_num, day_raw in zip(day_numbers, raw_days_list, strict=False):
+                if not isinstance(day_raw, dict):
+                    continue
+                found = [d for d in (day_raw.get("days") or []) if isinstance(d, dict)]
+                if not found:
+                    logger.warning(f"Detailed places: day {day_num} returned no usable days.")
+                    continue
+                raw["days"].append(found[0])
+            if raw["days"]:
+                raw["days"].sort(key=lambda d: int(d.get("day", 0) or 0))
         detailed: DetailedPlan | None = None
         if raw and isinstance(raw, dict) and raw.get("days"):
             try:

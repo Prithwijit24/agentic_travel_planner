@@ -37,14 +37,17 @@ class WikivoyageDumpReader:
         self.dump_path = Path(dump_path)
         self.min_content_chars = min_content_chars
         self.include_redirects = include_redirects
-        logger.debug(f"Initialized WikivoyageDumpReader dump_path={self.dump_path} min_content_chars={min_content_chars} include_redirects={include_redirects}")
+        logger.debug(
+            f"Initialized WikivoyageDumpReader dump_path={self.dump_path} min_content_chars={min_content_chars} include_redirects={include_redirects}"
+        )
 
     def count_documents(self, limit: int | None = None) -> int:
         """Count total valid documents in the dump (excluding redirects and small content)."""
         logger.info(f"Counting documents dump_path={self.dump_path} limit={limit}")
         count = 0
         with bz2.open(self.dump_path, "rb") as file_obj:
-            context = ET.iterparse(file_obj, events=("end",))
+            # Local trusted Wikivoyage dump, not attacker-controlled input.
+            context = ET.iterparse(file_obj, events=("end",))  # noqa: S314
             for _, elem in context:
                 if _local_name(elem.tag) != "page":
                     continue
@@ -77,7 +80,8 @@ class WikivoyageDumpReader:
         logger.info(f"Iterating documents dump_path={self.dump_path} limit={limit}")
         yielded = 0
         with bz2.open(self.dump_path, "rb") as file_obj:
-            context = ET.iterparse(file_obj, events=("end",))
+            # Local trusted Wikivoyage dump, not attacker-controlled input.
+            context = ET.iterparse(file_obj, events=("end",))  # noqa: S314
             for _, elem in context:
                 if _local_name(elem.tag) != "page":
                     continue
@@ -133,7 +137,7 @@ def extract_wikivoyage_metadata(wikitext: str) -> dict:
     headings = [item.strip() for item in _HEADING_RE.findall(wikitext)]
     parent_match = _IS_PART_OF_RE.search(wikitext)
     links = []
-    for target, label in _LINK_RE.findall(wikitext):
+    for target, _ in _LINK_RE.findall(wikitext):
         normalized = target.replace("_", " ").strip()
         if normalized and not normalized.lower().startswith(("file:", "image:", "category:")):
             links.append(normalized)

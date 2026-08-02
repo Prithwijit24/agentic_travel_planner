@@ -12,12 +12,13 @@ Usage:
     uv run python test_location_services.py
 
     # With Google Maps API key (set the env var):
-    export google_maps_api_key="YOUR_API_KEY"
+    export google_maps_api_key="YOUR_API_KEY"  # pragma: allowlist secret
     uv run python test_location_services.py
 """
 
 import logging
 import sys
+import tempfile
 
 # Configure logging to see the geocoding service selection
 logging.basicConfig(
@@ -26,7 +27,7 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 
-from agentic_tour_planner.tools.map_tool import MapTool
+from agentic_tour_planner.tools.map_tool import MapTool  # noqa: E402 -- after sys.path bootstrap
 
 
 def test_autocomplete(tool: MapTool) -> None:
@@ -34,9 +35,9 @@ def test_autocomplete(tool: MapTool) -> None:
     print("\n" + "=" * 60)
     print("AUTOCOMPLETE TEST")
     print("=" * 60)
-    
+
     queries = ["Par", "Tokyo", "New York", "Syd", "Ber"]
-    
+
     for query in queries:
         results = tool.autocomplete(query, limit=5)
         print(f"\nQuery: '{query}'")
@@ -52,9 +53,9 @@ def test_validation(tool: MapTool) -> None:
     print("\n" + "=" * 60)
     print("ADDRESS VALIDATION TEST")
     print("=" * 60)
-    
+
     locations = ["Paris", "Tokyo", "Eiffel Tower", "UnknownPlace12345"]
-    
+
     for location in locations:
         result = tool.validate_address(location)
         status = "✓ VALID" if result["valid"] else "✗ INVALID"
@@ -69,11 +70,11 @@ def test_geocoding(tool: MapTool) -> None:
     print("\n" + "=" * 60)
     print("GEOCODING TEST")
     print("=" * 60)
-    
+
     locations = ["Kyoto", "Cairo", "Sydney", "Amazon Rainforest"]
-    
+
     for location in locations:
-        coords = tool._geocode(location)
+        coords = tool._geocode(location)  # noqa: SLF001 -- diagnostic of internal geocoder
         if coords:
             print(f"✓ {location} -> ({coords[0]:.4f}, {coords[1]:.4f})")
         else:
@@ -85,7 +86,7 @@ def test_map_rendering(tool: MapTool) -> None:
     print("\n" + "=" * 60)
     print("MAP RENDERING TEST")
     print("=" * 60)
-    
+
     # Create a sample itinerary
     itinerary = [
         {
@@ -113,16 +114,16 @@ def test_map_rendering(tool: MapTool) -> None:
             "meals": [],
         },
     ]
-    
+
     # Render the map
     m = tool.render_itinerary_map(itinerary, origin="Tokyo")
-    
-    print(f"\nMap rendered successfully!")
+
+    print("\nMap rendered successfully!")
     print(f"Map type: {type(m).__name__}")
     print(f"Map center: {m.location}")
-    
+
     # Save to HTML
-    output_path = "/tmp/travel_map.html"
+    output_path = f"{tempfile.gettempdir()}/travel_map.html"
     m.save(output_path)
     print(f"Map saved to: {output_path}")
 
@@ -132,16 +133,16 @@ def main() -> None:
     print("=" * 60)
     print("LOCATION SERVICES TEST SUITE")
     print("=" * 60)
-    
+
     # Initialize the tool
     tool = MapTool()
-    
+
     # Run tests
     test_autocomplete(tool)
     test_validation(tool)
     test_geocoding(tool)
     test_map_rendering(tool)
-    
+
     print("\n" + "=" * 60)
     print("ALL TESTS COMPLETED")
     print("=" * 60)

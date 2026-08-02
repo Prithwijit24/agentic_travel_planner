@@ -1,10 +1,13 @@
-"""Fetch and summarize recent news about a destination using DDGS."""
+"""Fetch and summarize recent news about a destination.
+
+Uses the AI Infra Stack /news endpoint when available, with DDGS fallback.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
+from typing import Any, cast
 
-from ddgs import DDGS
 from pydantic import BaseModel
 
 from agentic_tour_planner.cache.redis_cache import RedisCache
@@ -33,11 +36,48 @@ class NewsDigest(BaseModel):
 
 
 class NewsService:
-    """Fetch and summarize recent news about a destination using DDGS."""
+    """Fetch and summarize recent news about a destination.
+
+    Uses the AI Infra Stack /news endpoint when available, with DDGS fallback.
+    """
 
     def __init__(self, llm: LLMProvider | None = None) -> None:
         self.llm = llm or LLMProvider()
         self.cache = RedisCache()
+
+    async def _fetch_from_stack(
+        self,
+        query: str,
+        max_results: int = 10,
+    ) -> list[dict]:
+        """Try fetching news from AI Infra Stack /news endpoint."""
+        from agentic_tour_planner.tools.ai_stack_client import AiStackClient
+
+        stack = AiStackClient()
+        try:
+            result = await stack.news(query=query, max_results=max_results, timelimit="m")
+            # API returns {"results": [...]} not {"articles": [...]}
+            return cast(list[dict[Any, Any]], result.get("results", []))
+        except Exception as exc:
+            logger.debug(f"[news] AI Stack /news failed, falling back to DDGS: {exc}")
+            return []
+        finally:
+            stack.close()
+
+    async def _fetch_from_ddgs(
+        self,
+        query: str,
+        max_results: int = 10,
+    ) -> list[dict]:
+        """Fallback: fetch news from DDGS directly."""
+        from ddgs import DDGS
+
+        try:
+            items = list(DDGS().news(query, max_results=max_results, timelimit="m"))
+            return [dict(item) for item in items]
+        except Exception as exc:
+            logger.warning(f"[news] DDGS news failed for {query!r}: {exc}")
+            return []
 
     async def collect(
         self,
@@ -56,13 +96,13 @@ class NewsService:
         except Exception as exc:
             logger.debug(f"[news] cache read failed: {exc}")
 
-        # Fetch from DDGS
+        # Fetch news: AI Stack first, DDGS fallback
         topics = ", ".join(interests) if interests else ""
         query = f"{destination} {topics}".strip()
-        try:
-            raw = list(DDGS().news(query, max_results=10, timelimit="m"))
-        except Exception as exc:
-            logger.warning(f"[news] DDGS news failed for {destination}: {exc}")
+        raw = await self._fetch_from_stack(query)
+        if not raw:
+            raw = await self._fetch_from_ddgs(query)
+        if not raw:
             return NewsDigest(destination=destination, overview="Unable to fetch news.")
 
         # Deduplicate by URL
@@ -78,8 +118,8 @@ class NewsService:
                     title=item.get("title", ""),
                     url=url,
                     source=item.get("source", ""),
-                    date=item.get("date"),
-                    snippet=item.get("body", ""),
+                    date=item.get("published") or item.get("date"),
+                    snippet=item.get("body", "") or item.get("snippet", ""),
                 )
             )
 
@@ -87,7 +127,7 @@ class NewsService:
             return NewsDigest(
                 destination=destination,
                 overview="No recent news found for this destination.",
-                fetched_at=datetime.now(datetime.UTC).isoformat(),
+                fetched_at=datetime.now(UTC).isoformat(),
             )
 
         # LLM summarization
@@ -106,12 +146,12 @@ class NewsService:
             destination=destination,
             overview=overview,
             articles=articles[:5],
-            fetched_at=datetime.now(datetime.UTC).isoformat(),
+            fetched_at=datetime.now(UTC).isoformat(),
         )
 
         # Cache for 1 hour
         try:
-            await self.cache.set_json(cache_key, digest.model_dump(), ttl=_CACHE_TTL)
+            await self.cache.set_json(cache_key, digest.model_dump(), ttl_seconds=_CACHE_TTL)
         except Exception as exc:
             logger.debug(f"[news] cache write failed: {exc}")
 

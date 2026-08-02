@@ -13,10 +13,10 @@ import pytest
 
 from agentic_tour_planner.images.models import ImageCandidate, ImageResult
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 def _make_candidate(
     url: str = "https://example.com/img.jpg",
@@ -62,6 +62,7 @@ def _make_processed(
 # Test: Full waterfall — first source succeeds
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_waterfall_first_source_succeeds():
     """When the first source (Wikidata) returns a good candidate, pipeline should stop there."""
@@ -70,18 +71,19 @@ async def test_waterfall_first_source_succeeds():
     candidate = _make_candidate(url="https://commons.wikimedia.org/img1.jpg", source="wikidata")
     processed = _make_processed(url="https://commons.wikimedia.org/img1.jpg", source="wikidata", clip_score=0.9)
 
-    with patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.set_cached_image", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.get_dedup_hashes", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.pipeline.add_dedup_hash", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.process_image", new_callable=AsyncMock, return_value=processed), \
-         patch("agentic_tour_planner.images.sources.fetch_wikidata", new_callable=AsyncMock, return_value=[candidate]), \
-         patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock) as mock_wiki, \
-         patch("agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock) as mock_wiki_rest, \
-         patch("agentic_tour_planner.images.sources.fetch_openverse", new_callable=AsyncMock) as mock_ov, \
-         patch("agentic_tour_planner.images.sources.fetch_mapillary", new_callable=AsyncMock) as mock_map, \
-         patch("agentic_tour_planner.images.sources.fetch_stock", new_callable=AsyncMock) as mock_stock:
-
+    with (
+        patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.set_cached_image", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.get_dedup_hashes", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.pipeline.add_dedup_hash", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.process_image", new_callable=AsyncMock, return_value=processed),
+        patch("agentic_tour_planner.images.sources.fetch_wikidata", new_callable=AsyncMock, return_value=[candidate]),
+        patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock) as mock_wiki,
+        patch("agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock) as mock_wiki_rest,
+        patch("agentic_tour_planner.images.sources.fetch_openverse", new_callable=AsyncMock) as mock_ov,
+        patch("agentic_tour_planner.images.sources.fetch_mapillary", new_callable=AsyncMock) as mock_map,
+        patch("agentic_tour_planner.images.sources.fetch_stock", new_callable=AsyncMock) as mock_stock,
+    ):
         places = [{"place_name": "Eiffel Tower", "image_query": "eiffel tower paris"}]
         results = await resolve_images(places)
 
@@ -103,6 +105,7 @@ async def test_waterfall_first_source_succeeds():
 # Test: Waterfall falls through to second source
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_waterfall_falls_through_to_wikipedia():
     """When Wikidata returns nothing, pipeline should try Wikimedia Commons, then Wikipedia."""
@@ -111,18 +114,19 @@ async def test_waterfall_falls_through_to_wikipedia():
     candidate = _make_candidate(url="https://upload.wikimedia.org/img2.jpg", source="wikipedia")
     processed = _make_processed(url="https://upload.wikimedia.org/img2.jpg", source="wikipedia", clip_score=0.75)
 
-    with patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.set_cached_image", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.get_dedup_hashes", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.pipeline.add_dedup_hash", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.process_image", new_callable=AsyncMock, return_value=processed), \
-         patch("agentic_tour_planner.images.sources.fetch_wikidata", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock, return_value=[candidate]), \
-         patch("agentic_tour_planner.images.sources.fetch_openverse", new_callable=AsyncMock) as mock_ov, \
-         patch("agentic_tour_planner.images.sources.fetch_mapillary", new_callable=AsyncMock) as mock_map, \
-         patch("agentic_tour_planner.images.sources.fetch_stock", new_callable=AsyncMock) as mock_stock:
-
+    with (
+        patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.set_cached_image", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.get_dedup_hashes", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.pipeline.add_dedup_hash", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.process_image", new_callable=AsyncMock, return_value=processed),
+        patch("agentic_tour_planner.images.sources.fetch_wikidata", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock, return_value=[candidate]),
+        patch("agentic_tour_planner.images.sources.fetch_openverse", new_callable=AsyncMock) as mock_ov,
+        patch("agentic_tour_planner.images.sources.fetch_mapillary", new_callable=AsyncMock) as mock_map,
+        patch("agentic_tour_planner.images.sources.fetch_stock", new_callable=AsyncMock) as mock_stock,
+    ):
         places = [{"place_name": "Kyoto Temple", "image_query": "kyoto temple"}]
         results = await resolve_images(places)
 
@@ -140,21 +144,23 @@ async def test_waterfall_falls_through_to_wikipedia():
 # Test: All sources fail — returns empty ImageResult
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_waterfall_all_sources_fail():
     """When no source returns candidates, pipeline returns an empty ImageResult."""
     from agentic_tour_planner.images.pipeline import resolve_images
 
-    with patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.set_cached_image", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.get_dedup_hashes", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.sources.fetch_wikidata", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.sources.fetch_openverse", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.sources.fetch_mapillary", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.sources.fetch_stock", new_callable=AsyncMock, return_value=[]):
-
+    with (
+        patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.set_cached_image", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.get_dedup_hashes", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.sources.fetch_wikidata", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.sources.fetch_openverse", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.sources.fetch_mapillary", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.sources.fetch_stock", new_callable=AsyncMock, return_value=[]),
+    ):
         places = [{"place_name": "Remote Island", "image_query": "remote island"}]
         results = await resolve_images(places)
 
@@ -166,6 +172,7 @@ async def test_waterfall_all_sources_fail():
 # ---------------------------------------------------------------------------
 # Test: Cache hit — skips waterfall entirely
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_cache_hit_skips_waterfall():
@@ -179,11 +186,12 @@ async def test_cache_hit_skips_waterfall():
         clip_score=0.95,
     )
 
-    with patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=cached), \
-         patch("agentic_tour_planner.images.sources.fetch_wikidata", new_callable=AsyncMock) as mock_wd, \
-         patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock) as mock_wc, \
-         patch("agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock) as mock_wr:
-
+    with (
+        patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=cached),
+        patch("agentic_tour_planner.images.sources.fetch_wikidata", new_callable=AsyncMock) as mock_wd,
+        patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock) as mock_wc,
+        patch("agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock) as mock_wr,
+    ):
         places = [{"place_name": "Tokyo Tower", "image_query": "tokyo tower"}]
         results = await resolve_images(places)
 
@@ -199,6 +207,7 @@ async def test_cache_hit_skips_waterfall():
 # ---------------------------------------------------------------------------
 # Test: Processor rejects all candidates from first source, falls through
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_processor_rejects_falls_through():
@@ -218,15 +227,20 @@ async def test_processor_rejects_falls_through():
             return None  # Reject first candidate
         return processed_s2  # Accept second
 
-    with patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.set_cached_image", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.get_dedup_hashes", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.pipeline.add_dedup_hash", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.process_image", side_effect=mock_process), \
-         patch("agentic_tour_planner.images.sources.fetch_wikidata", new_callable=AsyncMock, return_value=[candidate_s1]), \
-         patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock, return_value=[candidate_s2]):
-
+    with (
+        patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.set_cached_image", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.get_dedup_hashes", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.pipeline.add_dedup_hash", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.process_image", side_effect=mock_process),
+        patch(
+            "agentic_tour_planner.images.sources.fetch_wikidata", new_callable=AsyncMock, return_value=[candidate_s1]
+        ),
+        patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock, return_value=[]),
+        patch(
+            "agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock, return_value=[candidate_s2]
+        ),
+    ):
         places = [{"place_name": "Test Place", "image_query": "test"}]
         results = await resolve_images(places)
 
@@ -239,6 +253,7 @@ async def test_processor_rejects_falls_through():
 # Test: Multiple places processed independently
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_multiple_places_resolved_independently():
     """Each place in the list is resolved independently with its own waterfall."""
@@ -249,15 +264,18 @@ async def test_multiple_places_resolved_independently():
     candidate_a = _make_candidate(url="https://a.com/img.jpg", source="wikidata")
     candidate_b = _make_candidate(url="https://b.com/img.jpg", source="wikipedia")
 
-    with patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.set_cached_image", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.get_dedup_hashes", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.pipeline.add_dedup_hash", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.process_image", new_callable=AsyncMock, return_value=processed_a), \
-         patch("agentic_tour_planner.images.sources.fetch_wikidata", new_callable=AsyncMock, return_value=[candidate_a]), \
-         patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock, return_value=[candidate_b]):
-
+    with (
+        patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.set_cached_image", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.get_dedup_hashes", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.pipeline.add_dedup_hash", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.process_image", new_callable=AsyncMock, return_value=processed_a),
+        patch("agentic_tour_planner.images.sources.fetch_wikidata", new_callable=AsyncMock, return_value=[candidate_a]),
+        patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock, return_value=[]),
+        patch(
+            "agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock, return_value=[candidate_b]
+        ),
+    ):
         places = [
             {"place_name": "Place A", "image_query": "place a"},
             {"place_name": "Place B", "image_query": "place b"},
@@ -273,6 +291,7 @@ async def test_multiple_places_resolved_independently():
 # Test: Source exception is caught, pipeline continues
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_source_exception_continues_waterfall():
     """When a source raises an exception, pipeline should catch it and try the next source."""
@@ -281,15 +300,20 @@ async def test_source_exception_continues_waterfall():
     candidate = _make_candidate(url="https://wiki.com/img.jpg", source="wikipedia")
     processed = _make_processed(url="https://wiki.com/img.jpg", source="wikipedia", clip_score=0.6)
 
-    with patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.set_cached_image", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.get_dedup_hashes", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.pipeline.add_dedup_hash", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.process_image", new_callable=AsyncMock, return_value=processed), \
-         patch("agentic_tour_planner.images.sources.fetch_wikidata", new_callable=AsyncMock, side_effect=Exception("API timeout")), \
-         patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock, return_value=[candidate]):
-
+    with (
+        patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.set_cached_image", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.get_dedup_hashes", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.pipeline.add_dedup_hash", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.process_image", new_callable=AsyncMock, return_value=processed),
+        patch(
+            "agentic_tour_planner.images.sources.fetch_wikidata",
+            new_callable=AsyncMock,
+            side_effect=Exception("API timeout"),
+        ),
+        patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock, return_value=[candidate]),
+    ):
         places = [{"place_name": "Resilient Place", "image_query": "resilient"}]
         results = await resolve_images(places)
 
@@ -300,6 +324,7 @@ async def test_source_exception_continues_waterfall():
 # ---------------------------------------------------------------------------
 # Test: Cache miss → waterfall → cache set → dedup hash added
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_full_cache_miss_to_hit_flow():
@@ -318,18 +343,19 @@ async def test_full_cache_miss_to_hit_flow():
     async def mock_hash_add(pid, h):
         hash_add_calls.append((pid, h))
 
-    with patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=None), \
-         patch("agentic_tour_planner.images.pipeline.set_cached_image", side_effect=mock_cache_set), \
-         patch("agentic_tour_planner.images.pipeline.get_dedup_hashes", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.pipeline.add_dedup_hash", side_effect=mock_hash_add), \
-         patch("agentic_tour_planner.images.pipeline.process_image", new_callable=AsyncMock, return_value=processed), \
-         patch("agentic_tour_planner.images.sources.fetch_wikidata", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.sources.fetch_openverse", new_callable=AsyncMock, return_value=[candidate]), \
-         patch("agentic_tour_planner.images.sources.fetch_mapillary", new_callable=AsyncMock, return_value=[]), \
-         patch("agentic_tour_planner.images.sources.fetch_stock", new_callable=AsyncMock, return_value=[]):
-
+    with (
+        patch("agentic_tour_planner.images.pipeline.get_cached_image", new_callable=AsyncMock, return_value=None),
+        patch("agentic_tour_planner.images.pipeline.set_cached_image", side_effect=mock_cache_set),
+        patch("agentic_tour_planner.images.pipeline.get_dedup_hashes", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.pipeline.add_dedup_hash", side_effect=mock_hash_add),
+        patch("agentic_tour_planner.images.pipeline.process_image", new_callable=AsyncMock, return_value=processed),
+        patch("agentic_tour_planner.images.sources.fetch_wikidata", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.sources.fetch_wikimedia_commons", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.sources.fetch_wikipedia", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.sources.fetch_openverse", new_callable=AsyncMock, return_value=[candidate]),
+        patch("agentic_tour_planner.images.sources.fetch_mapillary", new_callable=AsyncMock, return_value=[]),
+        patch("agentic_tour_planner.images.sources.fetch_stock", new_callable=AsyncMock, return_value=[]),
+    ):
         places = [{"place_name": "New Place", "image_query": "new place"}]
         results = await resolve_images(places)
 
@@ -343,10 +369,12 @@ async def test_full_cache_miss_to_hit_flow():
 # Test: CLI pipeline wiring — images appear in build_output
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_build_output_includes_images():
     """build_output should include images in the output dict when provided."""
     from unittest.mock import MagicMock
+
     from agentic_tour_planner.domain.models import PlaceImage
     from agentic_tour_planner.pipeline.output_builder import build_output
 
@@ -416,8 +444,9 @@ async def test_build_output_includes_images():
 @pytest.mark.asyncio
 async def test_build_output_empty_images():
     """build_output should return empty images list when no images provided."""
-    from agentic_tour_planner.pipeline.output_builder import build_output
     from unittest.mock import MagicMock
+
+    from agentic_tour_planner.pipeline.output_builder import build_output
 
     request = MagicMock()
     request.model_dump.return_value = {}

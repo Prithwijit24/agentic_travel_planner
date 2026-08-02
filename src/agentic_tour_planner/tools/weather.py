@@ -45,7 +45,5 @@ class WeatherTool:
             except httpx.HTTPStatusError as e:
                 logger.warning(f"OpenWeatherMap returned HTTP {e.response.status_code} for {destination!r}")
                 if e.response.status_code == 401:
-                    logger.error(
-                        "Invalid OpenWeatherMap API key. Get a free key at https://openweathermap.org/appid"
-                    )
+                    logger.error("Invalid OpenWeatherMap API key. Get a free key at https://openweathermap.org/appid")
                 return None

@@ -1,10 +1,12 @@
 """Integration tests for the image pipeline orchestrator."""
+
 from __future__ import annotations
 
-import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, patch
 
-from agentic_tour_planner.images.models import ImageCandidate, ProcessedImage, ImageResult
+import pytest
+
+from agentic_tour_planner.images.models import ImageCandidate, ImageResult, ProcessedImage
 from agentic_tour_planner.images.pipeline import resolve_images
 
 

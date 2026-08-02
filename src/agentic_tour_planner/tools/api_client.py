@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Iterator, Optional
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any, ClassVar, cast
 
 import httpx
 
@@ -17,7 +19,7 @@ DEFAULT_ADMIN_USER = "admin"
 class ApiClient:
     """Base class: curl-like wrapper around the AI Infra Stack API."""
 
-    ENDPOINT_INDEX: dict[str, tuple[str, str]] = {
+    ENDPOINT_INDEX: ClassVar[dict[str, tuple[str, str]]] = {
         "login": ("POST", "/auth/token"),
         "create_api_key": ("POST", "/auth/apikey"),
         "delete_api_key": ("DELETE", "/auth/apikey"),
@@ -32,6 +34,8 @@ class ApiClient:
         "clip_text_embedding": ("POST", "/clip/text_embedding"),
         "clip_image_embedding": ("POST", "/clip/image_embedding"),
         "clip_similarity": ("POST", "/clip/similarity"),
+        "images": ("POST", "/images"),
+        "news": ("POST", "/news"),
         "rerank": ("POST", "/rerank"),
         "cache_set": ("POST", "/cache/set"),
         "cache_get": ("GET", "/cache/get/{key}"),
@@ -59,13 +63,13 @@ class ApiClient:
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-        token: Optional[str] = None,
+        base_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        token: str | None = None,
         timeout: float = 60.0,
-        transport: Optional[httpx.BaseTransport] = None,
-        client: Optional[httpx.Client] = None,
+        transport: httpx.BaseTransport | None = None,
+        client: httpx.Client | None = None,
     ) -> None:
         self.username = username or os.getenv("ADMIN_USER", DEFAULT_ADMIN_USER)
         self.password = password or os.getenv("ADMIN_PASS", "")
@@ -75,14 +79,9 @@ class ApiClient:
             self.base_url = str(client.base_url).rstrip("/")
         else:
             self.base_url = (
-                base_url
-                or os.getenv("BASE_URL")
-                or os.getenv("AI_STACK_BASE_URL")
-                or DEFAULT_BASE_URL
+                base_url or os.getenv("BASE_URL") or os.getenv("AI_STACK_BASE_URL") or DEFAULT_BASE_URL
             ).rstrip("/")
-            self._client = httpx.Client(
-                base_url=self.base_url, timeout=timeout, transport=transport
-            )
+            self._client = httpx.Client(base_url=self.base_url, timeout=timeout, transport=transport)
 
     # ── lifecycle ───────────────────────────────────────────────────────────
 
@@ -111,7 +110,7 @@ class ApiClient:
             json={"username": self.username, "password": self.password},
         )
         resp.raise_for_status()
-        data = resp.json()
+        data = cast(dict[Any, Any], resp.json())
         self.token = data.get("access_token", "")
         return data
 
@@ -119,14 +118,14 @@ class ApiClient:
         if not self.token:
             self.login()
 
-    def _request(self, method: str, path: str, *, authed: bool = True, **kwargs: Any) -> Any:
+    def _request(self, method: str, path: str, *, authed: bool = True, **kwargs: Any) -> dict[Any, Any]:
         headers = dict(kwargs.pop("headers", {}))
         if authed:
             self.ensure_auth()
             headers.setdefault("Authorization", f"Bearer {self.token}")
         resp = self._client.request(method, path, headers=headers, **kwargs)
         resp.raise_for_status()
-        return resp.json()
+        return cast(dict[Any, Any], resp.json())
 
     # ── core ────────────────────────────────────────────────────────────────
 
@@ -138,31 +137,98 @@ class ApiClient:
 
     # ── auth ────────────────────────────────────────────────────────────────
 
-    def create_api_key(self, name: str, rate_limit: Optional[int] = None, expires_days: Optional[int] = None) -> dict:
-        return self._request("POST", "/auth/apikey", json={"name": name, "rate_limit": rate_limit, "expires_days": expires_days})
+    def create_api_key(self, name: str, rate_limit: int | None = None, expires_days: int | None = None) -> dict:
+        return self._request(
+            "POST", "/auth/apikey", json={"name": name, "rate_limit": rate_limit, "expires_days": expires_days}
+        )
 
     def delete_api_key(self, key: str) -> dict:
         return self._request("DELETE", "/auth/apikey", params={"key": key})
 
     def list_api_keys(self) -> list:
-        return self._request("GET", "/auth/apikeys")
+        return cast(list, self._request("GET", "/auth/apikeys"))
 
     def rate_status(self) -> dict:
         return self._request("GET", "/auth/rate-status")
 
     # ── search / browse / crawl / pipeline ─────────────────────────────────
 
-    def search(self, query: str, categories: str = "general", language: str = "en", max_results: int = 10, safesearch: int = 1) -> dict:
-        return self._request("POST", "/search", json={"query": query, "categories": categories, "language": language, "max_results": max_results, "safesearch": safesearch})
+    def search(
+        self, query: str, categories: str = "general", language: str = "en", max_results: int = 10, safesearch: int = 1
+    ) -> dict:
+        return self._request(
+            "POST",
+            "/search",
+            json={
+                "query": query,
+                "categories": categories,
+                "language": language,
+                "max_results": max_results,
+                "safesearch": safesearch,
+            },
+        )
 
-    def browse(self, url: str, action: str = "content", selector: Optional[str] = None, text: Optional[str] = None, full_page: bool = True, wait_ms: int = 1000) -> dict:
-        return self._request("POST", "/browse", json={"url": url, "action": action, "selector": selector, "text": text, "full_page": full_page, "wait_ms": wait_ms})
+    def browse(
+        self,
+        url: str,
+        action: str = "content",
+        selector: str | None = None,
+        text: str | None = None,
+        full_page: bool = True,
+        wait_ms: int = 1000,
+    ) -> dict:
+        return self._request(
+            "POST",
+            "/browse",
+            json={
+                "url": url,
+                "action": action,
+                "selector": selector,
+                "text": text,
+                "full_page": full_page,
+                "wait_ms": wait_ms,
+            },
+        )
 
-    def crawl(self, url: str, only_main_content: bool = True, include_html: bool = False, timeout_ms: int = 30000) -> dict:
-        return self._request("POST", "/crawl", json={"url": url, "only_main_content": only_main_content, "include_html": include_html, "timeout_ms": timeout_ms})
+    def crawl(
+        self, url: str, only_main_content: bool = True, include_html: bool = False, timeout_ms: int = 30000
+    ) -> dict:
+        return self._request(
+            "POST",
+            "/crawl",
+            json={
+                "url": url,
+                "only_main_content": only_main_content,
+                "include_html": include_html,
+                "timeout_ms": timeout_ms,
+            },
+        )
 
-    def pipeline(self, query: str, top_k: int = 5, crawl_limit: int = 10, max_search_results: int = 15, max_markdown_chars: int = 5000, categories: str = "general", language: str = "en", crawl_timeout_ms: int = 15000) -> dict:
-        return self._request("POST", "/pipeline", json={"query": query, "top_k": top_k, "crawl_limit": crawl_limit, "max_search_results": max_search_results, "max_markdown_chars": max_markdown_chars, "categories": categories, "language": language, "crawl_timeout_ms": crawl_timeout_ms})
+    def pipeline(
+        self,
+        query: str,
+        top_k: int = 5,
+        crawl_limit: int = 10,
+        max_search_results: int = 15,
+        max_markdown_chars: int = 5000,
+        categories: str = "general",
+        language: str = "en",
+        crawl_timeout_ms: int = 15000,
+    ) -> dict:
+        return self._request(
+            "POST",
+            "/pipeline",
+            json={
+                "query": query,
+                "top_k": top_k,
+                "crawl_limit": crawl_limit,
+                "max_search_results": max_search_results,
+                "max_markdown_chars": max_markdown_chars,
+                "categories": categories,
+                "language": language,
+                "crawl_timeout_ms": crawl_timeout_ms,
+            },
+        )
 
     def stream_pipeline(self, query: str, **options: Any) -> Iterator[dict]:
         self.ensure_auth()
@@ -176,9 +242,9 @@ class ApiClient:
                     event = None
                     continue
                 if line.startswith("event:"):
-                    event = line[len("event:"):].strip()
+                    event = line[len("event:") :].strip()
                 elif line.startswith("data:"):
-                    payload = line[len("data:"):].strip()
+                    payload = line[len("data:") :].strip()
                     if payload:
                         yield {"event": event, "data": json.loads(payload)}
 
@@ -190,7 +256,7 @@ class ApiClient:
     def clip_text_embedding(self, texts: list[str]) -> dict:
         return self._request("POST", "/clip/text_embedding", json={"texts": texts})
 
-    def clip_image_embedding(self, image_urls: Optional[list[str]] = None, images_base64: Optional[list[str]] = None) -> dict:
+    def clip_image_embedding(self, image_urls: list[str] | None = None, images_base64: list[str] | None = None) -> dict:
         body: dict[str, Any] = {}
         if image_urls is not None:
             body["image_urls"] = image_urls
@@ -198,7 +264,9 @@ class ApiClient:
             body["images_base64"] = images_base64
         return self._request("POST", "/clip/image_embedding", json=body)
 
-    def clip_similarity(self, text: str, image_urls: Optional[list[str]] = None, images_base64: Optional[list[str]] = None) -> dict:
+    def clip_similarity(
+        self, text: str, image_urls: list[str] | None = None, images_base64: list[str] | None = None
+    ) -> dict:
         body: dict[str, Any] = {"text": text}
         if image_urls is not None:
             body["image_urls"] = image_urls
@@ -206,7 +274,30 @@ class ApiClient:
             body["images_base64"] = images_base64
         return self._request("POST", "/clip/similarity", json=body)
 
-    def rerank(self, query: str, documents: list[str], top_k: Optional[int] = None) -> dict:
+    # ── images (CLIP post-processing built-in) ─────────────────────────────
+
+    def images(self, query: str, max_results: int = 10, use_clip: bool = True) -> dict:
+        """POST /images — image search with optional CLIP reranking.
+
+        Fallback chain: DDGS → Unsplash → Pexels.
+        Each result gets a ``clip_score`` (0-1) when ``use_clip`` is True.
+        """
+        body: dict[str, Any] = {"query": query, "max_results": max_results, "use_clip": use_clip}
+        return self._request("POST", "/images", json=body)
+
+    # ── news ──────────────────────────────────────────────────────────────
+
+    def news(self, query: str, max_results: int = 10, timelimit: str | None = None) -> dict:
+        """POST /news — fetch recent news articles about a topic.
+
+        Returns ``{"results": [...]}`` with title, url, source, published, body.
+        """
+        body: dict[str, Any] = {"query": query, "max_results": max_results}
+        if timelimit is not None:
+            body["timelimit"] = timelimit
+        return self._request("POST", "/news", json=body)
+
+    def rerank(self, query: str, documents: list[str], top_k: int | None = None) -> dict:
         body: dict[str, Any] = {"query": query, "documents": documents}
         if top_k is not None:
             body["top_k"] = top_k
@@ -214,7 +305,7 @@ class ApiClient:
 
     # ── cache (Redis) ───────────────────────────────────────────────────────
 
-    def cache_set(self, key: str, value: Any, ttl_seconds: Optional[int] = None) -> dict:
+    def cache_set(self, key: str, value: Any, ttl_seconds: int | None = None) -> dict:
         body: dict[str, Any] = {"key": key, "value": value}
         if ttl_seconds is not None:
             body["ttl_seconds"] = ttl_seconds
@@ -231,7 +322,9 @@ class ApiClient:
     def vector_upsert(self, collection: str, records: list[dict]) -> dict:
         return self._request("POST", "/vector/upsert", json={"collection": collection, "records": records})
 
-    def vector_search(self, collection: str, query_embedding: list[float], top_k: int = 5, where: Optional[dict] = None) -> dict:
+    def vector_search(
+        self, collection: str, query_embedding: list[float], top_k: int = 5, where: dict | None = None
+    ) -> dict:
         body: dict[str, Any] = {"collection": collection, "query_embedding": query_embedding, "top_k": top_k}
         if where is not None:
             body["where"] = where
@@ -242,18 +335,43 @@ class ApiClient:
 
     # ── graph (Neo4j) ───────────────────────────────────────────────────────
 
-    def graph_query(self, cypher: str, parameters: Optional[dict] = None) -> dict:
+    def graph_query(self, cypher: str, parameters: dict | None = None) -> dict:
         return self._request("POST", "/graph/query", json={"cypher": cypher, "parameters": parameters or {}})
 
-    def graph_add_node(self, label: str, properties: Optional[dict] = None, merge_key: Optional[str] = None) -> dict:
-        return self._request("POST", "/graph/add_node", json={"label": label, "properties": properties or {}, "merge_key": merge_key})
+    def graph_add_node(self, label: str, properties: dict | None = None, merge_key: str | None = None) -> dict:
+        return self._request(
+            "POST", "/graph/add_node", json={"label": label, "properties": properties or {}, "merge_key": merge_key}
+        )
 
-    def graph_add_edge(self, from_label: str, from_key: str, from_value: Any, to_label: str, to_key: str, to_value: Any, relationship: str, properties: Optional[dict] = None) -> dict:
-        return self._request("POST", "/graph/add_edge", json={"from_label": from_label, "from_key": from_key, "from_value": from_value, "to_label": to_label, "to_key": to_key, "to_value": to_value, "relationship": relationship, "properties": properties or {}})
+    def graph_add_edge(
+        self,
+        from_label: str,
+        from_key: str,
+        from_value: Any,
+        to_label: str,
+        to_key: str,
+        to_value: Any,
+        relationship: str,
+        properties: dict | None = None,
+    ) -> dict:
+        return self._request(
+            "POST",
+            "/graph/add_edge",
+            json={
+                "from_label": from_label,
+                "from_key": from_key,
+                "from_value": from_value,
+                "to_label": to_label,
+                "to_key": to_key,
+                "to_value": to_value,
+                "relationship": relationship,
+                "properties": properties or {},
+            },
+        )
 
     # ── duckdb ──────────────────────────────────────────────────────────────
 
-    def duckdb_query(self, sql: str, params: Optional[list] = None) -> dict:
+    def duckdb_query(self, sql: str, params: list | None = None) -> dict:
         return self._request("POST", "/duckdb/query", json={"sql": sql, "params": params})
 
     def duckdb_insert(self, table: str, columns: list[str], rows: list[dict]) -> dict:
@@ -264,34 +382,44 @@ class ApiClient:
 
     # ── storage (MinIO / S3) ────────────────────────────────────────────────
 
-    def storage_upload(self, key: str, file_path: Optional[str] = None, file_bytes: Optional[bytes] = None, filename: Optional[str] = None, bucket: Optional[str] = None, content_type: Optional[str] = None) -> dict:
+    def storage_upload(
+        self,
+        key: str,
+        file_path: str | None = None,
+        file_bytes: bytes | None = None,
+        filename: str | None = None,
+        bucket: str | None = None,
+        content_type: str | None = None,
+    ) -> dict:
         if file_path is None and file_bytes is None:
             raise ValueError("provide either file_path or file_bytes")
         self.ensure_auth()
         if file_path is not None:
-            with open(file_path, "rb") as fh:
+            with Path(file_path).open("rb") as fh:
                 payload = fh.read()
-            fname = filename or os.path.basename(file_path)
+            fname = filename or Path(file_path).name
         else:
-            payload = file_bytes
+            payload = file_bytes or b""
             fname = filename or "upload.bin"
         data: dict[str, str] = {"key": key}
         if bucket:
             data["bucket"] = bucket
         if content_type:
             data["content_type"] = content_type
-        resp = self._client.post("/storage/upload", data=data, files={"file": (fname, payload, content_type)}, headers=self._headers())
+        resp = self._client.post(
+            "/storage/upload", data=data, files={"file": (fname, payload, content_type)}, headers=self._headers()
+        )
         resp.raise_for_status()
-        return resp.json()
+        return cast(dict[Any, Any], resp.json())
 
     def storage_download(self, bucket: str, key: str) -> httpx.Response:
         self.ensure_auth()
         return self._client.get(f"/storage/download/{bucket}/{key}", headers=self._headers())
 
-    def storage_list(self, prefix: str = "", bucket: Optional[str] = None) -> dict:
+    def storage_list(self, prefix: str = "", bucket: str | None = None) -> dict:
         return self._request("POST", "/storage/list", json={"prefix": prefix, "bucket": bucket})
 
-    def storage_delete(self, keys: list[str], bucket: Optional[str] = None) -> dict:
+    def storage_delete(self, keys: list[str], bucket: str | None = None) -> dict:
         return self._request("POST", "/storage/delete", json={"keys": keys, "bucket": bucket})
 
     # ── youtube ─────────────────────────────────────────────────────────────
@@ -308,8 +436,15 @@ class ApiClient:
     def youtube_job_status(self, job_id: str) -> dict:
         return self._request("GET", f"/youtube/jobs/{job_id}")
 
-    def youtube_transcript(self, url: str, language: str = "en", force_whisper: bool = False, output_format: str = "json") -> Any:
-        resp = self._client.post("/youtube/transcript", params={"output_format": output_format}, json={"url": url, "language": language, "force_whisper": force_whisper}, headers=self._headers())
+    def youtube_transcript(
+        self, url: str, language: str = "en", force_whisper: bool = False, output_format: str = "json"
+    ) -> Any:
+        resp = self._client.post(
+            "/youtube/transcript",
+            params={"output_format": output_format},
+            json={"url": url, "language": language, "force_whisper": force_whisper},
+            headers=self._headers(),
+        )
         resp.raise_for_status()
         if output_format == "markdown":
             return resp.text

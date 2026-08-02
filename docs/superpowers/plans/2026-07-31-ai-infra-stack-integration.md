@@ -427,7 +427,7 @@ Expected: OK
 
 ```bash
 git add src/agentic_tour_planner/images/
-git commit --no-verify -m "feat(images): simplify pipeline to use AiStackClient" 
+git commit --no-verify -m "feat(images): simplify pipeline to use AiStackClient"
 ```
 
 ---

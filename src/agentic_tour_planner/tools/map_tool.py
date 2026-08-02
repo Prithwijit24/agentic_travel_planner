@@ -7,13 +7,11 @@ Map rendering: OpenTopoMap (zoomed out) → CartoDB positron (mid) → MapTilesA
 
 from __future__ import annotations
 
-import json
 import time
 from typing import Any
 
 import folium
 import httpx
-from folium import Marker, PolyLine
 from folium.raster_layers import TileLayer
 
 from agentic_tour_planner.config.settings import get_settings
@@ -24,20 +22,23 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Day colour palette
 # ---------------------------------------------------------------------------
-FOLIUM_DAY_COLORS = [
-    "red", "blue", "green", "purple", "orange", "darkred",
-    "cadetblue", "darkgreen", "darkblue", "pink", "darkpurple", "gray",
-]
-
 HEX_DAY_COLORS = [
-    "#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4",
-    "#42d4f4", "#f032e6", "#bfef45", "#fabed4", "#469990",
-    "#dcbeff", "#9A6324", "#800000", "#aaffc3", "#808000",
+    "#e6194b",
+    "#3cb44b",
+    "#4363d8",
+    "#f58231",
+    "#911eb4",
+    "#42d4f4",
+    "#f032e6",
+    "#bfef45",
+    "#fabed4",
+    "#469990",
+    "#dcbeff",
+    "#9A6324",
+    "#800000",
+    "#aaffc3",
+    "#808000",
 ]
-
-
-def _folium_color(day_number: int) -> str:
-    return FOLIUM_DAY_COLORS[(day_number - 1) % len(FOLIUM_DAY_COLORS)]
 
 
 def _hex_color(day_number: int) -> str:
@@ -84,6 +85,8 @@ class MapTool:
         # Circuit breaker for Google geocoding
         self._google_consecutive_failures: int = 0
         self._google_circuit_open: bool = False
+        # Places that failed to geocode on the last render
+        self.unresolved_locations: list[str] = []
 
         if self._google_maps_key:
             logger.info("MapTool initialized with Google Maps API key")
@@ -134,6 +137,7 @@ class MapTool:
         """
         logger.debug(f"Rendering itinerary map with {len(itinerary) if itinerary else 0} days")
 
+        self.unresolved_locations = []
         locations = self._extract_locations(itinerary, origin, destination=destination or "")
 
         if not locations:
@@ -145,18 +149,18 @@ class MapTool:
         center = first_day_activities[0][1] if first_day_activities else [20, 0]
         logger.debug(f"Map center set to: {center}")
 
-        # Base layer: OpenTopoMap for the initial zoomed-out view
-        m = folium.Map(location=center, zoom_start=10, tiles=_OPENTOPOMAP_URL, attr=_OPENTOPOMAP_ATTR)
+        # Base layer: CartoDB positron (clean, minimal) — default view
+        m = folium.Map(location=center, zoom_start=10, tiles=None)
 
-        # Add CartoDB positron as an alternative layer (user can toggle)
+        # Add CartoDB positron as the default base layer
         TileLayer(
             tiles=_CARTOPOSITRON_URL,
             attr=_CARTOPOSITRON_ATTR,
             name="CartoDB Positron (clean)",
-            show=False,
+            show=True,
         ).add_to(m)
 
-        # Add OSM for detailed zoom (user can toggle or we switch dynamically)
+        # Add OpenStreetMap as an alternative layer (user can toggle)
         TileLayer(
             tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
             attr=_OSM_ATTR,
@@ -164,34 +168,41 @@ class MapTool:
             show=False,
         ).add_to(m)
 
+        # Add OpenTopoMap as an alternative layer (terrain/overview)
+        TileLayer(
+            tiles=_OPENTOPOMAP_URL,
+            attr=_OPENTOPOMAP_ATTR,
+            name="OpenTopoMap (Elevation)",
+            show=False,
+        ).add_to(m)
+
         # Track all coords for auto-fit
         all_coords: list[tuple[float, float]] = []
 
         for day_num, activities in locations.items():
-            color = _folium_color(day_num)
+            color = _hex_color(day_num)
             day_group = folium.FeatureGroup(name=f"Day {day_num}")
-            coords_for_line: list[tuple[float, float]] = []
 
             for loc_name, coords in activities:
                 if not coords:
+                    self.unresolved_locations.append(loc_name)
                     continue
                 all_coords.append(coords)
-                coords_for_line.append(coords)
 
-                marker = Marker(
+                marker = folium.CircleMarker(
                     location=coords,
+                    radius=8,
                     popup=folium.Popup(
                         f"<b>Day {day_num}: {loc_name}</b>",
                         max_width=180,
                     ),
                     tooltip=loc_name,
-                    icon=folium.Icon(color=color, icon="info-sign"),
+                    color=color,
+                    fill=True,
+                    fill_color=color,
+                    fill_opacity=0.8,
                 )
                 marker.add_to(day_group)
-
-            # Route line connecting the day's places in visit order
-            if len(coords_for_line) > 1:
-                PolyLine(coords_for_line, color=_hex_color(day_num), weight=3, opacity=0.7).add_to(day_group)
 
             day_group.add_to(m)
 
@@ -205,7 +216,9 @@ class MapTool:
         # Legend
         self._add_legend(m, locations)
 
-        logger.info(f"Map rendered with {sum(len(a) for a in locations.values())} locations across {len(locations)} days")
+        logger.info(
+            f"Map rendered with {sum(len(a) for a in locations.values())} locations across {len(locations)} days"
+        )
         return m
 
     # ------------------------------------------------------------------
@@ -230,8 +243,8 @@ class MapTool:
             day_num = day.get("day", 1)
             activities: list[tuple[str, tuple[float, float] | None]] = []
 
-            # Origin
-            if origin:
+            # Origin — only on day 1
+            if origin and day_num == 1:
                 origin_coords = self._geocode(origin, destination=destination)
                 activities.append((origin, origin_coords))
 
@@ -267,7 +280,9 @@ class MapTool:
         if not location:
             return None
 
-        cache_key = f"{location.lower().strip()}|{destination.lower().strip()}" if destination else location.lower().strip()
+        cache_key = (
+            f"{location.lower().strip()}|{destination.lower().strip()}" if destination else location.lower().strip()
+        )
         if cache_key in _GEOCODE_CACHE:
             logger.debug(f"Geocode cache hit for '{location}': {_GEOCODE_CACHE[cache_key]}")
             return _GEOCODE_CACHE[cache_key]
@@ -277,7 +292,7 @@ class MapTool:
 
         # 1. Google Places API (with circuit breaker)
         if self._google_available():
-            result = self._geocode_google(location)
+            result = self._geocode_google(location, destination)
             if result:
                 source = "google"
                 self._record_google_success()
@@ -287,7 +302,7 @@ class MapTool:
 
         # 2. Nominatim (rate-limited)
         if result is None:
-            result = self._geocode_nominatim(location)
+            result = self._geocode_nominatim(location, destination)
             if result:
                 source = "nominatim"
 
@@ -307,35 +322,45 @@ class MapTool:
 
         return result
 
-    def _geocode_google(self, location: str) -> tuple[float, float] | None:
-        """Google Places geocoding with short timeout (5s connect, 5s read) and 3 retries."""
+    def _geocode_google(self, location: str, destination: str = "") -> tuple[float, float] | None:
+        """Google Places geocoding with short timeout (5s connect, 5s read) and 3 retries.
+
+        Preferred region bias is applied when a destination is known so a common
+        place name doesn't resolve to the wrong country.
+        """
         if not self._google_maps_key:
             return None
+
+        address = location.strip()
+        if destination:
+            address = f"{address}, {destination}"
 
         for attempt in range(1, 4):
             try:
                 url = "https://maps.googleapis.com/maps/api/geocode/json"
-                params = {"address": location, "key": self._google_maps_key}
+                params = {"address": address, "key": self._google_maps_key}
+                if destination:
+                    params["region"] = destination
                 with httpx.Client(timeout=httpx.Timeout(5.0, read=5.0)) as client:
                     response = client.get(url, params=params)
                     data = response.json()
                     if data.get("status") == "OK" and data.get("results"):
                         loc = data["results"][0]["geometry"]["location"]
                         return (float(loc["lat"]), float(loc["lng"]))
-                    logger.debug(f"Google Maps status: {data.get('status')} for '{location}'")
+                    logger.debug(f"Google Maps status: {data.get('status')} for '{address}'")
                     return None
             except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
-                logger.debug(f"Google Maps attempt {attempt} failed for '{location}': {exc}")
+                logger.debug(f"Google Maps attempt {attempt} failed for '{address}': {exc}")
                 if attempt < 3:
                     time.sleep(0.5 * attempt)
             except Exception as exc:
-                logger.debug(f"Google Maps unexpected error for '{location}': {exc}")
+                logger.debug(f"Google Maps unexpected error for '{address}': {exc}")
                 return None
 
         return None
 
-    def _geocode_nominatim(self, location: str) -> tuple[float, float] | None:
-        """Nominatim geocoding with strict 1 req/s rate limit."""
+    def _geocode_nominatim(self, location: str, destination: str = "") -> tuple[float, float] | None:
+        """Nominatim geocoding with strict 1 req/s rate limit and destination bias."""
         try:
             elapsed = time.time() - self._last_geocode_time
             if elapsed < 1.1:
@@ -343,8 +368,12 @@ class MapTool:
                 logger.debug(f"Rate limiting Nominatim, sleeping {sleep_time:.2f}s")
                 time.sleep(sleep_time)
 
+            query = location.strip()
+            if destination:
+                query = f"{query}, {destination}"
+
             url = "https://nominatim.openstreetmap.org/search"
-            params = {"q": location, "format": "json", "limit": 1, "addressdetails": 1}
+            params: dict[str, Any] = {"q": query, "format": "json", "limit": 1, "addressdetails": 1}
             headers = {
                 "User-Agent": "AgenticTravelPlanner/1.0 (contact@agentictravelplanner.com)",
                 "Accept-Language": "en",
@@ -373,44 +402,72 @@ class MapTool:
 
         known_locations: dict[str, tuple[float, float]] = {
             # India
-            "kolkata": (22.5726, 88.3639), "delhi": (28.6139, 77.2090),
-            "mumbai": (19.0760, 72.8777), "bangalore": (12.9716, 77.5946),
-            "chennai": (13.0826, 80.2707), "jaipur": (26.9124, 75.7873),
-            "goa": (15.2993, 74.1240), "varanasi": (25.3176, 82.9739),
-            "agra": (27.1767, 78.0081), "udaipur": (24.5854, 73.7125),
-            "sikkim": (27.5330, 88.5122), "gangtok": (27.3389, 88.6065),
-            "pelling": (27.3000, 88.2500), "darjeeling": (27.0360, 88.2627),
+            "kolkata": (22.5726, 88.3639),
+            "delhi": (28.6139, 77.2090),
+            "mumbai": (19.0760, 72.8777),
+            "bangalore": (12.9716, 77.5946),
+            "chennai": (13.0826, 80.2707),
+            "jaipur": (26.9124, 75.7873),
+            "goa": (15.2993, 74.1240),
+            "varanasi": (25.3176, 82.9739),
+            "agra": (27.1767, 78.0081),
+            "udaipur": (24.5854, 73.7125),
+            "sikkim": (27.5330, 88.5122),
+            "gangtok": (27.3389, 88.6065),
+            "pelling": (27.3000, 88.2500),
+            "darjeeling": (27.0360, 88.2627),
             "kalimpong": (27.0700, 88.4740),
             # Asia
-            "tokyo": (35.6762, 139.6503), "kyoto": (35.0116, 135.7681),
-            "osaka": (34.6937, 135.5022), "beijing": (39.9042, 116.4074),
-            "shanghai": (31.2304, 121.4737), "bangkok": (13.7563, 100.5018),
-            "singapore": (1.3521, 103.8198), "seoul": (37.5665, 126.9780),
-            "hong kong": (22.3193, 114.1694), "taipei": (25.0330, 121.5654),
+            "tokyo": (35.6762, 139.6503),
+            "kyoto": (35.0116, 135.7681),
+            "osaka": (34.6937, 135.5022),
+            "beijing": (39.9042, 116.4074),
+            "shanghai": (31.2304, 121.4737),
+            "bangkok": (13.7563, 100.5018),
+            "singapore": (1.3521, 103.8198),
+            "seoul": (37.5665, 126.9780),
+            "hong kong": (22.3193, 114.1694),
+            "taipei": (25.0330, 121.5654),
             "bali": (-8.3405, 115.0920),
             # Europe
-            "paris": (48.8566, 2.3522), "london": (51.5074, -0.1278),
-            "rome": (41.9028, 12.4964), "berlin": (52.5200, 13.4050),
-            "barcelona": (41.3851, 2.1734), "amsterdam": (52.3676, 4.9041),
-            "vienna": (48.2082, 16.3738), "prague": (50.0755, 14.4378),
-            "budapest": (47.4979, 19.0402), "zurich": (47.3769, 8.5417),
-            "lisbon": (38.7223, -9.1393), "madrid": (40.4168, -3.7038),
-            "athens": (37.9838, 23.7275), "dublin": (53.3498, -6.2603),
-            "stockholm": (59.3293, 18.0686), "oslo": (59.9139, 10.7522),
+            "paris": (48.8566, 2.3522),
+            "london": (51.5074, -0.1278),
+            "rome": (41.9028, 12.4964),
+            "berlin": (52.5200, 13.4050),
+            "barcelona": (41.3851, 2.1734),
+            "amsterdam": (52.3676, 4.9041),
+            "vienna": (48.2082, 16.3738),
+            "prague": (50.0755, 14.4378),
+            "budapest": (47.4979, 19.0402),
+            "zurich": (47.3769, 8.5417),
+            "lisbon": (38.7223, -9.1393),
+            "madrid": (40.4168, -3.7038),
+            "athens": (37.9838, 23.7275),
+            "dublin": (53.3498, -6.2603),
+            "stockholm": (59.3293, 18.0686),
+            "oslo": (59.9139, 10.7522),
             "copenhagen": (55.6761, 12.5683),
             # Americas
-            "new york": (40.7128, -74.0060), "los angeles": (34.0522, -118.2437),
-            "san francisco": (37.7749, -122.4194), "chicago": (41.8781, -87.6298),
-            "toronto": (43.6532, -79.3832), "mexico city": (19.4326, -99.1332),
-            "rio de janeiro": (-22.9068, -43.1729), "buenos aires": (-34.6037, -58.3816),
+            "new york": (40.7128, -74.0060),
+            "los angeles": (34.0522, -118.2437),
+            "san francisco": (37.7749, -122.4194),
+            "chicago": (41.8781, -87.6298),
+            "toronto": (43.6532, -79.3832),
+            "mexico city": (19.4326, -99.1332),
+            "rio de janeiro": (-22.9068, -43.1729),
+            "buenos aires": (-34.6037, -58.3816),
             # Oceania
-            "sydney": (-33.8688, 151.2093), "melbourne": (-37.8136, 144.9631),
+            "sydney": (-33.8688, 151.2093),
+            "melbourne": (-37.8136, 144.9631),
             "auckland": (-36.8485, 174.7633),
             # Middle East / Africa
-            "dubai": (25.2048, 55.2708), "cairo": (30.0444, 31.2357),
-            "nairobi": (-1.2921, 36.8219), "cape town": (-33.9249, 18.4241),
+            "dubai": (25.2048, 55.2708),
+            "cairo": (30.0444, 31.2357),
+            "nairobi": (-1.2921, 36.8219),
+            "cape town": (-33.9249, 18.4241),
             # Russia
-            "moscow": (55.7558, 37.6173), "st petersburg": (59.9343, 30.3351),
+            "moscow": (55.7558, 37.6173),
+            "st petersburg": (59.9343, 30.3351),
         }
 
         if location_lower in known_locations:
@@ -432,7 +489,7 @@ class MapTool:
             f'<div style="margin:2px 0;">'
             f'<span style="display:inline-block;width:12px;height:12px;background:{_hex_color(day)};'
             f'border-radius:50%;margin-right:6px;"></span>'
-            f'Day {day}</div>'
+            f"Day {day}</div>"
             for day in sorted(locations.keys())
         )
         legend_html = f"""
@@ -442,6 +499,8 @@ class MapTool:
             <b>Itinerary Days</b><br>{rows}
         </div>
         """
+        # folium's typed ``Element`` does not declare the runtime ``html`` child,
+        # so access it dynamically (the root element always has one).
         m.get_root().html.add_child(folium.Element(legend_html))
 
     # ------------------------------------------------------------------
@@ -468,7 +527,7 @@ class MapTool:
                 time.sleep(1.1 - elapsed)
 
             url = "https://nominatim.openstreetmap.org/search"
-            params = {"q": query, "format": "json", "limit": limit, "addressdetails": 1}
+            params: dict[str, Any] = {"q": query, "format": "json", "limit": limit, "addressdetails": 1}
             headers = {
                 "User-Agent": "AgenticTravelPlanner/1.0 (contact@agentictravelplanner.com)",
                 "Accept-Language": "en",
@@ -478,12 +537,14 @@ class MapTool:
                 self._last_geocode_time = time.time()
                 response.raise_for_status()
                 for item in response.json():
-                    suggestions.append({
-                        "name": item.get("display_name", ""),
-                        "lat": float(item["lat"]),
-                        "lon": float(item["lon"]),
-                        "country": item.get("address", {}).get("country", ""),
-                    })
+                    suggestions.append(
+                        {
+                            "name": item.get("display_name", ""),
+                            "lat": float(item["lat"]),
+                            "lon": float(item["lon"]),
+                            "country": item.get("address", {}).get("country", ""),
+                        }
+                    )
         except Exception as exc:
             logger.debug(f"Nominatim autocomplete failed for '{query}': {exc}")
 
@@ -496,7 +557,12 @@ class MapTool:
 
         try:
             url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
-            params = {"input": query, "key": self._google_maps_key, "radius": 50000000, "language": "en"}
+            params: dict[str, Any] = {
+                "input": query,
+                "key": self._google_maps_key,
+                "radius": 50000000,
+                "language": "en",
+            }
             with httpx.Client(timeout=httpx.Timeout(5.0, read=5.0)) as client:
                 response = client.get(url, params=params)
                 data = response.json()
@@ -524,14 +590,16 @@ class MapTool:
                                     if "country" in comp.get("types", []):
                                         country = comp.get("long_name", "")
                                         break
-                        except Exception:
-                            pass
-                    suggestions.append({
-                        "name": item.get("description", ""),
-                        "lat": lat,
-                        "lon": lon,
-                        "country": country,
-                    })
+                        except Exception as exc:
+                            logger.debug(f"Google place details fetch failed: {exc}")
+                    suggestions.append(
+                        {
+                            "name": item.get("description", ""),
+                            "lat": lat,
+                            "lon": lon,
+                            "country": country,
+                        }
+                    )
                 return suggestions
 
         except Exception as exc:

@@ -1,27 +1,30 @@
 from __future__ import annotations
 
-from collections import defaultdict
+import re
+from collections import Counter, defaultdict
 from typing import Any
 
 from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import SourceDocument
-
-import re
-from collections import Counter
+from agentic_tour_planner.utils.logging import get_logger
 
 
 def _lexical_score(query: str, content: str) -> float:
     q = Counter(re.findall(r"[a-z0-9]+", query.lower()))
     d = Counter(re.findall(r"[a-z0-9]+", content.lower()))
     return float(sum(min(q[tok], d[tok]) for tok in q))
-from agentic_tour_planner.utils.logging import get_logger
+
 
 logger = get_logger(__name__)
 
 try:
     from neo4j import GraphDatabase
+
+    # Optional runtime dependency: keep a typed alias so mypy does not flag the
+    # ``= None`` fallback as reassigning the imported class object.
+    _GRAPH_DATABASE: Any = GraphDatabase
 except Exception:  # pragma: no cover
-    GraphDatabase = None
+    _GRAPH_DATABASE = None
 
 
 GRAPH_METHODS = {"graph_fulltext", "graph_hierarchy", "graph_neighbors"}
@@ -152,11 +155,15 @@ class InMemoryGraphStore:
 
 class Neo4jGraphStore:
     def __init__(self) -> None:
-        if GraphDatabase is None:  # pragma: no cover
+        if _GRAPH_DATABASE is None:  # pragma: no cover
             raise RuntimeError("neo4j package is required when graph_store_backend is 'neo4j'")
         self.settings = get_settings()
-        logger.debug("Neo4jGraphStore: connecting to {} database={}", self.settings.neo4j_uri, getattr(self.settings, "neo4j_database", "neo4j"))
-        self.driver = GraphDatabase.driver(
+        logger.debug(
+            "Neo4jGraphStore: connecting to {} database={}",
+            self.settings.neo4j_uri,
+            getattr(self.settings, "neo4j_database", "neo4j"),
+        )
+        self.driver = _GRAPH_DATABASE.driver(
             self.settings.neo4j_uri,
             auth=(self.settings.neo4j_user, self.settings.neo4j_password),
         )
@@ -275,7 +282,7 @@ class Neo4jGraphStore:
             raise ValueError(f"Unsupported graph retrieval method: {method}")
         cypher = _neo4j_retrieval_query(method, self.fulltext_index)
         with self.driver.session(database=self.database) as session:
-            records = session.run(cypher, query=query, top_k=top_k).data()
+            records = session.run(cypher, {"query": query, "top_k": top_k}).data()
         results = [_record_to_document(record, method) for record in records]
         logger.debug("Neo4jGraphStore.retrieve: {} results", len(results))
         return results

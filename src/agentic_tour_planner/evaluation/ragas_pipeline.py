@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, cast
 
 from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import PlanningRequest, RagEvaluationCase, RagEvaluationReport
@@ -66,7 +67,10 @@ class RagasEvaluationPipeline:
         self, cases_path: str | Path, output_path: str | Path | None = None
     ) -> RagEvaluationReport:
         logger.info(f"Exporting dataset from {cases_path}")
-        output = Path(output_path or self.settings.evaluation_dir / "ragas_dataset.json")
+        eval_dir = self.settings.evaluation_dir
+        if eval_dir is None:
+            raise RuntimeError("evaluation_dir is not configured in config/evaluation.yml")
+        output = Path(output_path or eval_dir / "ragas_dataset.json")
         rows = await self.build_dataset_rows(cases_path)
         output.write_text(json.dumps(rows, indent=2), encoding="utf-8")
         logger.info(f"Dataset exported to {output} ({len(rows)} rows)")
@@ -75,7 +79,10 @@ class RagasEvaluationPipeline:
     async def run_ragas(self, cases_path: str | Path, output_path: str | Path | None = None) -> RagEvaluationReport:
         logger.info(f"Running RAGAS evaluation on {cases_path}")
         rows = await self.build_dataset_rows(cases_path)
-        output = Path(output_path or self.settings.evaluation_dir / "ragas_report.json")
+        eval_dir = self.settings.evaluation_dir
+        if eval_dir is None:
+            raise RuntimeError("evaluation_dir is not configured in config/evaluation.yml")
+        output = Path(output_path or eval_dir / "ragas_report.json")
         metrics = {
             "answer_relevancy": 0.0,
             "faithfulness": 0.0,
@@ -103,9 +110,9 @@ class RagasEvaluationPipeline:
             if hasattr(result, "to_pydict"):
                 metrics.update(result.to_pydict())
             elif hasattr(result, "_repr_dict"):
-                metrics.update(result._repr_dict)
+                metrics.update(vars(result))
             else:
-                metrics.update(dict(result))
+                metrics.update(dict(cast(Any, result)))
             logger.info("RAGAS evaluation completed with evaluator runtime")
         except Exception:
             # Keep evaluation pipeline operational even without optional evaluator runtime dependencies.

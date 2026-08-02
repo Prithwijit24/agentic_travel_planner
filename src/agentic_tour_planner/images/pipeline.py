@@ -1,19 +1,24 @@
 """Pipeline orchestrator: wires sources → processor → cache."""
+
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable
+
 from agentic_tour_planner.images.cache import (
-    get_cached_image,
-    set_cached_image,
-    get_dedup_hashes,
     add_dedup_hash,
+    get_cached_image,
+    get_dedup_hashes,
+    set_cached_image,
 )
-from agentic_tour_planner.images.models import ImageResult
+from agentic_tour_planner.images.models import ImageCandidate, ImageResult
 from agentic_tour_planner.images.processor import process_image
 from agentic_tour_planner.images.sources import (
     fetch_ddgs_images,
-    fetch_openverse,
-    fetch_stock,
     fetch_mapillary,
+    fetch_openverse,
+    fetch_stack_images,
+    fetch_stock,
     fetch_wikidata,
     fetch_wikimedia_commons,
     fetch_wikipedia,
@@ -22,9 +27,14 @@ from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Waterfall order: (fetcher, needs_coords)
-_WATERFALL = [
-    (fetch_ddgs_images, False),  # #1 primary — no API key needed
+# Waterfall order: (fetcher, needs_coords). The fetchers have heterogeneous
+# signatures (some accept lat/lng, others place_type), so the callable is typed
+# as variadic to keep mypy happy while ``await``-ing each candidate list.
+ImageFetcher = Callable[..., Awaitable[list[ImageCandidate]]]
+
+_WATERFALL: list[tuple[ImageFetcher, bool]] = [
+    (fetch_stack_images, False),  # #1 primary — AI Stack /images with CLIP scoring
+    (fetch_ddgs_images, False),  # #2 fallback — no API key needed
     (fetch_wikidata, False),
     (fetch_wikimedia_commons, False),
     (fetch_wikipedia, False),
@@ -47,9 +57,14 @@ async def resolve_images(places: list[dict]) -> list[ImageResult]:
 
     Each dict should have at least 'place_name' and optionally 'image_query',
     'lat', 'lng', and 'place_type'.
+
+    Places are resolved concurrently (bounded by a semaphore) since each waterfall
+    is I/O bound (network fetches), turning serial per-place latency into a single
+    parallel pass.
     """
-    results = []
-    for place in places:
+    semaphore = asyncio.Semaphore(5)
+
+    async def _resolve_one(place: dict) -> ImageResult:
         name = place.get("place_name", "")
         query = place.get("image_query", name)
         place_type = place.get("place_type", "")
@@ -60,14 +75,13 @@ async def resolve_images(places: list[dict]) -> list[ImageResult]:
         # Check cache first
         cached = await get_cached_image(pid)
         if cached is not None:
-            results.append(cached)
-            continue
+            return cached
 
         # Run waterfall
-        result = await _run_waterfall(name, query, place_type, lat, lng, pid)
-        results.append(result)
+        async with semaphore:
+            return await _run_waterfall(name, query, place_type, lat, lng, pid)
 
-    return results
+    return list(await asyncio.gather(*(_resolve_one(p) for p in places)))
 
 
 async def _run_waterfall(
@@ -83,10 +97,13 @@ async def _run_waterfall(
 
     for fetcher, needs_coords in _WATERFALL:
         try:
+            # Guard each source with a hard timeout so a hung upstream (e.g. the
+            # AI Stack /images endpoint with a 1000s client timeout) cannot stall
+            # the waterfall. We only need a few good hits, not the slowest source.
             if needs_coords:
-                candidates = await fetcher(query, lat=lat, lng=lng)
+                candidates = await asyncio.wait_for(fetcher(query, lat=lat, lng=lng), timeout=20)
             else:
-                candidates = await fetcher(query)
+                candidates = await asyncio.wait_for(fetcher(query), timeout=20)
 
             if not candidates:
                 continue
@@ -119,10 +136,11 @@ async def _run_waterfall(
                 # Add URL hash to dedup set
                 try:
                     import hashlib
+
                     url_hash = hashlib.md5(best.url.encode()).hexdigest()[:16]
                     await add_dedup_hash(pid, url_hash)
-                except Exception:
-                    pass  # Non-fatal
+                except Exception as exc:
+                    logger.warning(f"Failed to record dedup hash for {name!r}: {exc}")
 
                 logger.info(f"Resolved image for {name!r}: {best.source} (score={best.clip_score:.3f})")
                 return result

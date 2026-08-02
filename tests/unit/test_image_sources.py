@@ -1,35 +1,27 @@
 """Unit tests for image source fetchers."""
+
 from __future__ import annotations
 
-import pytest
-import pytest_asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import httpx
+import pytest
 
 from agentic_tour_planner.images.models import ImageCandidate
 from agentic_tour_planner.images.sources import (
-    fetch_wikidata,
-    fetch_wikimedia_commons,
-    fetch_wikipedia,
-    fetch_openverse,
-    fetch_mapillary,
     fetch_stock,
+    fetch_wikidata,
+    fetch_wikipedia,
 )
 
 
 @pytest.mark.asyncio
 async def test_fetch_wikidata_returns_candidates():
     """Wikidata source should return ImageCandidate objects."""
-    search_response = {
-        "search": [{"id": "Q243", "label": "Eiffel Tower", "description": "wrought iron lattice tower"}]
-    }
+    search_response = {"search": [{"id": "Q243", "label": "Eiffel Tower", "description": "wrought iron lattice tower"}]}
     entity_response = {
         "entities": {
-            "Q243": {
-                "claims": {
-                    "P18": [{"mainsnak": {"datavalue": {"value": "Tour Eiffel Wikimedia Commons.jpg"}}}]
-                }
-            }
+            "Q243": {"claims": {"P18": [{"mainsnak": {"datavalue": {"value": "Tour Eiffel Wikimedia Commons.jpg"}}}]}}
         }
     }
     imageinfo_response = {

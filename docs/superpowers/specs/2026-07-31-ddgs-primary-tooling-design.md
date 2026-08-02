@@ -177,7 +177,7 @@ async def fetch(self, url: str, backend: str | None = None) -> CrawlResult:
     ddgs_result = await self._fetch_ddgs_extract(url)
     if ddgs_result and ddgs_result.content.strip():
         return ddgs_result
-    
+
     # Fall back to existing cascade
     resolved_backend = backend or self.settings.web_crawl_backend
     # ... existing logic unchanged
@@ -226,29 +226,29 @@ class NewsDigest(BaseModel):
 ```python
 class NewsService:
     """Fetch and summarize recent news about a destination using DDGS."""
-    
+
     def __init__(self, llm: LLMProvider | None = None):
         self.llm = llm or LLMProvider()
         self.cache = RedisCache()
-    
+
     async def collect(
-        self, 
-        destination: str, 
+        self,
+        destination: str,
         interests: list[str] | None = None,
     ) -> NewsDigest:
         """Fetch news, deduplicate, LLM-summarize, cache."""
         cache_key = f"news:{destination}"
-        
+
         # Check cache (1 hour TTL)
         cached = await self.cache.get_json(cache_key)
         if cached:
             return NewsDigest(**cached)
-        
+
         # Fetch from DDGS
         topics = ", ".join(interests) if interests else ""
         query = f"{destination} {topics}".strip()
         raw = list(DDGS().news(query, max_results=10, timelimit="m"))
-        
+
         # Deduplicate by URL
         articles = []
         seen_urls: set[str] = set()
@@ -264,26 +264,26 @@ class NewsService:
                 date=item.get("date"),
                 snippet=item.get("body", ""),
             ))
-        
+
         if not articles:
             return NewsDigest(destination=destination, overview="No recent news found.", articles=[])
-        
+
         # LLM summarization
         overview = await self._summarize_overview(destination, articles)
         for article in articles:
             article.summary = await self._summarize_article(article)
-        
+
         digest = NewsDigest(
             destination=destination,
             overview=overview,
             articles=articles[:5],  # Cap at 5 articles
             fetched_at=datetime.now(timezone.utc).isoformat(),
         )
-        
+
         # Cache for 1 hour
         await self.cache.set_json(cache_key, digest.model_dump(), ttl=3600)
         return digest
-    
+
     async def _summarize_overview(self, destination: str, articles: list[NewsArticle]) -> str:
         """LLM generates a 3-5 sentence overview of what's happening."""
         headlines = "\n".join(f"- {a.title} ({a.source})" for a in articles[:10])
@@ -293,7 +293,7 @@ class NewsService:
             f"Be factual and concise."
         )
         return await self.llm.complete_json(prompt, role="worker")
-    
+
     async def _summarize_article(self, article: NewsArticle) -> str:
         """LLM generates a 1-2 sentence summary from headline + snippet."""
         prompt = (
@@ -314,11 +314,11 @@ class NewsService:
 with tab_news:
     st.header("📰 Recent News")
     st.caption("Fetch and summarize recent news about your destination")
-    
+
     col1, col2 = st.columns([3, 1])
     with col1:
         news_dest = st.text_input(
-            "Destination", 
+            "Destination",
             key="news_destination",
             placeholder="e.g., Kyoto, Japan"
         )
@@ -328,7 +328,7 @@ with tab_news:
             key="news_interests",
             placeholder="e.g., festivals, transport"
         )
-    
+
     if st.button("Fetch News", key="fetch_news"):
         if not news_dest:
             st.warning("Please enter a destination.")
@@ -336,11 +336,11 @@ with tab_news:
             with st.spinner("Searching for recent news..."):
                 interests = [i.strip() for i in news_interests.split(",") if i.strip()] or None
                 digest = asyncio.run(_fetch_news(news_dest, interests))
-            
+
             if digest.overview:
                 st.subheader("Overview")
                 st.write(digest.overview)
-            
+
             if digest.articles:
                 st.subheader(f"Top {len(digest.articles)} Articles")
                 for article in digest.articles:

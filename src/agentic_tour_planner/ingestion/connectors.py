@@ -47,9 +47,7 @@ class SourceConnectors:
         source_type: str = "web",
         crawl_backend: str | None = None,  # kept for backward compat, ignored
     ) -> SourceDocument:
-        logger.info(
-            f"Fetching web document url={url} source_id={source_id} source_type={source_type}"
-        )
+        logger.info(f"Fetching web document url={url} source_id={source_id} source_type={source_type}")
         try:
             result = await self.ai_stack.crawl(url)
             content = result.get("markdown", result.get("content", ""))

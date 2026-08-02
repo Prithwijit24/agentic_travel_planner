@@ -66,32 +66,29 @@ PLANNER_SYSTEM_PROMPT = (
     "  - Other lengths: follow the route strategy while keeping the trip coherent.\n"
 )
 
-# Provider fallback priority (first = preferred). Ollama is optional and skipped by default.
-# Order is intentionally "most reliable cloud gateway first" so real generation succeeds fast;
-# the local-only (omniroute) and placeholder (gemini) entries are tried later in the cascade.
+# Provider fallback priority (first = preferred). Only providers declared in
+# llm.yml are used; entries here that are commented out in config are skipped.
+# The chain is intentionally short so a degraded provider fails over fast.
 PROVIDER_PRIORITY = [
-    "openrouter",
     "agnes",
-    "nvidia",
+    "nararouter",
     "llm7io",
-    "morphllm",
-    "grokai",
-    "omniroute",
-    "gemini",
-    "ollama",
+    "opencode",
 ]
 
 # API-key env-var aliases per provider (handles typos / vendor naming in .env)
 API_KEY_ALIASES = {
-    "omniroute": ["omniroute_api_key", "omnirute_api_key"],
+    "agnes": ["agnes_api_key"],
+    "nararouter": ["nararouter_api_key"],
+    "llm7io": ["llm7io_api_key"],
+    "opencode": ["opencode_api_key"],
     "openrouter": ["openrouter_api_key"],
     "grokai": ["grokai_api_key", "groqai_api_key"],
-    "agnes": ["agnes_api_key"],
     "nvidia": ["nvidia_api_key"],
-    "llm7io": ["llm7io_api_key"],
     "morphllm": ["morphllm_api_key"],
     "gemini": ["gemini_api_key"],
     "ollama": ["ollama_api_key"],
+    "omniroute": ["omniroute_api_key", "omnirute_api_key"],
 }
 
 # Vendor prefixes that should be stripped when a model is routed through a *native*
@@ -108,6 +105,16 @@ _NATIVE_VENDOR_PREFIXES = {
 }
 
 _PING_PROMPT = 'Reply with strictly valid JSON only, no markdown: {"ok": true, "pong": "hello"}'
+
+
+class LLMUnavailableError(RuntimeError):
+    """Raised when every provider in the fallback chain failed to respond.
+
+    Surfaced to the user as "all LLMs are Busy right now".
+    """
+
+    def __init__(self, message: str = "all LLMs are Busy right now") -> None:
+        super().__init__(message)
 
 
 class LLMProvider:
@@ -128,13 +135,35 @@ class LLMProvider:
         self.settings = get_settings()
         self.include_ollama = include_ollama
         self.providers = self._load_providers()
-        self.timeout = 120
+        self.timeout = getattr(self.settings, "llm_call_timeout_seconds", None) or 120
+        # Planner generations (large itinerary JSON) legitimately take several
+        # minutes; use a much longer budget there so fail-fast timeouts do not
+        # cut off a working but slow provider. Workers/tools get the short budget.
+        self.planner_timeout = getattr(self.settings, "llm_planner_timeout_seconds", None) or 600
+        # Circuit breaker: providers that fail hard are marked down for a short
+        # cooldown so subsequent calls in the SAME request skip them instead of
+        # waiting on another slow attempt. Keyed by provider name -> monotonic epoch.
+        self._cooldown: dict[str, float] = {}
+        self._cooldown_seconds = getattr(self.settings, "llm_provider_cooldown_seconds", None) or 30.0
         # Provider/model that actually produced the most recent result, per role.
         self.last_planner: tuple[str, str] | None = None
         self.last_worker: tuple[str, str] | None = None
         logger.debug(
             "LLMProvider initialized providers={} include_ollama={}", list(self.providers.keys()), include_ollama
         )
+
+    def _mark_down(self, provider: str, error_type: str | None) -> None:
+        """Put a hard-failing provider on cooldown so it is skipped promptly."""
+        if error_type in ("rate_limit", "auth", "connection", "not_found", "timeout"):
+            self._cooldown[provider] = time.monotonic() + self._cooldown_seconds
+            logger.warning(f"[LLM] provider {provider!r} marked down for {self._cooldown_seconds}s ({error_type})")
+
+    def _provider_available(self, provider: str) -> bool:
+        return time.monotonic() >= self._cooldown.get(provider, 0.0)
+
+    def _available(self, chain: list[tuple[str, str]]) -> list[tuple[str, str]]:
+        """Filter a (provider, model) chain to only the providers not on cooldown."""
+        return [(p, m) for p, m in chain if self._provider_available(p)]
 
     # ------------------------------------------------------------------ config
     def _load_providers(self) -> dict[str, dict[str, Any]]:
@@ -270,7 +299,36 @@ class LLMProvider:
         text = re.sub(r"```json\s*", "", text)
         text = re.sub(r"```\s*$", "", text)
         text = re.sub(r"```", "", text)
-        return text.strip()
+        text = text.strip()
+        # Some models append a summary table or prose AFTER the JSON object.
+        # Trim trailing non-JSON text so json.loads succeeds. We do a light
+        # brace-balance scan rather than regex to keep nested braces safe.
+        if not text.startswith("{"):
+            start = text.find("{")
+            if start != -1:
+                text = text[start:]
+        depth = 0
+        in_str = False
+        escape = False
+        for i, ch in enumerate(text):
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+                continue
+            if ch == '"':
+                in_str = not in_str
+                continue
+            if in_str:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[: i + 1]
+        return text
 
     @staticmethod
     def _strip_vendor(model: str) -> str:
@@ -303,15 +361,29 @@ class LLMProvider:
 
     @staticmethod
     def _classify_error(exc: Exception) -> str:
+        """Bucket a litellm failure into a cause category used by the circuit breaker.
+
+        Categories: timeout | rate_limit | auth | connection | not_found | error.
+        The first four (plus ``not_found``) trigger ``_mark_down`` so a hard-failing
+        provider is skipped for the cooldown window.
+        """
         etype = type(exc).__name__
-        msg = str(exc).lower()
-        if "timeout" in msg or etype in ("Timeout", "APITimeoutError"):
+        text = f"{etype}: {exc}".lower()
+        if "timeout" in text or "timed out" in text or etype in ("Timeout", "APITimeoutError"):
             return "timeout"
-        if "rate" in msg or "429" in msg or etype in ("RateLimitError", "BadRequestError"):
+        if "rate" in text or "429" in text or "quota" in text or etype in ("RateLimitError", "BadRequestError"):
             return "rate_limit"
-        if "auth" in msg or "401" in msg or "key" in msg:
+        if "auth" in text or "401" in text or "key" in text or "invalid api key" in text:
             return "auth"
-        if "connect" in msg or "connection" in msg or etype in ("APIConnectionError",):
+        if "notfound" in text or "404" in text or "does not exist" in text or "not found" in text:
+            return "not_found"
+        if (
+            "connect" in text
+            or "connection" in text
+            or "ssl" in text
+            or "certificate" in text
+            or etype in ("APIConnectionError",)
+        ):
             return "connection"
         return "error"
 
@@ -380,6 +452,7 @@ class LLMProvider:
                 api_key=api_key,
                 timeout=timeout or self.timeout,
                 temperature=0,
+                num_retries=0,
             )
             elapsed = time.perf_counter() - started
             usage = getattr(response, "usage", None)
@@ -392,8 +465,10 @@ class LLMProvider:
             return content if isinstance(content, str) else (content or "")
         except Exception as exc:
             elapsed = time.perf_counter() - started
-            self._record(provider, model, role, elapsed, 0, 0, 0, False, self._classify_error(exc))
-            logger.warning(f"[LLM] {provider}/{model} failed: {exc}")
+            error_type = self._classify_error(exc)
+            self._record(provider, model, role, elapsed, 0, 0, 0, False, error_type)
+            self._mark_down(provider, error_type)
+            logger.warning(f"[LLM] {provider}/{model} failed in {elapsed:.1f}s: {exc}")
             return None
 
     # ------------------------------------------------------------- provider testing
@@ -474,20 +549,6 @@ class LLMProvider:
                 "sample": None,
             }
 
-    @staticmethod
-    def _classify_error(exc: Exception) -> str:
-        """Bucket a litellm failure into a human-readable cause category."""
-        text = f"{type(exc).__name__}: {exc}".lower()
-        if "ratelimit" in text or "429" in text or "quota" in text:
-            return "rate_limited"
-        if "authentication" in text or "401" in text or "auth" in text or "invalid api key" in text:
-            return "auth"
-        if "notfound" in text or "404" in text or "does not exist" in text or "not found" in text:
-            return "not_found"
-        if "connection" in text or "ssl" in text or "certificate" in text or "timeout" in text or "timed out" in text:
-            return "unreachable"
-        return "other"
-
     # ------------------------------------------------------- public completion APIs
     async def complete_json(
         self,
@@ -503,7 +564,7 @@ class LLMProvider:
         # An explicit provider selection (from the CLI/UI) is tried first (sticky),
         # but if it fails we fall through the remaining providers in priority order
         # instead of dropping straight to the heuristic. Only if EVERY provider fails
-        # do we use the heuristic fallback.
+        # do we surface the "all LLMs are Busy" error.
         explicit_provider = request.provider if (request and getattr(request, "provider", None)) else None
         model_override = request.planner_model if (request and getattr(request, "planner_model", None)) else None
         chain = [(p, m) for p in self._provider_chain() for m in self._models_for(p, "planner")]
@@ -520,23 +581,25 @@ class LLMProvider:
             else:
                 logger.warning(f"[LLM] Unknown provider {explicit_provider!r}; using default chain")
 
+        chain = self._available(chain)
+
         for provider, model in chain:
-            content = await self._litellm_complete(provider=provider, model=model, messages=messages, role="planner")
+            content = await self._litellm_complete(
+                provider=provider, model=model, messages=messages, role="planner", timeout=self.planner_timeout
+            )
             if content is None:
                 continue
             try:
-                result = json.loads(self._extract_json(content))
+                result: dict[str, Any] = json.loads(self._extract_json(content))
                 self.last_planner = (provider, model)
                 logger.debug("complete_json success provider={} model={}", provider, model)
                 return result
             except Exception as exc:
                 logger.warning(f"[LLM] JSON parse failed for {provider}/{model}: {exc}")
                 continue
-        logger.error(
-            "[LLM] All planner providers failed (tried {}); using heuristic fallback", ", ".join(p for p, _ in chain)
-        )
-        self.last_planner = ("fallback", "heuristic")
-        return self._fallback_json(prompt, request)
+        tried = ", ".join(p for p, _ in chain)
+        logger.error("[LLM] All planner providers failed (tried {}); all LLMs are busy", tried)
+        raise LLMUnavailableError()
 
     async def complete_structured(
         self,
@@ -565,13 +628,14 @@ class LLMProvider:
         # An explicit provider selection is sticky: try only that provider's own
         # models and never spill over to other providers (e.g. openrouter).
         chain = self._chain_for(provider_override, "worker", model_override=model_override)
+        chain = self._available(chain)
 
         for provider, model in chain:
             content = await self._litellm_complete(provider=provider, model=model, messages=messages, role="worker")
             if content is None:
                 continue
             try:
-                result = json.loads(self._extract_json(content))
+                result: dict[str, Any] = json.loads(self._extract_json(content))
                 self.last_worker = (provider, model)
                 logger.debug("complete_structured success provider={} model={}", provider, model)
                 return result
@@ -598,6 +662,7 @@ class LLMProvider:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
         chain = self._chain_for(provider_override, role)
+        chain = self._available(chain)
         for provider, model in chain:
             content = await self._litellm_complete(provider=provider, model=model, messages=messages, role=role)
             if content:
@@ -621,12 +686,13 @@ class LLMProvider:
             {"role": "user", "content": prompt},
         ]
         chain = self._chain_for(provider_override, role)
+        chain = self._available(chain)
         for provider, model in chain:
             content = await self._litellm_complete(provider=provider, model=model, messages=messages, role=role)
             if content is None:
                 continue
             try:
-                result = json.loads(self._extract_json(content))
+                result: dict[str, Any] = json.loads(self._extract_json(content))
                 logger.debug("extract_json success provider={} model={}", provider, model)
                 return result
             except Exception as exc:
@@ -660,6 +726,7 @@ class LLMProvider:
                 api_key=api_key,
                 timeout=timeout or self.timeout,
                 temperature=0,
+                num_retries=0,
                 tools=tools,
                 tool_choice=tool_choice,
             )
@@ -679,8 +746,10 @@ class LLMProvider:
             return response
         except Exception as exc:
             elapsed = time.perf_counter() - started
-            self._record(provider, model, role, elapsed, 0, 0, 0, False, self._classify_error(exc))
-            logger.warning(f"[LLM] {provider}/{model} tool-call failed: {exc}")
+            error_type = self._classify_error(exc)
+            self._record(provider, model, role, elapsed, 0, 0, 0, False, error_type)
+            self._mark_down(provider, error_type)
+            logger.warning(f"[LLM] {provider}/{model} tool-call failed in {elapsed:.1f}s: {exc}")
             return None
 
     async def complete_with_tools(
@@ -691,7 +760,7 @@ class LLMProvider:
         role: str = "worker",
         provider_override: str | None = None,
         model_override: str | None = None,
-        max_tool_rounds: int = 6,
+        max_tool_rounds: int = 8,
         force_tool_first: bool = False,
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Complete a prompt while letting the model call tools (e.g. calculator).
@@ -709,6 +778,7 @@ class LLMProvider:
         )
         # Explicit provider selection is sticky: try only that provider's models.
         chain = self._chain_for(provider_override, role, model_override=model_override)
+        chain = self._available(chain)
 
         for provider, model in chain:
             messages = [

@@ -9,12 +9,15 @@ class ImageCandidate(BaseModel):
     """A raw candidate image from a source, before validation."""
 
     url: str
-    source: str  # "wikidata", "wikimedia_commons", "wikipedia", "openverse", "mapillary", "unsplash", "pexels"
+    source: (
+        str  # "wikidata", "wikimedia_commons", "wikipedia", "openverse", "mapillary", "unsplash", "pexels", "aistack"
+    )
     license: str | None = None
     attribution: str | None = None
     width: int | None = None
     height: int | None = None
     verified: bool = True  # False for generic/stock fallback images
+    clip_score: float | None = None  # Pre-computed CLIP score (e.g. from /images endpoint)
 
 
 class ProcessedImage(BaseModel):

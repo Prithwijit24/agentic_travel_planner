@@ -43,6 +43,7 @@ dependencies = [
   "marisa-trie>=0.8.0",
   "rapidfuzz>=3.0.0",
   "Pillow>=10.0",
+  "streamlit-searchbox>=0.1.24",
 ]
 
 [project.scripts]
@@ -121,9 +122,26 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101"]
+# Test suites intentionally: use assert (S101), pass fake secrets to API fixtures
+# (S105/S106), exercise private members under test (SLF001), keep pytest fixture
+# argument names (ARG001/A002), and rely on simple throwaway flow variables
+# (B007/F841/RUF059). Production code is still fully checked for all of these.
+"tests/**/*.py" = [
+    "S101",
+    "S105",
+    "S106",
+    "SLF001",
+    "A002",
+    "ARG001",
+    "B007",
+    "F841",
+    "RUF059",
+]
 "**/__init__.py" = ["F401"]
-"scripts/**/*.py" = ["T20"]
+# Standalone diagnostic scripts: they print (T20), exercise private provider/
+# tool internals (SLF001), and use test_-named CLI helpers that are not pytest
+# tests (PT028).
+"scripts/**/*.py" = ["T20", "SLF001", "PT028"]
 "src/agentic_tour_planner/cli/**/*.py" = ["T20"]
 
 [tool.ruff.lint.isort]
