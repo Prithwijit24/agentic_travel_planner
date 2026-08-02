@@ -71,8 +71,13 @@ def test_enforces_requested_minimum_spots_per_regular_day():
 
     enforced = enforce_minimum_daily_spots(request, itinerary)
 
+    # Real, activity-derived places are backfilled up to the requested minimum...
     assert len(enforced[0].spots) >= 4
-    assert len(enforced[1].spots) >= 4
+    assert "Rumtek Monastery" in [s.name for s in enforced[0].spots]
+    # ...but placeholder/junk spots are never fabricated.
+    assert not any("optional place" in (s.name or "").lower() for day in enforced for s in day.spots)
+    # A departure day with no activities stays empty instead of getting fake spots.
+    assert enforced[1].spots == []
 
 
 def test_uses_max_attractions_default_when_places_per_day_missing():
@@ -88,4 +93,9 @@ def test_uses_max_attractions_default_when_places_per_day_missing():
 
     enforced = enforce_minimum_daily_spots(request, itinerary)
 
-    assert len(enforced[0].spots) >= 5
+    # max_attractions_per_day is used as the minimum target, but only real
+    # activity-derived places are added -- no fake placeholders to pad the count.
+    names = [s.name for s in enforced[0].spots]
+    assert names
+    assert any("Fushimi Inari" in n for n in names)
+    assert not any("optional place" in (s.name or "").lower() for s in enforced[0].spots)
