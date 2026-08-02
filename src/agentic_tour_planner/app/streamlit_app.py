@@ -1173,6 +1173,10 @@ async def _stream_logs(request_id: str, callback) -> None:
             if line.startswith("data: "):
                 event_data = json.loads(line[6:])
                 callback(event_data)
+                # The done event is terminal: stop reading so the job thread is
+                # never left blocked on a server that keeps the stream open.
+                if event_data.get("event") == "done":
+                    break
 
 
 async def _fetch_images(plan_id: str) -> dict:
@@ -1721,6 +1725,12 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
     )
     st.markdown("<style>.main .block-container {max-width: 800px;}</style>", unsafe_allow_html=True)
 
+    # Show the reason a previous generation attempt failed instead of hiding it.
+    plan_error = st.session_state.pop("plan_error", None)
+    if plan_error:
+        st.error(f"⚠️ Plan generation failed: {plan_error}")
+        st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+
     st.markdown(
         clean_html("""
 <h1 style="font-size: 48px; text-align: center; margin-bottom: 0;">Agentic Tour Planner 🗺️</h1>
@@ -1896,7 +1906,7 @@ elif st.session_state.is_loading:
 
         job = _UI_JOBS.get(st.session_state.generation_job_id)
         if job is None:
-            st.error("Plan generation failed: job state was lost")
+            st.session_state.plan_error = "Plan generation failed: job state was lost"
             st.session_state.is_loading = False
             st.session_state.form_submitted = False
             st.session_state.pop("generation_job_id", None)
@@ -1933,10 +1943,14 @@ elif st.session_state.is_loading:
             )
 
         if job["status"] == "error":
-            st.error(f"Plan generation failed: {job.get('error') or 'Unknown error'}")
+            # Persist the failure so it is shown on the form page instead of the
+            # UI silently dropping the user back without any explanation.
+            st.session_state.plan_error = job.get("error") or "Unknown error"
             st.session_state.is_loading = False
             st.session_state.form_submitted = False
-            st.session_state.pop("generation_job_id", None)
+            finished_job_id = st.session_state.pop("generation_job_id", None)
+            if finished_job_id:
+                _UI_JOBS.pop(finished_job_id, None)
             st.rerun()
 
         if job["status"] == "done":
@@ -1954,6 +1968,8 @@ elif st.session_state.is_loading:
 
             st.session_state.plan = _plan_to_display_dict(plan_data, request_dict)
             st.session_state.images = images_data.get("images", [])
+            # Clear any stale failure banner from a previous attempt.
+            st.session_state.pop("plan_error", None)
             st.session_state.is_loading = False
             finished_job_id = st.session_state.pop("generation_job_id", None)
             if finished_job_id:

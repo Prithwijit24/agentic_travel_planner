@@ -91,7 +91,20 @@ async def health() -> dict:
     return result
 
 
-PLAN_TIMEOUT_SECONDS = 900
+# Hard cap on a single plan job. Generous so slow LLM runs (10-15 min for a
+# multi-day plan) are not killed mid-flight; the UI surfaces the failure reason.
+PLAN_TIMEOUT_SECONDS = 1800
+
+
+def _job_error_message(exc: Exception) -> str:
+    """Human-readable failure reason for a plan job.
+
+    ``asyncio.TimeoutError`` (the pipeline cap) has an empty ``str()``, so a raw
+    pass-through would leave the UI showing a blank failure message.
+    """
+    if isinstance(exc, TimeoutError):
+        return f"Plan generation timed out after {PLAN_TIMEOUT_SECONDS}s — the pipeline is taking too long. Please try a shorter trip or a simpler destination."
+    return str(exc) or repr(exc)
 
 
 @app.post("/plans", response_model=PlanAPIResponse)
@@ -204,13 +217,14 @@ async def _run_plan_job(request_id: str, request: PlanningRequest, emitter: Even
     except Exception as e:
         elapsed = time.perf_counter() - start
         REQUEST_LATENCY.labels(endpoint="/plans").observe(elapsed)
-        logger.error(f"POST /plans failed in {elapsed:.2f}s: {e}")
-        emitter.emit(LogEvent(event="error", message=str(e)))
+        error_msg = _job_error_message(e)
+        logger.error(f"POST /plans failed in {elapsed:.2f}s: {error_msg}")
+        emitter.emit(LogEvent(event="error", message=error_msg))
         emitter.emit(
             LogEvent(
                 event="done",
                 message="Plan failed",
-                detail={"request_id": request_id, "status": "error", "error": str(e)},
+                detail={"request_id": request_id, "status": "error", "error": error_msg},
             )
         )
     finally:
