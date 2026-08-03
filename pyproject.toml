@@ -60,6 +60,9 @@ packages = ["src/agentic_tour_planner"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+    "integration: tests that hit real external services (need live API keys)",
+]
 
 [tool.uv]
 environments = ["sys_platform == 'linux'"]
