@@ -1363,20 +1363,6 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
 
     display_itinerary = []
 
-    transport_options = []
-    for t in plan_data.get("transport_options", []):
-        transport_options.append(
-            {
-                "mode": t.get("mode", ""),
-                "cost": t.get("fare", ""),
-                "description": t.get("description", ""),
-            }
-        )
-
-    # Fallback per-place transport text assembled from the global transport options
-    # so places never render an empty "Transport:" field.
-    transport_fallback = " · ".join(f"{tp['mode']} ({tp['cost']})" for tp in transport_options if tp.get("mode"))
-
     for day in itinerary:
         day_num = day.get("day")
         day_detailed = detailed_lookup.get(day_num, {})
@@ -1393,7 +1379,7 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
                 or f"{spot.get('opening_hours', '')} \u2013 {spot.get('closing_hours', '')}".strip(" \u2013")
                 or "Not available"
             )
-            transport_text = det.get("transport") or spot.get("transport") or transport_fallback
+            transport_text = det.get("transport") or spot.get("transport") or "Local transport"
             spots.append(
                 {
                     "name": spot_name,
@@ -1459,8 +1445,6 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
         },
     }
 
-    transport_options = []
-
     citations = []
     for c in plan_data.get("citations", []):
         citations.append(
@@ -1477,7 +1461,6 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
         "month": request.get("month", ""),
         "budget": request.get("budget", ""),
         "travelers": request.get("travelers", 1),
-        "transport_mode": request.get("transport_mode", "unspecified"),
         "overview": plan_data.get("overview", ""),
         "booking_resources": {
             "flights": ["makemytrip", "agoda", "goibibo"],
@@ -1487,7 +1470,6 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
         "monthly_weather": plan_data.get("monthly_weather", ""),
         "itinerary": display_itinerary,
         "practical_tips": plan_data.get("practical_tips", []),
-        "transport_options": transport_options,
         "cost_estimate": display_cost,
         "sources": citations,
     }
@@ -2025,7 +2007,7 @@ elif st.session_state.plan is not None:
             "🗓️ Daily Itinerary",
             "🗺️ Maps",
             "📰 News",
-            "🚇 Transport & Resources",
+            "🚇 Resources",
             "💡 Budget & Tips",
         ]
         menu_choice = st.radio("Navigation", menu_options, label_visibility="collapsed")
@@ -2207,31 +2189,7 @@ elif st.session_state.plan is not None:
             fluent_card(f"Tips for {plan['destination']}", "purple", clean_html(tips_html)), unsafe_allow_html=True
         )
 
-    elif menu_choice == "🚇 Transport & Resources":
-        st.markdown("### 🚆 Transport Options")
-        transport_opts = plan.get("transport_options", [])
-        if transport_opts:
-            mode = plan.get("transport_mode", "unspecified")
-            st.markdown(f"**Mode:** {mode.title()}")
-            st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
-            tcols = st.columns(min(len(transport_opts), 3))
-            for idx, opt in enumerate(transport_opts):
-                with tcols[idx % len(tcols)]:
-                    html = f"""
-<div style="font-weight: 600; margin-bottom: 4px;">🚗 {html_escape(opt["mode"])}</div>
-<div style="font-size: 13px; color: var(--ms-blue); font-weight: 600; margin-bottom: 4px;">💵 {render_highlighted(opt["cost"] or "N/A")}</div>
-<div style="font-size: 13px; color: #3a3a3c; line-height: 1.5;">{render_highlighted(opt["description"] or "")}</div>
-"""
-                    if opt.get("notes"):
-                        html += f'<div style="font-size: 12px; color: #888; margin-top: 4px;">📝 {html_escape(opt["notes"])}</div>'
-                    st.markdown(fluent_card("Option", "cyan", clean_html(html)), unsafe_allow_html=True)
-        else:
-            st.warning(
-                "No transport options available. This usually means the transport mode was not specified or the LLM could not generate options."
-            )
-
-        st.markdown("<div style='margin-bottom: 32px;'></div>", unsafe_allow_html=True)
-
+    elif menu_choice == "🚇 Resources":
         st.markdown("### 📚 Sources & Citations")
         cit_html = "<div style='display: flex; flex-direction: column; gap: 12px;'>"
         for cit in plan["sources"]:
