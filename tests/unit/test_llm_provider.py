@@ -24,42 +24,46 @@ def test_get_planner_and_worker_model_return_preferred():
 
 def test_explicit_request_provider_overrides_fallback_chain():
     provider = LLMProvider()
-    # A model without an openai/ prefix gets one added for the OpenAI-compatible gateway.
-    import asyncio
-
-    async def run():
-        return provider._normalize_model("agnes-2.0-flash")
-
-    assert asyncio.run(run()) == "openai/agnes-2.0-flash"
+    chain = provider._chain_for("nararouter", "planner")
+    # The explicit provider's models must come first (sticky), then the rest in priority order.
+    assert chain[0][0] == "nararouter"
+    first_rest_provider = next(p for p, _ in chain if p != "nararouter")
+    assert first_rest_provider == "agnes"
 
 
-def test_native_gemini_model_routing_strips_vendor_prefix(monkeypatch):
+def test_model_override_is_tried_before_provider_defaults():
     provider = LLMProvider()
-    monkeypatch.setattr(provider, "providers", {"gemini": {"api_type": "gemini"}})
-    lm_model, base = provider._litellm_model_and_base("gemini", "google/gemini-4-31b-it:free")
-    assert lm_model == "gemini/gemini-4-31b-it:free"
-    assert base is None
+    chain = provider._chain_for("nararouter", "worker", model_override="mistral-large")
+    assert chain[0][0] == "nararouter"
+    assert chain[0][1] == "mistral-large"
 
 
-def test_native_groq_model_routing_strips_vendor_prefix(monkeypatch):
+def test_unknown_provider_falls_back_to_default_chain():
     provider = LLMProvider()
-    monkeypatch.setattr(provider, "providers", {"grokai": {"api_type": "groq"}})
-    lm_model, base = provider._litellm_model_and_base("grokai", "openai/gpt-oss-120b")
-    assert lm_model == "groq/gpt-oss-120b"
-    assert base is None
+    chain = provider._chain_for("nope-not-configured", "planner")
+    assert chain[0][0] == "agnes"
 
 
-def test_openai_gateway_uses_api_base(monkeypatch):
+def test_planner_model_override_only_includes_explicit_model_first():
     provider = LLMProvider()
-    monkeypatch.setattr(
-        provider,
-        "providers",
-        {"openrouter": {"api_type": "openai", "base_url": "https://openrouter.ai/api/v1"}},
+    chain = provider._chain_for("nararouter", "planner", model_override="custom-model")
+    assert chain[0][0] == "nararouter"
+    assert chain[0][1] == "custom-model"
+
+
+async def _run_post_ok(provider):
+    return await provider._post_chat(
+        "agnes",
+        "agnes-2.0-flash",
+        [{"role": "user", "content": "hi"}],
+        timeout=10,
+        role="planner",
     )
-    # openrouter model already carries the openai/ prefix, so it is passed through.
-    lm_model, base = provider._litellm_model_and_base("openrouter", "openai/gpt-oss-20b:free")
-    assert lm_model == "openai/gpt-oss-20b:free"
-    assert base == "https://openrouter.ai/api/v1"
-    # A bare model name gets the openai/ prefix added.
-    lm_model2, _ = provider._litellm_model_and_base("agnes", "agnes-2.0-flash")
-    assert lm_model2 == "openai/agnes-2.0-flash"
+
+
+def test_llm_unavailable_when_no_providers_configured(monkeypatch):
+    provider = LLMProvider()
+    monkeypatch.setattr(provider, "providers", {})
+    monkeypatch.setattr(provider, "_provider_chain", list)
+    chain = provider._chain_for(None, "planner")
+    assert chain == []

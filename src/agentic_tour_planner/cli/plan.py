@@ -80,9 +80,7 @@ class _LiteLLMFilter(logging.Filter):
     _attached = False
 
     def filter(self, record: logging.LogRecord) -> bool:
-        msg = record.getMessage()
-        # Match litellm logger names and messages mentioning LoggingWorker
-        return not ((record.name.startswith("litellm") or "litellm" in record.name.lower()) and "LoggingWorker" in msg)
+        return True
 
     @classmethod
     def attach(cls) -> None:

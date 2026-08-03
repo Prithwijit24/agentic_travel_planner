@@ -39,7 +39,6 @@ dependencies = [
   "uvicorn>=0.32.1",
   "ddgs>=9.14.4",
   "google-genai>=2.0.0",
-  "litellm>=1.93.0",
   "sse-starlette>=3.4.6",
   "marisa-trie>=0.8.0",
   "rapidfuzz>=3.0.0",

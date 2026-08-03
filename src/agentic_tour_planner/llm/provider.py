@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-import re
 import time
 from typing import Any
 
-from litellm import acompletion
+import httpx
 
 from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import PlanningRequest
@@ -14,16 +13,6 @@ from agentic_tour_planner.tools.calculator import run_calculator
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-# System prompts for worker agents - concise JSON format
-ROUTE_PROMPT = 'Return ONLY JSON: {"strategy": "string", "cluster_advice": ["string"], "transit_notes": ["string"]}'
-BUDGET_PROMPT = (
-    'Return ONLY JSON: {"estimated_daily_budget": number, "estimated_total_budget": number, '
-    '"assumptions": ["string"], "saving_tips": ["string"]}'
-)
-TIMING_PROMPT = (
-    'Return ONLY JSON: {"season_summary": "string", "booking_window": "string", "day_planning_notes": ["string"]}'
-)
 
 PLANNER_SYSTEM_PROMPT = (
     "You are a travel itinerary generator. Return strict JSON only, no markdown or code fences. "
@@ -66,6 +55,15 @@ PLANNER_SYSTEM_PROMPT = (
     "  - Other lengths: follow the route strategy while keeping the trip coherent.\n"
 )
 
+ROUTE_PROMPT = 'Return ONLY JSON: {"strategy": "string", "cluster_advice": ["string"], "transit_notes": ["string"]}'
+BUDGET_PROMPT = (
+    'Return ONLY JSON: {"estimated_daily_budget": number, "estimated_total_budget": number, '
+    '"assumptions": ["string"], "saving_tips": ["string"]}'
+)
+TIMING_PROMPT = (
+    'Return ONLY JSON: {"season_summary": "string", "booking_window": "string", "day_planning_notes": ["string"]}'
+)
+
 # Provider fallback priority (first = preferred). Only providers declared in
 # llm.yml are used; entries here that are commented out in config are skipped.
 # The chain is intentionally short so a degraded provider fails over fast.
@@ -91,85 +89,45 @@ API_KEY_ALIASES = {
     "omniroute": ["omniroute_api_key", "omnirute_api_key"],
 }
 
-# Vendor prefixes that should be stripped when a model is routed through a *native*
-# (non OpenAI-compatible) litellm provider such as gemini or groq.
-_NATIVE_VENDOR_PREFIXES = {
-    "openai",
-    "google",
-    "qwen",
-    "meta",
-    "mistral",
-    "anthropic",
-    "deepseek",
-    "nvidia",
-}
-
-_PING_PROMPT = 'Reply with strictly valid JSON only, no markdown: {"ok": true, "pong": "hello"}'
+# Per-call timeouts (seconds). Kept modest so a degraded provider fails over
+# fast instead of eating wall-clock time.
+CALL_TIMEOUT = 60.0
+PLANNER_TIMEOUT = 120.0
 
 
 class LLMUnavailableError(RuntimeError):
-    """Raised when every provider in the fallback chain failed to respond.
-
-    Surfaced to the user as "all LLMs are Busy right now".
-    """
-
     def __init__(self, message: str = "all LLMs are Busy right now") -> None:
         super().__init__(message)
 
 
+def _extract_json(text: str) -> str:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return text[start : end + 1]
+    return text
+
+
 class LLMProvider:
-    """Multi-provider LLM layer backed by litellm with automatic fallback routing.
+    """Minimal OpenAI-compatible LLM provider with simple failure routing.
 
-    Reads the provider registry from ``llm.yml``. Each provider declares an
-    ``api_type`` (``openai`` | ``gemini`` | ``groq``) and a ``base_url``. For
-    ``openai``-type gateways we route through litellm's OpenAI-compatible client
-    (``openai/<model>`` + ``api_base``). For ``gemini``/``groq`` we use litellm's
-    native provider (``gemini/<model>`` / ``groq/<model>``) with the vendor API key.
-
-    For planner/worker requests it tries each provider in ``PROVIDER_PRIORITY``
-    order, and within a provider each candidate model, falling back to the next on
-    any failure. Ollama is optional and skipped by default.
+    Calls provider endpoints directly over HTTP (no litellm). On failure the
+    request fails over to the next provider in priority order.
     """
 
     def __init__(self, include_ollama: bool = False) -> None:
         self.settings = get_settings()
         self.include_ollama = include_ollama
         self.providers = self._load_providers()
-        self.timeout = getattr(self.settings, "llm_call_timeout_seconds", None) or 120
-        # Planner generations (large itinerary JSON) legitimately take several
-        # minutes; use a much longer budget there so fail-fast timeouts do not
-        # cut off a working but slow provider. Workers/tools get the short budget.
-        self.planner_timeout = getattr(self.settings, "llm_planner_timeout_seconds", None) or 600
-        # Circuit breaker: providers that fail hard are marked down for a short
-        # cooldown so subsequent calls in the SAME request skip them instead of
-        # waiting on another slow attempt. Keyed by provider name -> monotonic epoch.
-        self._cooldown: dict[str, float] = {}
-        self._cooldown_seconds = getattr(self.settings, "llm_provider_cooldown_seconds", None) or 30.0
-        # Provider/model that actually produced the most recent result, per role.
         self.last_planner: tuple[str, str] | None = None
         self.last_worker: tuple[str, str] | None = None
-        logger.debug(
-            "LLMProvider initialized providers={} include_ollama={}", list(self.providers.keys()), include_ollama
-        )
+        self.timeout = float(getattr(self.settings, "llm_call_timeout_seconds", None) or CALL_TIMEOUT)
+        self.planner_timeout = float(getattr(self.settings, "llm_planner_timeout_seconds", None) or PLANNER_TIMEOUT)
 
-    def _mark_down(self, provider: str, error_type: str | None) -> None:
-        """Put a hard-failing provider on cooldown so it is skipped promptly."""
-        if error_type in ("rate_limit", "auth", "connection", "not_found", "timeout"):
-            self._cooldown[provider] = time.monotonic() + self._cooldown_seconds
-            logger.warning(f"[LLM] provider {provider!r} marked down for {self._cooldown_seconds}s ({error_type})")
-
-    def _provider_available(self, provider: str) -> bool:
-        return time.monotonic() >= self._cooldown.get(provider, 0.0)
-
-    def _available(self, chain: list[tuple[str, str]]) -> list[tuple[str, str]]:
-        """Filter a (provider, model) chain to only the providers not on cooldown."""
-        return [(p, m) for p, m in chain if self._provider_available(p)]
-
-    # ------------------------------------------------------------------ config
+    # ------------------------------------------------------------- config
     def _load_providers(self) -> dict[str, dict[str, Any]]:
-        logger.debug("_load_providers start")
-        # Discover provider configs from settings: any dict attribute that looks
-        # like an LLM provider entry (has a base_url AND a planner/worker model).
+        """Discover provider configs from settings: any dict attribute that looks
+        like an LLM provider entry (has a base_url AND a planner/worker model)."""
         found: dict[str, dict[str, Any]] = {}
         for name, value in vars(self.settings).items():
             if not isinstance(value, dict):
@@ -191,9 +149,7 @@ class LLMProvider:
         for attr in API_KEY_ALIASES.get(provider, [f"{provider}_api_key"]):
             key = getattr(self.settings, attr, None)
             if key:
-                logger.debug("_api_key_for provider={} key=<set>", provider)
                 return str(key)
-        logger.debug("_api_key_for provider={} key=<unset>", provider)
         return None
 
     def _provider_chain(self) -> list[str]:
@@ -206,6 +162,17 @@ class LLMProvider:
         if self.include_ollama and "ollama" not in chain:
             chain.append("ollama")
         return chain
+
+    def _models_for(self, provider: str, role: str) -> list[str]:
+        cfg = self.providers.get(provider, {})
+        model = cfg.get(f"{role}_model")
+        if model is None:
+            return []
+        if isinstance(model, str):
+            return [model]
+        if isinstance(model, list):
+            return [m for m in model if m]
+        return []
 
     def _chain_for(
         self, provider_override: str | None, role: str, model_override: str | None = None
@@ -228,6 +195,7 @@ class LLMProvider:
             logger.warning(f"[LLM] Unknown provider {provider_override!r}; using default chain")
         return [(p, m) for p in self._provider_chain() for m in self._models_for(p, role)]
 
+    # ------------------------------------------------------------- introspection
     def list_providers(self) -> list[str]:
         return list(self.providers.keys())
 
@@ -249,307 +217,124 @@ class LLMProvider:
                 out.append(m)
         return out
 
-    # --------------------------------------------------------------- resolution
     def get_planner_model(self) -> tuple[str, str]:
         """Return the primary (preferred) planner provider/model for display/logging."""
         for provider in self._provider_chain():
-            cfg = self.providers[provider]
-            model = cfg.get("planner_model")
-            if isinstance(model, list):
-                model = model[0]
-            if model:
-                return provider, model
+            models = self._models_for(provider, "planner")
+            if models:
+                return provider, models[0]
         return "none", "none"
 
     def get_worker_model(self) -> tuple[str, str]:
         """Return the primary (preferred) worker provider/model for display/logging."""
         for provider in self._provider_chain():
-            cfg = self.providers[provider]
-            model = cfg.get("worker_model")
-            if isinstance(model, list):
-                model = model[0]
-            if model:
-                return provider, model
+            models = self._models_for(provider, "worker")
+            if models:
+                return provider, models[0]
         return "none", "none"
 
-    def _models_for(self, provider: str, role: str) -> list[str]:
-        cfg = self.providers.get(provider, {})
-        model = cfg.get(f"{role}_model")
-        if model is None:
-            return []
-        if isinstance(model, str):
-            return [model]
-        if isinstance(model, list):
-            return [m for m in model if m]
-        return []
-
-    # ------------------------------------------------------------- last-used meta
     def last_planner_used(self) -> tuple[str, str]:
-        """Provider/model that actually generated the most recent planner result."""
         return self.last_planner or ("unknown", "unknown")
 
     def last_worker_used(self) -> tuple[str, str]:
-        """Provider/model that actually generated the most recent worker result."""
         return self.last_worker or ("unknown", "unknown")
 
-    # ------------------------------------------------------------------- helpers
-    @staticmethod
-    def _extract_json(text: str) -> str:
-        """Extract JSON from text that may contain markdown or other content."""
-        text = re.sub(r"```json\s*", "", text)
-        text = re.sub(r"```\s*$", "", text)
-        text = re.sub(r"```", "", text)
-        text = text.strip()
-        # Some models append a summary table or prose AFTER the JSON object.
-        # Trim trailing non-JSON text so json.loads succeeds. We do a light
-        # brace-balance scan rather than regex to keep nested braces safe.
-        if not text.startswith("{"):
-            start = text.find("{")
-            if start != -1:
-                text = text[start:]
-        depth = 0
-        in_str = False
-        escape = False
-        for i, ch in enumerate(text):
-            if escape:
-                escape = False
-                continue
-            if ch == "\\":
-                escape = True
-                continue
-            if ch == '"':
-                in_str = not in_str
-                continue
-            if in_str:
-                continue
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    return text[: i + 1]
-        return text
-
-    @staticmethod
-    def _strip_vendor(model: str) -> str:
-        """Strip a leading ``<vendor>/`` prefix for native (gemini/groq) routing."""
-        if "/" in model:
-            head = model.split("/", 1)[0].lower()
-            if head in _NATIVE_VENDOR_PREFIXES:
-                return model.split("/", 1)[1]
-        return model
-
-    @staticmethod
-    def _normalize_model(model: str) -> str:
-        """Make a model name safe for litellm against a custom OpenAI-compatible base.
-
-        Every ``openai``-type provider in llm.yml is an OpenAI-compatible gateway, so
-        we always call litellm with the ``openai/<model>`` form and pass ``api_base``.
-        If the model already carries an ``openai/`` prefix it is passed through
-        unchanged; otherwise we prepend ``openai/`` so litellm routes it to the custom
-        base (e.g. ``auto/best-chat`` becomes ``openai/auto/best-chat``).
-        """
-        if model.startswith("openai/"):
-            return model
-        return f"openai/{model}"
-
-    @staticmethod
-    def _coerce_list(value: Any) -> list[Any]:
-        if isinstance(value, list):
-            return value
-        return [value]
-
-    @staticmethod
-    def _classify_error(exc: Exception) -> str:
-        """Bucket a litellm failure into a cause category used by the circuit breaker.
-
-        Categories: timeout | rate_limit | auth | connection | not_found | error.
-        The first four (plus ``not_found``) trigger ``_mark_down`` so a hard-failing
-        provider is skipped for the cooldown window.
-        """
-        etype = type(exc).__name__
-        text = f"{etype}: {exc}".lower()
-        if "timeout" in text or "timed out" in text or etype in ("Timeout", "APITimeoutError"):
-            return "timeout"
-        if "rate" in text or "429" in text or "quota" in text or etype in ("RateLimitError", "BadRequestError"):
-            return "rate_limit"
-        if "auth" in text or "401" in text or "key" in text or "invalid api key" in text:
-            return "auth"
-        if "notfound" in text or "404" in text or "does not exist" in text or "not found" in text:
-            return "not_found"
-        if (
-            "connect" in text
-            or "connection" in text
-            or "ssl" in text
-            or "certificate" in text
-            or etype in ("APIConnectionError",)
-        ):
-            return "connection"
-        return "error"
-
-    def _litellm_model_and_base(self, provider: str, model: str) -> tuple[str, str | None]:
-        cfg = self.providers.get(provider, {})
-        api_type = (cfg.get("api_type") or "openai").lower()
-        if api_type == "gemini":
-            return f"gemini/{self._strip_vendor(model)}", None
-        if api_type == "groq":
-            return f"groq/{self._strip_vendor(model)}", None
-        # openai (default) + any unknown type: route through OpenAI-compatible client.
-        return self._normalize_model(model), cfg.get("base_url")
-
-    # ------------------------------------------------------------ metrics + core liteLLM call
+    # ------------------------------------------------------------- HTTP layer
     def _record(
         self,
         provider: str,
         model: str,
         role: str,
         elapsed: float,
-        prompt_tokens: int,
-        completion_tokens: int,
-        total_tokens: int,
+        usage: dict[str, Any] | None,
         ok: bool,
         error_type: str | None,
     ) -> None:
-        logger.debug(
-            "_record provider={} model={} role={} ok={} total_tokens={}", provider, model, role, ok, total_tokens
-        )
+        logger.debug("_record provider={} model={} role={} ok={}", provider, model, role, ok)
         metrics_bus.record(
             CallMetrics(
                 provider=provider,
                 model=model,
                 role=role,
-                latency_s=elapsed,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens,
+                latency_s=round(elapsed, 3),
+                prompt_tokens=int(usage.get("prompt_tokens") or 0) if usage else 0,
+                completion_tokens=int(usage.get("completion_tokens") or 0) if usage else 0,
+                total_tokens=int(usage.get("total_tokens") or 0) if usage else 0,
                 ok=ok,
                 error_type=error_type,
             )
         )
 
-    async def _litellm_complete(
+    async def _post_chat(
         self,
-        *,
         provider: str,
         model: str,
-        messages: list[dict[str, str]],
-        timeout: int | None = None,
+        messages: list[dict[str, Any]],
+        *,
+        timeout: float,
         role: str = "worker",
-    ) -> str | None:
-        lm_model, base_url = self._litellm_model_and_base(provider, model)
-        api_key = self._api_key_for(provider)
-        # OpenAI-compatible gateways need *some* api_key value even if the server
-        # ignores it; pass a placeholder rather than None to avoid litellm errors.
-        if base_url and not api_key:
-            api_key = "sk-noauth"
-        logger.info("[LLM] calling provider={} model={} role={} api_key=<set>", provider, lm_model, role)
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] = "auto",
+    ) -> dict[str, Any] | None:
+        """POST /chat/completions to an OpenAI-compatible endpoint. Returns the
+        parsed response body, or None on any failure (error already logged)."""
+        cfg = self.providers.get(provider)
+        if not cfg:
+            logger.warning(f"[LLM] provider {provider!r} not in config")
+            return None
+        base_url = str(cfg["base_url"]).rstrip("/")
+        api_key = self._api_key_for(provider) or "sk-noauth"
+        payload: dict[str, Any] = {"model": model, "messages": messages, "temperature": 0}
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = tool_choice
+
         started = time.perf_counter()
         try:
-            response = await acompletion(
-                model=lm_model,
-                messages=messages,
-                api_base=base_url,
-                api_key=api_key,
-                timeout=timeout or self.timeout,
-                temperature=0,
-                num_retries=0,
-            )
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    f"{base_url}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+                response.raise_for_status()
+                data: dict[str, Any] = response.json()
             elapsed = time.perf_counter() - started
-            usage = getattr(response, "usage", None)
-            prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
-            completion_tokens = getattr(usage, "completion_tokens", 0) or 0
-            total_tokens = getattr(usage, "total_tokens", 0) or 0
-            self._record(provider, model, role, elapsed, prompt_tokens, completion_tokens, total_tokens, True, None)
-            content = response.choices[0].message.content
-            logger.debug(f"[LLM] {provider}/{model} ok latency={elapsed:.3f}s tokens={total_tokens}")
-            return content if isinstance(content, str) else (content or "")
+            usage = data.get("usage") or {}
+            self._record(provider, model, role, elapsed, usage, True, None)
+            logger.debug(f"[LLM] {provider}/{model} ok latency={elapsed:.3f}s")
+            return data
         except Exception as exc:
             elapsed = time.perf_counter() - started
-            error_type = self._classify_error(exc)
-            self._record(provider, model, role, elapsed, 0, 0, 0, False, error_type)
-            self._mark_down(provider, error_type)
+            self._record(provider, model, role, elapsed, None, False, type(exc).__name__)
             logger.warning(f"[LLM] {provider}/{model} failed in {elapsed:.1f}s: {exc}")
             return None
 
-    # ------------------------------------------------------------- provider testing
-    async def test_provider_model(
+    async def _complete(
         self,
-        provider: str,
-        model: str,
+        chain: list[tuple[str, str]],
+        messages: list[dict[str, Any]],
+        *,
+        timeout: float,
         role: str = "worker",
-        prompt: str | None = None,
-        timeout: int = 45,
-    ) -> dict[str, Any]:
-        """Probe a single provider/model pair. Returns a status report dict."""
-        logger.debug("test_provider_model start provider={} model={} role={}", provider, model, role)
-        system_prompt = {
-            "route": ROUTE_PROMPT,
-            "budget": BUDGET_PROMPT,
-            "timing": TIMING_PROMPT,
-            "planner": PLANNER_SYSTEM_PROMPT,
-        }.get(role, "Return strict JSON only. Do not wrap in markdown.")
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt or _PING_PROMPT},
-        ]
-        lm_model, base_url = self._litellm_model_and_base(provider, model)
-        api_key = self._api_key_for(provider)
-        if base_url and not api_key:
-            api_key = "sk-noauth"
-
-        started = time.perf_counter()
-        try:
-            response = await acompletion(
-                model=lm_model,
-                messages=messages,
-                api_base=base_url,
-                api_key=api_key,
-                timeout=timeout,
-                temperature=0,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] = "auto",
+    ) -> tuple[str, str, str] | None:
+        """Try each (provider, model) in the chain until one returns a response.
+        Returns (provider, model, content) or None if all fail."""
+        for provider, model in chain:
+            data = await self._post_chat(
+                provider, model, messages, timeout=timeout, role=role, tools=tools, tool_choice=tool_choice
             )
-            content = response.choices[0].message.content
-            content = content if isinstance(content, str) else (content or "")
-            elapsed = time.perf_counter() - started
-            # Try to parse JSON to confirm it is usable output.
-            parse_ok = False
-            try:
-                json.loads(self._extract_json(content))
-                parse_ok = True
-            except Exception:
-                parse_ok = False
-            return {
-                "provider": provider,
-                "model": model,
-                "litellm_model": lm_model,
-                "status": "ok" if parse_ok else "unparsed",
-                "latency_s": round(elapsed, 2),
-                "parse_ok": parse_ok,
-                "error": None,
-                "error_type": None,
-                "sample": content[:200],
-            }
-        except Exception as exc:
-            elapsed = time.perf_counter() - started
-            logger.debug(
-                "test_provider_model failed provider={} model={} error_type={}",
-                provider,
-                model,
-                self._classify_error(exc),
-            )
-            return {
-                "provider": provider,
-                "model": model,
-                "litellm_model": lm_model,
-                "status": "failed",
-                "latency_s": round(elapsed, 2),
-                "parse_ok": False,
-                "error": f"{type(exc).__name__}: {exc}"[:300],
-                "error_type": self._classify_error(exc),
-                "sample": None,
-            }
+            if data is not None:
+                content = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+                return provider, model, content
+        return None
 
-    # ------------------------------------------------------- public completion APIs
+    # ------------------------------------------------------------- public API
     async def complete_json(
         self,
         prompt: str,
@@ -562,35 +347,18 @@ class LLMProvider:
             {"role": "user", "content": prompt},
         ]
         # An explicit provider selection (from the CLI/UI) is tried first (sticky),
-        # but if it fails we fall through the remaining providers in priority order
-        # instead of dropping straight to the heuristic. Only if EVERY provider fails
-        # do we surface the "all LLMs are Busy" error.
+        # but if it fails we fall through the remaining providers in priority order.
         explicit_provider = request.provider if (request and getattr(request, "provider", None)) else None
         model_override = request.planner_model if (request and getattr(request, "planner_model", None)) else None
-        chain = [(p, m) for p in self._provider_chain() for m in self._models_for(p, "planner")]
-        if explicit_provider:
-            if explicit_provider in self.providers:
-                rest = [p for p in self._provider_chain() if p != explicit_provider]
-                models = self._models_for(explicit_provider, "planner")
-                if model_override:
-                    models = [m for m in models if m != model_override]
-                    models = [model_override, *models]
-                chain = [(explicit_provider, m) for m in models] + [
-                    (p, m) for p in rest for m in self._models_for(p, "planner")
-                ]
-            else:
-                logger.warning(f"[LLM] Unknown provider {explicit_provider!r}; using default chain")
-
-        chain = self._available(chain)
+        chain = self._chain_for(explicit_provider, "planner", model_override=model_override)
 
         for provider, model in chain:
-            content = await self._litellm_complete(
-                provider=provider, model=model, messages=messages, role="planner", timeout=self.planner_timeout
-            )
-            if content is None:
+            data = await self._post_chat(provider, model, messages, timeout=self.planner_timeout, role="planner")
+            if data is None:
                 continue
+            content = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
             try:
-                result: dict[str, Any] = json.loads(self._extract_json(content))
+                result: dict[str, Any] = json.loads(_extract_json(content))
                 self.last_planner = (provider, model)
                 logger.debug("complete_json success provider={} model={}", provider, model)
                 return result
@@ -624,18 +392,15 @@ class LLMProvider:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ]
-
-        # An explicit provider selection is sticky: try only that provider's own
-        # models and never spill over to other providers (e.g. openrouter).
         chain = self._chain_for(provider_override, "worker", model_override=model_override)
-        chain = self._available(chain)
 
         for provider, model in chain:
-            content = await self._litellm_complete(provider=provider, model=model, messages=messages, role="worker")
-            if content is None:
+            data = await self._post_chat(provider, model, messages, timeout=self.timeout, role="worker")
+            if data is None:
                 continue
+            content = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
             try:
-                result: dict[str, Any] = json.loads(self._extract_json(content))
+                result: dict[str, Any] = json.loads(_extract_json(content))
                 self.last_worker = (provider, model)
                 logger.debug("complete_structured success provider={} model={}", provider, model)
                 return result
@@ -646,7 +411,6 @@ class LLMProvider:
         self.last_worker = ("fallback", "heuristic")
         return {"error": "All providers failed"}
 
-    # --------------------------------------------------- generic text / json completion
     async def complete_text(
         self,
         prompt: str,
@@ -655,102 +419,24 @@ class LLMProvider:
         provider_override: str | None = None,
     ) -> str | None:
         """Single free-text completion (no JSON parsing). Used for translation and
-        similar free-form tasks. Provider selection is sticky via provider_override."""
+        similar free-form tasks."""
         logger.debug("complete_text start role={} provider_override={}", role, provider_override)
         messages: list[dict[str, str]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
         chain = self._chain_for(provider_override, role)
-        chain = self._available(chain)
+
         for provider, model in chain:
-            content = await self._litellm_complete(provider=provider, model=model, messages=messages, role=role)
+            data = await self._post_chat(provider, model, messages, timeout=self.timeout, role=role)
+            if data is None:
+                continue
+            content = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
             if content:
                 logger.debug("complete_text success provider={} model={}", provider, model)
                 return content
         logger.warning("complete_text failed for all providers role={}", role)
         return None
-
-    async def extract_json(
-        self,
-        prompt: str,
-        system_prompt: str,
-        role: str = "worker",
-        provider_override: str | None = None,
-    ) -> dict[str, Any]:
-        """Single JSON completion with an explicit system prompt (no worker-type
-        lookup). Used to structure crawled/translated text. Sticky provider."""
-        logger.debug("extract_json start role={} provider_override={}", role, provider_override)
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
-        ]
-        chain = self._chain_for(provider_override, role)
-        chain = self._available(chain)
-        for provider, model in chain:
-            content = await self._litellm_complete(provider=provider, model=model, messages=messages, role=role)
-            if content is None:
-                continue
-            try:
-                result: dict[str, Any] = json.loads(self._extract_json(content))
-                logger.debug("extract_json success provider={} model={}", provider, model)
-                return result
-            except Exception as exc:
-                logger.warning(f"[LLM] extract_json parse failed {provider}/{model}: {exc}")
-                continue
-        logger.error("[LLM] extract_json failed for all providers")
-        return {}
-
-    # --------------------------------------------------------- tool-calling completion
-    async def _litellm_complete_with_tools(
-        self,
-        provider: str,
-        model: str,
-        messages: list[dict[str, str]],
-        tools: list[dict[str, Any]],
-        timeout: int | None = None,
-        tool_choice: str | dict[str, Any] = "auto",
-        role: str = "worker",
-    ):
-        lm_model, base_url = self._litellm_model_and_base(provider, model)
-        api_key = self._api_key_for(provider)
-        if base_url and not api_key:
-            api_key = "sk-noauth"
-        logger.info("[LLM] tool-call start provider={} model={} role={} api_key=<set>", provider, lm_model, role)
-        started = time.perf_counter()
-        try:
-            response = await acompletion(
-                model=lm_model,
-                messages=messages,
-                api_base=base_url,
-                api_key=api_key,
-                timeout=timeout or self.timeout,
-                temperature=0,
-                num_retries=0,
-                tools=tools,
-                tool_choice=tool_choice,
-            )
-            elapsed = time.perf_counter() - started
-            usage = getattr(response, "usage", None)
-            self._record(
-                provider,
-                model,
-                role,
-                elapsed,
-                getattr(usage, "prompt_tokens", 0) or 0,
-                getattr(usage, "completion_tokens", 0) or 0,
-                getattr(usage, "total_tokens", 0) or 0,
-                True,
-                None,
-            )
-            return response
-        except Exception as exc:
-            elapsed = time.perf_counter() - started
-            error_type = self._classify_error(exc)
-            self._record(provider, model, role, elapsed, 0, 0, 0, False, error_type)
-            self._mark_down(provider, error_type)
-            logger.warning(f"[LLM] {provider}/{model} tool-call failed in {elapsed:.1f}s: {exc}")
-            return None
 
     async def complete_with_tools(
         self,
@@ -776,12 +462,10 @@ class LLMProvider:
             max_tool_rounds,
             force_tool_first,
         )
-        # Explicit provider selection is sticky: try only that provider's models.
         chain = self._chain_for(provider_override, role, model_override=model_override)
-        chain = self._available(chain)
 
         for provider, model in chain:
-            messages = [
+            messages: list[dict[str, Any]] = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ]
@@ -794,27 +478,33 @@ class LLMProvider:
                     if (force_tool_first and round_idx == 0)
                     else "auto"
                 )
-                response = await self._litellm_complete_with_tools(
-                    provider, model, messages, tools, tool_choice=tool_choice, role=role
+                data = await self._post_chat(
+                    provider, model, messages, timeout=self.timeout, role=role, tools=tools, tool_choice=tool_choice
                 )
-                if response is None:
+                if data is None:
                     break
-                msg = response.choices[0].message
-                tool_calls = getattr(msg, "tool_calls", None)
+                msg = (data.get("choices") or [{}])[0].get("message", {})
+                tool_calls = msg.get("tool_calls") or []
                 if tool_calls:
                     messages.append(msg)
                     for tc in tool_calls:
-                        fn = tc.function
+                        fn = tc.get("function", {})
                         try:
-                            args = json.loads(fn.arguments) if isinstance(fn.arguments, str) else fn.arguments
+                            args = json.loads(fn.get("arguments") or "{}")
                         except Exception:
                             args = {}
-                        if fn.name == "calculator":
+                        if fn.get("name") == "calculator":
                             result = run_calculator(args)
                         else:
-                            result = {"error": f"unknown tool {fn.name}"}
+                            result = {"error": f"unknown tool {fn.get('name')}"}
                         records.append(result)
-                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result)})
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tc.get("id"),
+                                "content": json.dumps(result),
+                            }
+                        )
                     logger.debug(
                         "complete_with_tools round={} tool_calls={} records={}",
                         round_idx,
@@ -822,10 +512,10 @@ class LLMProvider:
                         len(records),
                     )
                     continue
-                content = msg.content or ""
+                content = msg.get("content") or ""
                 self.last_worker = (provider, model)
                 try:
-                    parsed = json.loads(self._extract_json(content))
+                    parsed = json.loads(_extract_json(content))
                     logger.debug(
                         "complete_with_tools success provider={} model={} records={}", provider, model, len(records)
                     )
@@ -835,32 +525,3 @@ class LLMProvider:
         logger.error(f"[LLM] All tool-calling providers failed for {role}")
         self.last_worker = ("fallback", "heuristic")
         return {"error": "All providers failed"}, []
-
-    # --------------------------------------------------------------- heuristic fallback
-    def _fallback_json(self, prompt: str, request: PlanningRequest | None) -> dict[str, Any]:
-        logger.info("_fallback_json start destination={}", request.destination if request else None)
-        interests = (request.interests if request else None) or ["landmarks", "food", "walks"]
-        days = request.trip_length_days if request else 1
-        itinerary = []
-        for day in range(1, days + 1):
-            theme = interests[(day - 1) % len(interests)].title()
-            itinerary.append(
-                {
-                    "day": day,
-                    "theme": f"{theme} in {request.destination if request else 'destination'}",
-                    "morning": [f"Explore a {theme.lower()} anchor area."],
-                    "afternoon": [f"Visit a second {theme.lower()} venue and lunch nearby."],
-                    "evening": ["Wrap with a scenic walk and local dinner."],
-                    "meals": ["Breakfast near hotel", "Lunch in activity zone", "Dinner in lively district"],
-                    "logistics": ["Use one neighborhood cluster per half day."],
-                }
-            )
-        return {
-            "overview": f"A {days}-day {request.destination if request else ''} itinerary balanced around {', '.join(interests)}.",
-            "itinerary": itinerary,
-            "practical_tips": [
-                "Reconfirm hours for reservation-heavy attractions.",
-                "Keep weather-flexible indoor alternatives ready.",
-            ],
-            "citations": [],
-        }
