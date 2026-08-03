@@ -1,3 +1,9 @@
+import asyncio
+
+import httpx
+import pytest
+
+from agentic_tour_planner.llm import provider as provider_module
 from agentic_tour_planner.llm.provider import LLMProvider
 
 
@@ -107,3 +113,71 @@ def test_gateway_error_content_is_detected():
     assert _is_gateway_error_content("Streaming response failed: [503] The request queue is full.")
     assert _is_gateway_error_content("The upstream server is busy. Please retry.")
     assert not _is_gateway_error_content("Gangtok is a beautiful hill station.")
+
+
+class _FakeResponse:
+    def __init__(self, content: str, status: int = 200):
+        self.content = content
+        self.status_code = status
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError("err", request=httpx.Request("POST", "http://fake"), response=None)
+
+    def json(self) -> dict:
+        return {"choices": [{"message": {"content": self.content}}]}
+
+
+class _FakeAsyncClient:
+    """Minimal httpx.AsyncClient replacement. ``post`` may sleep to simulate a
+    gateway that keeps the connection open but never finishes the body."""
+
+    def __init__(self, response: _FakeResponse, delay: float = 0.0):
+        self.response = response
+        self.delay = delay
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return None
+
+    async def post(self, *args, **kwargs):
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        return self.response
+
+
+@pytest.mark.asyncio
+async def test_hard_deadline_cuts_off_trickling_gateway(monkeypatch):
+    """A gateway that accepts the request but never completes the body must be
+    cut off at the deadline (httpx per-chunk timeouts would never fire)."""
+    provider = LLMProvider()
+    fake = _FakeAsyncClient(_FakeResponse("{}"), delay=5.0)
+    monkeypatch.setattr(provider_module.httpx, "AsyncClient", lambda **_: fake)
+
+    import time
+
+    start = time.monotonic()
+    result = await provider._post_chat("agnes", "agnes-2.0-flash", [{"role": "user", "content": "hi"}], timeout=0.3)
+    elapsed = time.monotonic() - start
+    assert result is None
+    assert elapsed < 2.0  # far below the fake 5s sleep: the deadline cut it off
+    assert not provider._provider_available("agnes")  # marked down
+
+
+@pytest.mark.asyncio
+async def test_empty_content_marks_provider_down(monkeypatch):
+    """HTTP 200 with an empty body is a failure: fail over instead of wasting
+    the next provider's patience on an unparseable response."""
+    provider = LLMProvider()
+    fake = _FakeAsyncClient(_FakeResponse(""))
+    monkeypatch.setattr(provider_module.httpx, "AsyncClient", lambda **_: fake)
+    result = await provider._post_chat("agnes", "agnes-2.0-flash", [{"role": "user", "content": "hi"}], timeout=5)
+    assert result is None
+    assert not provider._provider_available("agnes")
+    assert provider._failures.get("agnes") == 1
+
+
+def test_timeout_error_classified_as_timeout():
+    assert LLMProvider._classify_error(TimeoutError()) == "timeout"

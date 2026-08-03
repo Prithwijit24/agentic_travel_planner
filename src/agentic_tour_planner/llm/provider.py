@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from typing import Any
@@ -184,7 +185,7 @@ class LLMProvider:
     @staticmethod
     def _classify_error(exc: Exception) -> str:
         """Map an exception to a coarse error class for cooldown decisions."""
-        if isinstance(exc, httpx.TimeoutException):
+        if isinstance(exc, httpx.TimeoutException | TimeoutError):
             return "timeout"
         if isinstance(exc, httpx.ConnectError):
             return "connection"
@@ -370,15 +371,23 @@ class LLMProvider:
 
         started = time.perf_counter()
         try:
+            # Hard total deadline: httpx's own timeout resets on every received
+            # chunk, so a gateway that trickles keepalive bytes but never finishes
+            # the response body would run far past the deadline. wait_for caps the
+            # whole exchange; the raised TimeoutError maps to "timeout" cooldown.
             async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(
-                    f"{base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                )
+
+                async def _post() -> httpx.Response:
+                    return await client.post(
+                        f"{base_url}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                    )
+
+                response = await asyncio.wait_for(_post(), timeout=timeout)
                 response.raise_for_status()
                 data: dict[str, Any] = response.json()
             elapsed = time.perf_counter() - started
@@ -393,6 +402,15 @@ class LLMProvider:
                 logger.warning(
                     f"[LLM] {provider}/{model} returned gateway error content in {elapsed:.1f}s: {content[:120]!r}"
                 )
+                return None
+            if not content.strip():
+                # HTTP 200 with an empty body: the gateway accepted the request
+                # but returned nothing. Parsing it would fail anyway ("Expecting
+                # value: line 1 column 1") AFTER burning the full timeout, so
+                # treat it as a failure now and fail over to the next provider.
+                self._record(provider, model, role, elapsed, usage, False, "server_busy")
+                self._mark_down(provider, "server_busy")
+                logger.warning(f"[LLM] {provider}/{model} returned EMPTY content in {elapsed:.1f}s; marking down")
                 return None
             self._record(provider, model, role, elapsed, usage, True, None)
             self._mark_up(provider)
