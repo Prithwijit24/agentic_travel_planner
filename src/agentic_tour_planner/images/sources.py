@@ -6,6 +6,7 @@ functions catch exceptions and return an empty list (never raise).
 
 from __future__ import annotations
 
+from typing import Any
 from urllib.parse import quote
 
 import httpx
@@ -22,6 +23,15 @@ _WIKIPEDIA_REST = "https://en.wikipedia.org/api/rest_v1/page/summary"
 _OPENVERSE_API = "https://api.openverse.org/v1/images"
 
 
+def _sanitize_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
+
 def _make_candidate(
     url: str,
     source: str,
@@ -35,8 +45,8 @@ def _make_candidate(
     return ImageCandidate(
         url=url,
         source=source,
-        width=width,
-        height=height,
+        width=_sanitize_int(width),
+        height=_sanitize_int(height),
         license=license_name,
         attribution=attribution,
         verified=verified,

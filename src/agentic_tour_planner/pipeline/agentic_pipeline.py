@@ -277,11 +277,16 @@ class AgenticTourPlannerPipeline:
                         min_per_day=3,
                         max_per_day=5,
                     )
+                    origin = None
+                    if request.origin:
+                        try:
+                            parts = request.origin.split(",")
+                            origin = (float(parts[0]), float(parts[1]))
+                        except (ValueError, IndexError):
+                            pass
                     clusters = order_days_and_stops(
                         clusters,
-                        origin=(float(request.origin.split(",")[0]), float(request.origin.split(",")[1]))
-                        if request.origin
-                        else None,
+                        origin=origin,
                     )
                     # Reassign spots to days, preserving original day structure
                     for d_idx, cluster in enumerate(clusters):

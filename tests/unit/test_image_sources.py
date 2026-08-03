@@ -9,6 +9,8 @@ import pytest
 
 from agentic_tour_planner.images.models import ImageCandidate
 from agentic_tour_planner.images.sources import (
+    _make_candidate,
+    _sanitize_int,
     fetch_stock,
     fetch_wikidata,
     fetch_wikipedia,
@@ -131,3 +133,63 @@ async def test_fetch_stock_returns_empty_without_keys():
         candidates = await fetch_stock("Paris")
 
     assert candidates == []
+
+
+class TestSanitizeInt:
+    def test_none_returns_none(self):
+        assert _sanitize_int(None) is None
+
+    def test_empty_string_returns_none(self):
+        assert _sanitize_int("") is None
+
+    def test_valid_int_returns_int(self):
+        assert _sanitize_int(800) == 800
+
+    def test_string_int_returns_int(self):
+        assert _sanitize_int("800") == 800
+
+    def test_invalid_string_returns_none(self):
+        assert _sanitize_int("abc") is None
+
+    def test_float_returns_int(self):
+        assert _sanitize_int(800.0) == 800
+
+
+class TestMakeCandidateSanitization:
+    def test_empty_string_width_height_becomes_none(self):
+        candidate = _make_candidate(
+            url="https://example.com/img.jpg",
+            source="test",
+            width="",
+            height="",
+        )
+        assert candidate.width is None
+        assert candidate.height is None
+
+    def test_string_int_width_height_converted(self):
+        candidate = _make_candidate(
+            url="https://example.com/img.jpg",
+            source="test",
+            width="800",
+            height="600",
+        )
+        assert candidate.width == 800
+        assert candidate.height == 600
+
+    def test_none_width_height_stays_none(self):
+        candidate = _make_candidate(
+            url="https://example.com/img.jpg",
+            source="test",
+        )
+        assert candidate.width is None
+        assert candidate.height is None
+
+    def test_int_width_height_preserved(self):
+        candidate = _make_candidate(
+            url="https://example.com/img.jpg",
+            source="test",
+            width=800,
+            height=600,
+        )
+        assert candidate.width == 800
+        assert candidate.height == 600
