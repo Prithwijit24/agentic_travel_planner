@@ -505,3 +505,72 @@ DETAILED_SYSTEM_PROMPT = dedent(
     and the temple is open daily from 9:00 AM to 5:00 PM."
     """
 ).strip()
+
+
+# ---------------------------------------------------------------------------
+# Day realignment: regenerate the day-level narrative (theme, summary, hotel)
+# AFTER the deterministic solver has fixed which places belong to which day.
+# The LLM's original theme/summary/hotel described its own (possibly wrong)
+# day composition; this pass makes header, narrative and accommodation match
+# the FINAL place list exactly.
+# ---------------------------------------------------------------------------
+
+DAY_REALIGN_SYSTEM_PROMPT = dedent(
+    """
+    You are a travel itinerary editor. You are given the FINAL, confirmed list of
+    places for a single day of a trip. These places are fixed — do NOT add, remove,
+    rename or reorder them, and do NOT invent new places.
+
+    Produce ONLY valid JSON (no prose, no markdown fences) with exactly these keys:
+    {
+      "theme": "short day title, 2-6 words, capturing the day's area and character",
+      "summary": "1-2 sentence narrative that mentions every place in the given list",
+      "hotel_recommendation": "where to stay that night: a neighborhood/area that is
+        central to THIS day's places, plus one concrete example hotel style or name
+        suited to the trip's budget",
+      "needs_hotel_change": true or false
+    }
+
+    Rules:
+    - The summary MUST reference every place in the day's list by name.
+    - The hotel must be located near THIS day's places — never near a previous or
+      next day's places.
+    - needs_hotel_change must be true ONLY when the day's places are in a different
+      area than the previous day's places (the previous day's area is given for
+      context). For the first day it is always false.
+    """
+).strip()
+
+
+def build_day_realign_prompt(
+    request: PlanningRequest,
+    day_num: int,
+    day_places: list[str],
+    prev_day_places: list[str],
+    budget_level: str | None = None,
+) -> str:
+    """Build the prompt that realigns one day's theme/summary/hotel with the
+    solver's FINAL place list for that day.
+
+    ``day_places`` and ``prev_day_places`` are already-final place names (never
+    logistics labels). The model must only write narrative around them.
+    """
+    logger.debug(f"build_day_realign_prompt day={day_num} places={len(day_places)} prev_places={len(prev_day_places)}")
+    places_block = "\n".join(f"- {name}" for name in day_places) or "- (no places)"
+    prev_block = "\n".join(f"- {name}" for name in prev_day_places) or "- (first day / no previous)"
+
+    return dedent(
+        f"""
+        Destination: {request.destination}
+        Day number: {day_num}
+        Budget level: {budget_level or request.budget_level or "midrange"}
+
+        FINAL places for Day {day_num} (FIXED — write the narrative around exactly these):
+        {places_block}
+
+        Previous day's places (context for needs_hotel_change only):
+        {prev_block}
+
+        Return ONLY the JSON object described in your instructions.
+        """
+    ).strip()

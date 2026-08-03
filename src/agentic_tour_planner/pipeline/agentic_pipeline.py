@@ -23,10 +23,16 @@ from agentic_tour_planner.domain.models import (
     TransportOption,
 )
 from agentic_tour_planner.llm.provider import LLMProvider, LLMUnavailableError
-from agentic_tour_planner.pipeline.day_clustering import capacitated_geo_cluster, order_days_and_stops
+from agentic_tour_planner.pipeline.day_clustering import (
+    capacitated_geo_cluster,
+    haversine,
+    order_days_and_stops,
+)
 from agentic_tour_planner.pipeline.place_constraints import enforce_minimum_daily_spots
 from agentic_tour_planner.pipeline.prompts import (
+    DAY_REALIGN_SYSTEM_PROMPT,
     DETAILED_SYSTEM_PROMPT,
+    build_day_realign_prompt,
     build_detailed_places_prompt,
     build_itinerary_prompt,
 )
@@ -321,6 +327,15 @@ class AgenticTourPlannerPipeline:
 
             logger.debug(f"Parsed {len(itinerary)} itinerary days.")
 
+        # --- Realign day narrative (theme/summary/hotel) with FINAL spots ----
+        # The solver above may have moved places between days. The LLM's original
+        # theme/summary/hotel describe its own (pre-solver) day composition, so
+        # regenerate them from the final per-day place list. Falls back to a
+        # deterministic derivation when the LLM pass fails.
+        if itinerary:
+            async with self.profiler.atrack("Realign Day Narrative"):
+                await self._realign_day_narratives(request, itinerary)
+
         async with self.profiler.atrack("Transport Options"):
             raw_transport = plan_json.get("transport_options", []) or []
             transport_options = [
@@ -470,6 +485,114 @@ class AgenticTourPlannerPipeline:
         else:
             logger.warning("Detailed places generation returned no usable 'days'.")
         return detailed
+
+    # ------------------------------------------------------------- day realignment
+    async def _realign_day_narratives(self, request: PlanningRequest, itinerary: list[DayPlan]) -> None:
+        """Regenerate each day's theme/summary/hotel from the FINAL place list.
+
+        The deterministic solver may have moved places between days after the
+        LLM wrote its original day narrative. This pass makes the page header,
+        narrative paragraph and accommodation match the places actually shown.
+        Falls back to a deterministic derivation per day when the LLM fails.
+        """
+        if not itinerary:
+            return
+
+        day_numbers = [d.day for d in itinerary]
+        concurrency = max(1, min(4, len(day_numbers)))
+
+        async def _one(idx: int) -> None:
+            day = itinerary[idx]
+            day_places = [s.name for s in day.spots if s.name]
+            if not day_places:
+                return
+            prev_places = [s.name for s in itinerary[idx - 1].spots if s.name] if idx > 0 else []
+            prompt = build_day_realign_prompt(
+                request,
+                day_num=day.day,
+                day_places=day_places,
+                prev_day_places=prev_places,
+                budget_level=request.budget_level,
+            )
+            try:
+                result = await self.llm_provider.complete_json(
+                    prompt,
+                    request,
+                    system_prompt=DAY_REALIGN_SYSTEM_PROMPT,
+                )
+                if result:
+                    self._apply_realign(day, result)
+                    logger.debug(
+                        "Day realign ok day={} theme={!r} hotel={!r}", day.day, day.theme, day.hotel_recommendation
+                    )
+                    return
+            except Exception as exc:
+                logger.warning(f"Day realign LLM failed for day {day.day}: {exc}")
+            self._fallback_day_realign(request, itinerary, idx)
+
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def _guarded(idx: int) -> None:
+            async with semaphore:
+                await _one(idx)
+
+        await asyncio.gather(*(_guarded(i) for i in range(len(itinerary))))
+
+    @staticmethod
+    def _apply_realign(day: DayPlan, result: dict[str, Any]) -> None:
+        """Copy the realigned narrative fields onto the day, keeping the spots
+        (and everything else) untouched. Values that parse cleanly win; anything
+        malformed is ignored so we never degrade a good field."""
+        if isinstance(result.get("theme"), str) and result["theme"].strip():
+            day.theme = result["theme"].strip()
+        if isinstance(result.get("summary"), str) and result["summary"].strip():
+            day.summary = result["summary"].strip()
+        if isinstance(result.get("hotel_recommendation"), str) and result["hotel_recommendation"].strip():
+            day.hotel_recommendation = result["hotel_recommendation"].strip()
+        if isinstance(result.get("needs_hotel_change"), bool):
+            day.needs_hotel_change = result["needs_hotel_change"]
+
+    def _fallback_day_realign(self, request: PlanningRequest, itinerary: list[DayPlan], idx: int) -> None:
+        """Deterministic derivation of theme/summary/hotel from the day's spots.
+
+        No LLM involved: the day's area anchor is its first spot (TSP-ordered),
+        and a hotel change is flagged only when the day's centroid moved far
+        from the previous day's centroid.
+        """
+        day = itinerary[idx]
+        spots = [s for s in day.spots if s.name]
+        if not spots:
+            return
+        anchor = spots[0].name
+        others = ", ".join(s.name for s in spots[1:3])
+        day.theme = f"{request.destination}: {anchor}" + (f" & {others}" if others else "")
+        day.summary = (
+            f"Day {day.day} covers {anchor}"
+            + (f" and nearby highlights including {others}." if others else ".")
+            + " Grouped for minimal travel time between stops."
+        )
+        day.hotel_recommendation = f"Stay centrally in the {anchor} area so morning and evening stops are walkable."
+        day.needs_hotel_change = self._day_centroid_moved(itinerary, idx)
+
+    @staticmethod
+    def _day_centroid_moved(itinerary: list[DayPlan], idx: int, threshold_km: float = 20.0) -> bool:
+        """True when this day's spot centroid is > threshold_km from the previous
+        day's centroid (a hotel change is then warranted)."""
+        if idx == 0:
+            return False
+
+        def _centroid(day: DayPlan) -> tuple[float, float] | None:
+            lats = [s.lat for s in day.spots if s.lat is not None and s.lon is not None]
+            lons = [s.lon for s in day.spots if s.lat is not None and s.lon is not None]
+            if not lats:
+                return None
+            return sum(lats) / len(lats), sum(lons) / len(lons)
+
+        cur = _centroid(itinerary[idx])
+        prev = _centroid(itinerary[idx - 1])
+        if cur is None or prev is None:
+            return False
+        return haversine(prev, cur) > threshold_km
 
     def _fallback_plan(self, request: PlanningRequest) -> dict:
         """Generate a basic plan when LLM fails."""
