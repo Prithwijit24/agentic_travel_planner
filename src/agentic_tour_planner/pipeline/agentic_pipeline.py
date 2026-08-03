@@ -262,13 +262,23 @@ class AgenticTourPlannerPipeline:
             # --- Deterministic day clustering (replaces LLM-based assignment) ---
             try:
                 all_pois: list[dict] = []
+                skipped_no_coords = 0
                 for day in itinerary:
                     for spot in day.spots:
                         poi: dict = {"name": spot.name}
                         if spot.lat is not None and spot.lon is not None:
                             poi["lat"] = spot.lat
                             poi["lon"] = spot.lon
-                        all_pois.append(poi)
+                            all_pois.append(poi)
+                        else:
+                            skipped_no_coords += 1
+
+                if skipped_no_coords:
+                    logger.warning(
+                        f"Day clustering: {skipped_no_coords} POI(s) skipped "
+                        f"due to missing coordinates. "
+                        f"Using {len(all_pois)} POIs with coordinates."
+                    )
 
                 if all_pois and len(all_pois) >= request.trip_length_days * 3:
                     clusters = capacitated_geo_cluster(

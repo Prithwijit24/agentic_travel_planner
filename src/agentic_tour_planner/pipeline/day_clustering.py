@@ -112,7 +112,14 @@ def capacitated_geo_cluster(
             f"Valid range is [{min_per_day * num_days}, {max_per_day * num_days}] POIs."
         )
 
-    points = [(p["lat"], p["lon"]) for p in pois]
+    points = []
+    for p in pois:
+        if "lat" not in p or "lon" not in p:
+            raise ValueError(
+                f"POI {p.get('name', 'unknown')} is missing 'lat' or 'lon' key. "
+                f"All POIs must have both 'lat' and 'lon' keys."
+            )
+        points.append((p["lat"], p["lon"]))
 
     sorted_idx = sorted(range(n), key=lambda i: (points[i][0] + points[i][1]))
     seed_idx = [sorted_idx[int(i * (n - 1) / max(num_days - 1, 1))] for i in range(num_days)]
