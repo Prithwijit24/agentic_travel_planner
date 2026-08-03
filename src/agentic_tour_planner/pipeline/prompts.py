@@ -109,8 +109,9 @@ def build_itinerary_prompt(
 
     transport_mode = request.transport_mode or "unspecified"
     transport_rule = (
-        "TRANSPORT: The traveller will use their OWN CAR. Keep transport notes brief (parking, "
-        "driving times) and do NOT populate transport_options."
+        "TRANSPORT: The traveller will use their OWN CAR. Include transport_options with realistic options "
+        "(rental car, taxi, ride-hailing, parking, tolls). For each option provide: mode, description, "
+        "fare (with currency), and notes about availability or restrictions."
         if transport_mode == "car"
         else (
             "TRANSPORT: The traveller will use PUBLIC TRANSPORT. Populate a top-level "
@@ -118,7 +119,8 @@ def build_itinerary_prompt(
             "each: {mode, description, fare (with currency), notes}. Include all options with fares in detail."
         )
         if transport_mode == "public"
-        else "TRANSPORT: transport_mode not specified; if public transport is likely, populate transport_options with fares."
+        else "TRANSPORT: transport_mode not specified. Populate transport_options with all realistic options "
+        "(train, bus, metro, taxi, rental car, pass) with fares in local currency."
     )
 
     place_lo, place_hi = parse_place_range(request.places_per_day)

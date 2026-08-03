@@ -1477,6 +1477,7 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
         "month": request.get("month", ""),
         "budget": request.get("budget", ""),
         "travelers": request.get("travelers", 1),
+        "transport_mode": request.get("transport_mode", "unspecified"),
         "overview": plan_data.get("overview", ""),
         "booking_resources": {
             "flights": ["makemytrip", "agoda", "goibibo"],
@@ -2210,17 +2211,24 @@ elif st.session_state.plan is not None:
         st.markdown("### 🚆 Transport Options")
         transport_opts = plan.get("transport_options", [])
         if transport_opts:
+            mode = plan.get("transport_mode", "unspecified")
+            st.markdown(f"**Mode:** {mode.title()}")
+            st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
             tcols = st.columns(min(len(transport_opts), 3))
             for idx, opt in enumerate(transport_opts):
                 with tcols[idx % len(tcols)]:
                     html = f"""
-<div style="font-weight: 600; margin-bottom: 4px;">{html_escape(opt["mode"])}</div>
-<div style="font-size: 13px; color: var(--ms-blue); font-weight: 600; margin-bottom: 8px;">💵 {render_highlighted(opt["cost"])}</div>
-<div style="font-size: 13px; color: #3a3a3c; line-height: 1.5;">{render_highlighted(opt["description"])}</div>
+<div style="font-weight: 600; margin-bottom: 4px;">🚗 {html_escape(opt["mode"])}</div>
+<div style="font-size: 13px; color: var(--ms-blue); font-weight: 600; margin-bottom: 4px;">💵 {render_highlighted(opt["cost"] or "N/A")}</div>
+<div style="font-size: 13px; color: #3a3a3c; line-height: 1.5;">{render_highlighted(opt["description"] or "")}</div>
 """
+                    if opt.get("notes"):
+                        html += f'<div style="font-size: 12px; color: #888; margin-top: 4px;">📝 {html_escape(opt["notes"])}</div>'
                     st.markdown(fluent_card("Option", "cyan", clean_html(html)), unsafe_allow_html=True)
         else:
-            st.info("No transport options available.")
+            st.warning(
+                "No transport options available. This usually means the transport mode was not specified or the LLM could not generate options."
+            )
 
         st.markdown("<div style='margin-bottom: 32px;'></div>", unsafe_allow_html=True)
 

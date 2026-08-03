@@ -323,6 +323,8 @@ class AgenticTourPlannerPipeline:
                 for t in raw_transport
                 if isinstance(t, dict)
             ]
+            if not transport_options:
+                transport_options = self._fallback_transport_options(request)
 
         # Await cost estimate (ran in background)
         cost_estimate = await cost_task
@@ -486,3 +488,93 @@ class AgenticTourPlannerPipeline:
             ],
             "citations": [],
         }
+
+    def _fallback_transport_options(self, request: PlanningRequest) -> list[TransportOption]:
+        """Generate realistic transport options when the LLM doesn't produce any."""
+        mode = (request.transport_mode or "").lower()
+        dest = request.destination or ""
+        options: list[TransportOption] = []
+
+        if mode == "car":
+            options = [
+                TransportOption(
+                    mode="Rental Car",
+                    description=f"Daily rental with insurance for flexible exploration around {dest}.",
+                    fare="₹1,500-2,500/day",
+                    notes="Fuel, parking, and tolls extra. Book in advance during peak season.",
+                ),
+                TransportOption(
+                    mode="Taxi/Ride-hailing",
+                    description=f"App-based taxis for point-to-point travel around {dest}.",
+                    fare="₹15-25/km",
+                    notes="Ola and Uber available in most cities. Surge pricing during peak hours.",
+                ),
+                TransportOption(
+                    mode="Driving",
+                    description="Self-drive with personal vehicle. Parking may be limited in city centers.",
+                    fare="Fuel + parking",
+                    notes="Check parking availability at each destination. Carry valid license and documents.",
+                ),
+            ]
+        elif mode == "public":
+            options = [
+                TransportOption(
+                    mode="Metro/Subway",
+                    description=f"Fastest way to cover long distances in {dest}.",
+                    fare="₹30-60 per ride",
+                    notes="Buy a reloadable transit card for convenience. Avoid rush hours.",
+                ),
+                TransportOption(
+                    mode="Local Bus",
+                    description=f"Budget-friendly option connecting all major areas of {dest}.",
+                    fare="₹10-30 per ride",
+                    notes="Routes can be crowded. Check schedules as frequency varies.",
+                ),
+                TransportOption(
+                    mode="Auto-rickshaw",
+                    description=f"Three-wheeled shared or private transport for short distances in {dest}.",
+                    fare="₹20-50 per ride",
+                    notes="Negotiate fare before boarding or insist on meter use.",
+                ),
+                TransportOption(
+                    mode="Taxi",
+                    description=f"Metered or app-based taxis for comfortable travel in {dest}.",
+                    fare="₹15-20/km",
+                    notes="Pre-book for airport transfers. Ola and Uber widely available.",
+                ),
+            ]
+        else:
+            options = [
+                TransportOption(
+                    mode="Train",
+                    description=f"Long-distance rail connecting major cities near {dest}.",
+                    fare="₹200-800 per trip",
+                    notes="Book AC classes in advance. Check seat availability on IRCTC.",
+                ),
+                TransportOption(
+                    mode="Bus",
+                    description=f"Inter-city and local bus services around {dest}.",
+                    fare="₹50-300 per trip",
+                    notes="State-run and private operators available. Book online for long routes.",
+                ),
+                TransportOption(
+                    mode="Metro",
+                    description=f"Urban metro rail for efficient city travel in {dest}.",
+                    fare="₹30-60 per ride",
+                    notes="Check if metro serves your key destinations. Buy a travel card.",
+                ),
+                TransportOption(
+                    mode="Taxi/Ride-hailing",
+                    description=f"App-based taxis for convenient door-to-door travel in {dest}.",
+                    fare="₹15-25/km",
+                    notes="Ola, Uber, and local providers available. Expect surge pricing during peak hours.",
+                ),
+                TransportOption(
+                    mode="Auto-rickshaw",
+                    description=f"Local three-wheeled transport for short distances in {dest}.",
+                    fare="₹20-50 per ride",
+                    notes="Shared autos follow fixed routes. Private autos can be hired for point-to-point.",
+                ),
+            ]
+
+        return options

@@ -116,3 +116,66 @@ def test_map_tool_validate_address_returns_false_for_unknown():
     # Unknown location should be invalid
     result = tool.validate_address("XyzzyUnknownPlace12345")
     assert result["valid"] is False
+
+
+class TestCoordinateValidation:
+    def test_haversine_km_same_point(self):
+        assert MapTool._haversine_km((0, 0), (0, 0)) == 0.0
+
+    def test_haversine_km_known_distance(self):
+        # Kolkata to Sikkim is ~530 km
+        result = MapTool._haversine_km((22.5726, 88.3639), (27.3516, 88.3239))
+        assert 500 < result < 600
+
+    def test_validate_coordinates_no_duplicates(self):
+        tool = MapTool()
+        locations = {
+            1: [("Paris", (48.8566, 2.3522)), ("Lyon", (45.7640, 4.8357))],
+        }
+        result = tool._validate_coordinates(locations)
+        assert result == locations
+
+    def test_validate_coordinates_detects_duplicate(self):
+        tool = MapTool()
+        # Two different places with same coordinates (simulating bad geocoding)
+        locations = {
+            1: [
+                ("Kolkata", (27.3516, 88.3239)),
+                ("Sangha Chhorten", (27.3516, 88.3239)),
+            ],
+        }
+        result = tool._validate_coordinates(locations)
+        # The duplicate pair should be detected
+        assert 1 in result
+
+    def test_validate_coordinates_near_duplicate_detected(self):
+        tool = MapTool()
+        # Two places within 100m of each other (suspicious for different places)
+        locations = {
+            1: [
+                ("Place A", (27.3516, 88.3239)),
+                ("Place B", (27.3517, 88.3240)),
+            ],
+        }
+        result = tool._validate_coordinates(locations)
+        assert 1 in result
+
+    def test_validate_coordinates_preserves_none_coords(self):
+        tool = MapTool()
+        locations = {
+            1: [("Unknown", None), ("Paris", (48.8566, 2.3522))],
+        }
+        result = tool._validate_coordinates(locations)
+        assert result[1][0][1] is None
+        assert result[1][1][1] == (48.8566, 2.3522)
+
+    def test_validate_coordinates_empty_locations(self):
+        tool = MapTool()
+        result = tool._validate_coordinates({})
+        assert result == {}
+
+    def test_validate_coordinates_single_location(self):
+        tool = MapTool()
+        locations = {1: [("Paris", (48.8566, 2.3522))]}
+        result = tool._validate_coordinates(locations)
+        assert result == locations

@@ -7,6 +7,7 @@ Map rendering: OpenTopoMap (zoomed out) → CartoDB positron (mid) → MapTilesA
 
 from __future__ import annotations
 
+import math
 import time
 from typing import Any
 
@@ -267,7 +268,100 @@ class MapTool:
 
             locations[day_num] = activities
 
+        # Validate coordinates: detect duplicates and suspiciously close points
+        locations = self._validate_coordinates(locations, destination=destination)
+
         return locations
+
+    def _validate_coordinates(
+        self,
+        locations: dict[int, list[tuple[str, tuple[float, float] | None]]],
+        destination: str = "",
+    ) -> dict[int, list[tuple[str, tuple[float, float] | None]]]:
+        """Detect and fix duplicate or suspiciously close coordinates.
+
+        When different places resolve to the same or nearly the same point,
+        re-geocode without destination bias to get accurate results.
+        """
+        # Collect all resolved coordinates with their place names
+        resolved: list[tuple[str, tuple[float, float]]] = []
+        for day_activities in locations.values():
+            for name, coords in day_activities:
+                if coords is not None:
+                    resolved.append((name, coords))
+
+        if len(resolved) < 2:
+            return locations
+
+        # Find groups of places with duplicate/near-duplicate coordinates
+        duplicates: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        for i, (name_a, coords_a) in enumerate(resolved):
+            for name_b, coords_b in resolved[i + 1 :]:
+                if name_a == name_b:
+                    continue
+                dist = self._haversine_km(coords_a, coords_b)
+                if dist < 0.5:
+                    pair_key: tuple[str, str] = (min(name_a, name_b), max(name_a, name_b))
+                    duplicates.setdefault(pair_key, []).append((name_a, name_b))
+
+        if not duplicates:
+            return locations
+
+        # Re-geocode places that have duplicates without destination bias
+        fixed_locations: dict[int, list[tuple[str, tuple[float, float] | None]]] = {}
+        regeo_names: set[str] = set()
+        for pair_list in duplicates.values():
+            for n_a, n_b in pair_list:
+                regeo_names.add(n_a)
+                regeo_names.add(n_b)
+        regeo_cache: dict[str, tuple[float, float] | None] = {}
+
+        for day_num, day_activities in locations.items():
+            fixed_activities: list[tuple[str, tuple[float, float] | None]] = []
+            for name, coords in day_activities:
+                if coords is not None and name in regeo_names:
+                    # Check if this coordinate is part of a duplicate group
+                    is_duplicate = False
+                    for pair in duplicates.values():
+                        for n_a, n_b in pair:
+                            if name in (n_a, n_b):
+                                is_duplicate = True
+                                break
+                        if is_duplicate:
+                            break
+
+                    if is_duplicate and name not in regeo_cache:
+                        new_coords = self._geocode_no_bias(name)
+                        regeo_cache[name] = new_coords
+                        if new_coords and new_coords != coords:
+                            logger.info(f"Re-geocoded '{name}' without bias: {coords} -> {new_coords}")
+                            fixed_activities.append((name, new_coords))
+                        else:
+                            fixed_activities.append((name, coords))
+                    else:
+                        fixed_activities.append((name, coords))
+                else:
+                    fixed_activities.append((name, coords))
+            fixed_locations[day_num] = fixed_activities
+
+        return fixed_locations
+
+    def _geocode_no_bias(self, location: str) -> tuple[float, float] | None:
+        """Geocode without destination bias for accuracy validation."""
+        if self._google_available():
+            result = self._geocode_google(location, destination="")
+            if result:
+                return result
+        return self._geocode_nominatim(location, destination="")
+
+    @staticmethod
+    def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
+        """Great-circle distance in km between two (lat, lon) points."""
+        lat1, lon1 = map(math.radians, a)
+        lat2, lon2 = map(math.radians, b)
+        dlat, dlon = lat2 - lat1, lon2 - lon1
+        h = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+        return 2 * 6371 * math.asin(math.sqrt(h))
 
     def _geocode(self, location: str, destination: str = "") -> tuple[float, float] | None:
         """Per-place geocoding with destination-aware cache.
