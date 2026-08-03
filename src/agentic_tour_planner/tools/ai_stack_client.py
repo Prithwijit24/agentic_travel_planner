@@ -31,22 +31,28 @@ class AiStackClient:
 
         settings = get_settings()
         password = _resolve_credential(
-            getattr(settings, "ai_stack_admin_pass", None),
-            "ADMIN_PASS",
-        )
+            getattr(settings, "ai_stack_admin_pass", None), "ADMIN_PASS"
+        ) or _resolve_credential(getattr(settings, "admin_pass", None), "ADMIN_PASS")
+        # The AI Infra Stack accepts an X-API-Key for most endpoints, so prefer
+        # a dedicated key when configured; otherwise fall back to JWT login.
+        # JWT_SECRET doubles as the X-API-Key for this deployment.
+        api_key = _resolve_credential(
+            getattr(settings, "ai_stack_api_key", None) or getattr(settings, "ai_stack_token", None),
+            "AI_STACK_API_KEY",
+        ) or _resolve_credential(getattr(settings, "jwt_secret", None), "JWT_SECRET")
         timeout = getattr(settings, "ai_stack_timeout_seconds", None) or 1000.0
-        # JWT_SECRET / ai_stack_token is an API key, not a JWT — the client
-        # logs in with password to obtain a real Bearer token, so we pass
-        # token=None and let ensure_auth() handle the login flow.
         # The pipeline endpoint (search -> crawl -> rerank) can run for minutes,
         # so the client must not use the short 60s default timeout.
         self._client = ApiClient(
             base_url=getattr(settings, "ai_stack_base_url", None),
             username=getattr(settings, "ai_stack_admin_user", None),
             password=password,
+            api_key=api_key,
             timeout=timeout,
         )
         logger.info(f"AiStackClient initialized: {self._client.base_url}")
+        if api_key:
+            logger.debug("AiStackClient using X-API-Key auth")
 
     # ── lifecycle ───────────────────────────────────────────────────────
 
@@ -211,6 +217,18 @@ class AiStackClient:
             query,
             max_results=max_results,
             timelimit=timelimit,
+        )
+
+    async def videos(
+        self,
+        query: str,
+        max_results: int = 10,
+    ) -> dict:
+        """POST /videos — search YouTube videos about a topic."""
+        return await asyncio.to_thread(
+            self._client.videos,
+            query,
+            max_results=max_results,
         )
 
     # ── cache (Redis) ──────────────────────────────────────────────────

@@ -36,6 +36,7 @@ class ApiClient:
         "clip_similarity": ("POST", "/clip/similarity"),
         "images": ("POST", "/images"),
         "news": ("POST", "/news"),
+        "videos": ("POST", "/videos"),
         "rerank": ("POST", "/rerank"),
         "cache_set": ("POST", "/cache/set"),
         "cache_get": ("GET", "/cache/get/{key}"),
@@ -67,6 +68,7 @@ class ApiClient:
         username: str | None = None,
         password: str | None = None,
         token: str | None = None,
+        api_key: str | None = None,
         timeout: float = 60.0,
         transport: httpx.BaseTransport | None = None,
         client: httpx.Client | None = None,
@@ -74,6 +76,7 @@ class ApiClient:
         self.username = username or os.getenv("ADMIN_USER", DEFAULT_ADMIN_USER)
         self.password = password or os.getenv("ADMIN_PASS", "")
         self.token = token or os.getenv("AI_STACK_TOKEN", "")
+        self.api_key = api_key or os.getenv("AI_STACK_API_KEY", "")
         if client is not None:
             self._client = client
             self.base_url = str(client.base_url).rstrip("/")
@@ -102,6 +105,8 @@ class ApiClient:
     # ── low-level helpers ───────────────────────────────────────────────────
 
     def _headers(self) -> dict[str, str]:
+        if self.api_key:
+            return {"X-API-Key": self.api_key}
         return {"Authorization": f"Bearer {self.token}"} if self.token else {}
 
     def login(self) -> dict:
@@ -115,6 +120,8 @@ class ApiClient:
         return data
 
     def ensure_auth(self) -> None:
+        if self.api_key:
+            return
         if not self.token:
             self.login()
 
@@ -122,7 +129,7 @@ class ApiClient:
         headers = dict(kwargs.pop("headers", {}))
         if authed:
             self.ensure_auth()
-            headers.setdefault("Authorization", f"Bearer {self.token}")
+            headers.update(self._headers())
         resp = self._client.request(method, path, headers=headers, **kwargs)
         resp.raise_for_status()
         return cast(dict[Any, Any], resp.json())
@@ -296,6 +303,13 @@ class ApiClient:
         if timelimit is not None:
             body["timelimit"] = timelimit
         return self._request("POST", "/news", json=body)
+
+    def videos(self, query: str, max_results: int = 10) -> dict:
+        """POST /videos — search YouTube videos about a topic.
+
+        Returns ``{"results": [...]}`` with title, url, publisher, duration, views.
+        """
+        return self._request("POST", "/videos", json={"query": query, "max_results": max_results})
 
     def rerank(self, query: str, documents: list[str], top_k: int | None = None) -> dict:
         body: dict[str, Any] = {"query": query, "documents": documents}

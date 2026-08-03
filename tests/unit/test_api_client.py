@@ -146,6 +146,25 @@ class TestApiClientAuth:
         client.token = ""
         assert client._headers() == {}
 
+    def test_headers_with_api_key(self):
+        client, _ = _make_client(api_key="key123")
+        assert client._headers() == {"X-API-Key": "key123"}
+
+    def test_ensure_auth_skips_login_when_api_key_set(self):
+        client, mock_client = _make_client(api_key="key123")
+        client.ensure_auth()
+        assert client.token == ""
+        mock_client.request.assert_not_called()
+        mock_client.post.assert_not_called()
+
+    def test_request_uses_x_api_key_header(self):
+        client, mock_client = _make_client(api_key="key123")
+        mock_client.request.return_value = _mock_response({"ok": True})
+        client.search("test query")
+        _, kwargs = mock_client.request.call_args
+        assert kwargs["headers"]["X-API-Key"] == "key123"
+        assert "Authorization" not in kwargs["headers"]
+
 
 # ── core endpoints ───────────────────────────────────────────────────
 
@@ -212,6 +231,17 @@ class TestApiClientCore:
         result = client.rerank("query", ["doc1", "doc2"], top_k=1)
         body = mock_client.request.call_args[1]["json"]
         assert body["top_k"] == 1
+
+    def test_videos(self):
+        client, mock_client = _make_client(token="tok")
+        mock_client.request.return_value = _mock_response({"results": []})
+        result = client.videos("Gangtok travel", max_results=5)
+        body = mock_client.request.call_args[1]["json"]
+        assert body["query"] == "Gangtok travel"
+        assert body["max_results"] == 5
+
+    def test_videos_in_endpoint_index(self):
+        assert ApiClient.ENDPOINT_INDEX["videos"] == ("POST", "/videos")
 
     def test_cache_set_get_delete(self):
         client, mock_client = _make_client(token="tok")

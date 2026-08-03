@@ -26,6 +26,7 @@ def _mock_api_client(**overrides):
     mock.news.return_value = {
         "articles": [{"title": "Test News", "url": "http://news.example.com", "source": "test", "snippet": "..."}]
     }
+    mock.videos.return_value = {"results": []}
     mock.rerank.return_value = {"ranked": []}
     mock.cache_get.return_value = {"value": {"key": "val"}}
     mock.cache_set.return_value = {"ok": True}
@@ -100,6 +101,22 @@ class TestAiStackClientInit:
             )
             c = AiStackClient()
         assert c._client._client.timeout == httpx.Timeout(1000.0)
+
+    def test_api_key_resolved_from_jwt_secret(self):
+        with patch("agentic_tour_planner.tools.ai_stack_client.get_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(
+                ai_stack_base_url="http://localhost:8000",
+                ai_stack_admin_user="admin",
+                ai_stack_admin_pass="pass",
+                ai_stack_token="",
+                ai_stack_api_key="",
+                ai_stack_timeout_seconds=1000.0,
+                admin_pass="env-pass",
+                jwt_secret="fake-jwt-secret-for-tests",
+            )
+            c = AiStackClient()
+        assert c._client.api_key == "fake-jwt-secret-for-tests"
+        assert c._client.password == "pass"
 
 
 # ── lifecycle ────────────────────────────────────────────────────────
@@ -270,6 +287,16 @@ class TestAiStackClientCLIP:
             "tokyo",
             max_results=5,
             timelimit="m",
+        )
+
+    @pytest.mark.asyncio
+    async def test_videos(self, client_with_mock):
+        c, mock_api = client_with_mock
+        mock_api.videos.return_value = {"results": [{"title": "Video"}]}
+        await c.videos("gangtok", max_results=3)
+        mock_api.videos.assert_called_once_with(
+            "gangtok",
+            max_results=3,
         )
 
 

@@ -14,6 +14,9 @@ ai_stack_base_url: "https://aistackapi.duckdns.org"
 ai_stack_admin_user: "admin"
 ai_stack_admin_pass: ""
 ai_stack_token: ""
+# X-API-Key for AI Infra Stack requests. When empty, the client falls back to
+# JWT_SECRET (works for this deployment) and then to admin login.
+ai_stack_api_key: ""
 # Client-side request timeout in seconds (server-side cap is 1000s).
 # Pipeline (search -> crawl -> rerank) can take minutes, so don't use the
 # old 60s default here.
