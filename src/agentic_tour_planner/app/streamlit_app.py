@@ -1361,6 +1361,14 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
             return False
         return not ("optional place" in n_lower or re.search(r"\d", n))
 
+    def _text(*values) -> str:
+        # LLM JSON may carry nulls for known keys (defaults in .get() only apply
+        # to MISSING keys), so coerce the first non-empty value to a safe string.
+        for v in values:
+            if v:
+                return str(v)
+        return ""
+
     display_itinerary = []
 
     for day in itinerary:
@@ -1372,20 +1380,23 @@ def _plan_to_display_dict(plan_data: dict, request: dict) -> dict:
             if not _is_real_place(spot_name):
                 continue
             det = day_detailed.get(spot_name, {})
-            desc = det.get("description") or spot.get("description", "")
-            key_note = det.get("key_note") or spot.get("history", "") or spot.get("description", "")[:120]
+
+            desc = _text(det.get("description"), spot.get("description"))
+            key_note = _text(det.get("key_note"), spot.get("history"), spot.get("description"))[:120]
             opening_hours = (
-                det.get("opening_closing")
-                or f"{spot.get('opening_hours', '')} \u2013 {spot.get('closing_hours', '')}".strip(" \u2013")
+                _text(
+                    det.get("opening_closing"),
+                    f"{spot.get('opening_hours', '')} \u2013 {spot.get('closing_hours', '')}".strip(" \u2013"),
+                )
                 or "Not available"
             )
-            transport_text = det.get("transport") or spot.get("transport") or "Local transport"
+            transport_text = _text(det.get("transport"), spot.get("transport")) or "Local transport"
             spots.append(
                 {
                     "name": spot_name,
                     "description": desc,
                     "hours": opening_hours,
-                    "best_time": det.get("best_time") or spot.get("best_time", ""),
+                    "best_time": _text(det.get("best_time"), spot.get("best_time")),
                     "transport": transport_text,
                     "key_note": key_note,
                     "keywords": det.get("keywords") or [],
@@ -2138,7 +2149,8 @@ elif st.session_state.plan is not None:
 
     elif menu_choice == "💡 Budget & Tips":
         st.markdown("### 💰 Cost Estimate")
-        overall = plan.get("cost_estimate", {}).get("overall", {})
+        cost_estimate = plan.get("cost_estimate") or {}
+        overall = cost_estimate.get("overall") or {}
         bc1, bc2, bc3 = st.columns(3)
         with bc1:
             st.markdown(
@@ -2169,31 +2181,34 @@ elif st.session_state.plan is not None:
             )
 
         st.markdown("#### Daily Breakdown")
-        for daily in plan["cost_estimate"].get("daily", []):
+        for daily in cost_estimate.get("daily") or []:
             d_html = f"""
 <div style="display: flex; justify-content: space-between; align-items: center;">
-<span style="font-size: 14px; color: #3a3a3c;">{daily["breakdown"]}</span>
-<span style="font-size: 16px; font-weight: 700; color: var(--ms-teal); white-space: nowrap; margin-left: 16px;">{daily["subtotal"]}</span>
+<span style="font-size: 14px; color: #3a3a3c;">{daily.get("breakdown", "")}</span>
+<span style="font-size: 16px; font-weight: 700; color: var(--ms-teal); white-space: nowrap; margin-left: 16px;">{daily.get("subtotal", "")}</span>
 </div>
 """
-            st.markdown(fluent_card(f"Day {daily['day']} Costs", "gold", clean_html(d_html)), unsafe_allow_html=True)
+            st.markdown(
+                fluent_card(f"Day {daily.get('day', '')} Costs", "gold", clean_html(d_html)), unsafe_allow_html=True
+            )
 
         st.markdown("### 💡 Practical Tips")
         tips_html = "<ul style='padding-left: 20px; margin: 0;'>"
-        for tip in plan["practical_tips"]:
+        for tip in plan.get("practical_tips") or []:
             tips_html += (
                 f"<li style='font-size: 14px; color: #3a3a3c; margin-bottom: 10px;'>{render_highlighted(tip)}</li>"
             )
         tips_html += "</ul>"
         st.markdown(
-            fluent_card(f"Tips for {plan['destination']}", "purple", clean_html(tips_html)), unsafe_allow_html=True
+            fluent_card(f"Tips for {plan.get('destination', '')}", "purple", clean_html(tips_html)),
+            unsafe_allow_html=True,
         )
 
     elif menu_choice == "🚇 Resources":
         st.markdown("### 📚 Sources & Citations")
         cit_html = "<div style='display: flex; flex-direction: column; gap: 12px;'>"
-        for cit in plan["sources"]:
-            cit_html += f"<a href='{cit['url']}' target='_blank' style='text-decoration: none; color: var(--ms-blue); background: #f5f5f7; padding: 12px; border-radius: 8px; font-size: 14px; font-weight: 500;'>🔗 {cit['title']}</a>"
+        for cit in plan.get("sources") or []:
+            cit_html += f"<a href='{cit.get('url', '#')}' target='_blank' style='text-decoration: none; color: var(--ms-blue); background: #f5f5f7; padding: 12px; border-radius: 8px; font-size: 14px; font-weight: 500;'>🔗 {cit.get('title', '')}</a>"
         cit_html += "</div>"
         st.markdown(fluent_card("Citations", "teal", clean_html(cit_html)), unsafe_allow_html=True)
 
