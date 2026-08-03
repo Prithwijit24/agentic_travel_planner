@@ -81,6 +81,26 @@ def test_marked_down_provider_is_filtered_out():
     assert chain2  # expired cooldown is available again
 
 
+def test_timeout_mark_down_gets_long_cooldown():
+    import time
+
+    provider = LLMProvider()
+    provider._cooldown_seconds = 30
+    provider._mark_down("agnes", "timeout")
+    deadline = provider._cooldown["agnes"]
+    assert deadline > time.monotonic() + 300 * 0.9  # default 300s floor
+
+
+def test_timeout_mark_down_scales_with_min_long_cooldown():
+    import time
+
+    provider = LLMProvider()
+    provider._cooldown_seconds = 5
+    provider._mark_down("nararouter", "timeout")
+    deadline = provider._cooldown["nararouter"]
+    assert deadline > time.monotonic() + 300 * 0.9  # timeouts never below 300s
+
+
 def test_gateway_error_content_is_detected():
     from agentic_tour_planner.llm.provider import _is_gateway_error_content
 

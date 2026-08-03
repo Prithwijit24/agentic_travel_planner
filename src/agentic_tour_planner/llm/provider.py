@@ -144,22 +144,35 @@ class LLMProvider:
         self.planner_timeout = float(getattr(self.settings, "llm_planner_timeout_seconds", None) or PLANNER_TIMEOUT)
         self._cooldown: dict[str, float] = {}
         self._cooldown_seconds = float(getattr(self.settings, "llm_provider_cooldown_seconds", None) or 30.0)
+        self._failures: dict[str, int] = {}  # consecutive failure streak per provider
 
     # ------------------------------------------------------------- health / cooldown
     def _mark_down(self, provider: str, error_type: str | None) -> None:
         """Put a hard-failing provider on cooldown so it is skipped promptly.
 
-        Server-capacity errors (503/429/queue-full) are transient bursts, so the
-        cooldown is shorter than for auth/connection failures.
+        Server-capacity errors (503/429/queue-full) indicate a gateway that is
+        overloaded for MINUTES, not seconds, so the base cooldown is long and
+        grows exponentially with each consecutive failure (backoff). Timeouts
+        get the longest floor: a hung upstream usually stays hung for a while,
+        so we must not re-try it on the next call (e.g. the next day's planner).
         """
         if error_type in ("rate_limit", "server_busy"):
-            cooldown = min(self._cooldown_seconds, 30.0)
-        elif error_type in ("auth", "connection", "not_found", "timeout"):
-            cooldown = self._cooldown_seconds
+            base = max(self._cooldown_seconds * 2, 120.0)
+        elif error_type in ("auth", "connection", "not_found"):
+            base = self._cooldown_seconds
+        elif error_type == "timeout":
+            base = max(self._cooldown_seconds * 10, 300.0)
         else:
             return
+        streak = self._failures.get(provider, 0)
+        cooldown = min(base * (2 ** min(streak, 3)), 900.0)
+        self._failures[provider] = streak + 1
         self._cooldown[provider] = time.monotonic() + cooldown
         logger.warning(f"[LLM] provider {provider!r} marked down for {cooldown:.0f}s ({error_type})")
+
+    def _mark_up(self, provider: str) -> None:
+        """Reset the failure streak when a provider answers successfully."""
+        self._failures.pop(provider, None)
 
     def _provider_available(self, provider: str) -> bool:
         return time.monotonic() >= self._cooldown.get(provider, 0.0)
@@ -382,6 +395,7 @@ class LLMProvider:
                 )
                 return None
             self._record(provider, model, role, elapsed, usage, True, None)
+            self._mark_up(provider)
             logger.debug(f"[LLM] {provider}/{model} ok latency={elapsed:.3f}s")
             return data
         except Exception as exc:

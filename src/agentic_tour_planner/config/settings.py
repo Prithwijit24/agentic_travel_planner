@@ -198,7 +198,7 @@ def get_settings() -> Settings:
     merged.setdefault("image_openverse_enabled", True)
     merged.setdefault("llm_provider_cooldown_seconds", 30)
     merged.setdefault("llm_call_timeout_seconds", 120)
-    merged.setdefault("llm_planner_timeout_seconds", 600)
+    merged.setdefault("llm_planner_timeout_seconds", 180)
 
     applied_overrides = [
         key
