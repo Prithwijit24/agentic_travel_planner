@@ -67,3 +67,23 @@ def test_llm_unavailable_when_no_providers_configured(monkeypatch):
     monkeypatch.setattr(provider, "_provider_chain", list)
     chain = provider._chain_for(None, "planner")
     assert chain == []
+
+
+def test_marked_down_provider_is_filtered_out():
+    import time
+
+    provider = LLMProvider()
+    provider._mark_down("agnes", "server_busy")
+    chain = provider._available([("agnes", "agnes-2.0-flash"), ("nararouter", "agnes-2.5-flash")])
+    assert all(p != "agnes" for p, _ in chain)
+    provider._cooldown["nararouter"] = time.monotonic() - 1  # past expiry
+    chain2 = provider._available([("nararouter", "m")])
+    assert chain2  # expired cooldown is available again
+
+
+def test_gateway_error_content_is_detected():
+    from agentic_tour_planner.llm.provider import _is_gateway_error_content
+
+    assert _is_gateway_error_content("Streaming response failed: [503] The request queue is full.")
+    assert _is_gateway_error_content("The upstream server is busy. Please retry.")
+    assert not _is_gateway_error_content("Gangtok is a beautiful hill station.")

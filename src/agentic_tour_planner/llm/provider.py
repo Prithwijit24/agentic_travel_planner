@@ -108,6 +108,25 @@ def _extract_json(text: str) -> str:
     return text
 
 
+# Error-looking strings some OpenAI-compatible gateways return with HTTP 200
+# when overloaded. If a response's content starts with any of these, treat the
+# whole call as a server-busy failure rather than valid model output.
+_GATEWAY_ERROR_HINTS = (
+    "streaming response failed",
+    "request queue is full",
+    "server error",
+    "upstream service error",
+    "the upstream server",
+)
+
+
+def _is_gateway_error_content(content: str) -> bool:
+    if not content:
+        return False
+    lowered = content.strip().lower()
+    return any(lowered.startswith(hint) or hint in lowered[:80] for hint in _GATEWAY_ERROR_HINTS)
+
+
 class LLMProvider:
     """Minimal OpenAI-compatible LLM provider with simple failure routing.
 
@@ -123,6 +142,53 @@ class LLMProvider:
         self.last_worker: tuple[str, str] | None = None
         self.timeout = float(getattr(self.settings, "llm_call_timeout_seconds", None) or CALL_TIMEOUT)
         self.planner_timeout = float(getattr(self.settings, "llm_planner_timeout_seconds", None) or PLANNER_TIMEOUT)
+        self._cooldown: dict[str, float] = {}
+        self._cooldown_seconds = float(getattr(self.settings, "llm_provider_cooldown_seconds", None) or 30.0)
+
+    # ------------------------------------------------------------- health / cooldown
+    def _mark_down(self, provider: str, error_type: str | None) -> None:
+        """Put a hard-failing provider on cooldown so it is skipped promptly.
+
+        Server-capacity errors (503/429/queue-full) are transient bursts, so the
+        cooldown is shorter than for auth/connection failures.
+        """
+        if error_type in ("rate_limit", "server_busy"):
+            cooldown = min(self._cooldown_seconds, 30.0)
+        elif error_type in ("auth", "connection", "not_found", "timeout"):
+            cooldown = self._cooldown_seconds
+        else:
+            return
+        self._cooldown[provider] = time.monotonic() + cooldown
+        logger.warning(f"[LLM] provider {provider!r} marked down for {cooldown:.0f}s ({error_type})")
+
+    def _provider_available(self, provider: str) -> bool:
+        return time.monotonic() >= self._cooldown.get(provider, 0.0)
+
+    def _available(self, chain: list[tuple[str, str]]) -> list[tuple[str, str]]:
+        """Filter a (provider, model) chain to only the providers not on cooldown."""
+        return [(p, m) for p, m in chain if self._provider_available(p)]
+
+    @staticmethod
+    def _classify_error(exc: Exception) -> str:
+        """Map an exception to a coarse error class for cooldown decisions."""
+        if isinstance(exc, httpx.TimeoutException):
+            return "timeout"
+        if isinstance(exc, httpx.ConnectError):
+            return "connection"
+        if isinstance(exc, httpx.HTTPStatusError):
+            code = exc.response.status_code if exc.response is not None else 0
+            if code == 429:
+                return "rate_limit"
+            if code == 503:
+                return "server_busy"
+            if code in (401, 403):
+                return "auth"
+            if code == 404:
+                return "not_found"
+            if code >= 500:
+                return "server_busy"
+            return "http"
+        return "unknown"
 
     # ------------------------------------------------------------- config
     def _load_providers(self) -> dict[str, dict[str, Any]]:
@@ -304,13 +370,26 @@ class LLMProvider:
                 data: dict[str, Any] = response.json()
             elapsed = time.perf_counter() - started
             usage = data.get("usage") or {}
+            content = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+            # Some gateways (e.g. agnes) return HTTP 200 with an error message in
+            # the content body when their request queue is full. Treat that as a
+            # server-busy failure so we fail over instead of trying to parse it.
+            if _is_gateway_error_content(content):
+                self._record(provider, model, role, elapsed, usage, False, "server_busy")
+                self._mark_down(provider, "server_busy")
+                logger.warning(
+                    f"[LLM] {provider}/{model} returned gateway error content in {elapsed:.1f}s: {content[:120]!r}"
+                )
+                return None
             self._record(provider, model, role, elapsed, usage, True, None)
             logger.debug(f"[LLM] {provider}/{model} ok latency={elapsed:.3f}s")
             return data
         except Exception as exc:
             elapsed = time.perf_counter() - started
-            self._record(provider, model, role, elapsed, None, False, type(exc).__name__)
-            logger.warning(f"[LLM] {provider}/{model} failed in {elapsed:.1f}s: {exc}")
+            error_type = self._classify_error(exc)
+            self._record(provider, model, role, elapsed, None, False, error_type)
+            self._mark_down(provider, error_type)
+            logger.warning(f"[LLM] {provider}/{model} failed in {elapsed:.1f}s: {exc} ({error_type})")
             return None
 
     async def _complete(
@@ -350,7 +429,7 @@ class LLMProvider:
         # but if it fails we fall through the remaining providers in priority order.
         explicit_provider = request.provider if (request and getattr(request, "provider", None)) else None
         model_override = request.planner_model if (request and getattr(request, "planner_model", None)) else None
-        chain = self._chain_for(explicit_provider, "planner", model_override=model_override)
+        chain = self._available(self._chain_for(explicit_provider, "planner", model_override=model_override))
 
         for provider, model in chain:
             data = await self._post_chat(provider, model, messages, timeout=self.planner_timeout, role="planner")
@@ -392,7 +471,7 @@ class LLMProvider:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ]
-        chain = self._chain_for(provider_override, "worker", model_override=model_override)
+        chain = self._available(self._chain_for(provider_override, "worker", model_override=model_override))
 
         for provider, model in chain:
             data = await self._post_chat(provider, model, messages, timeout=self.timeout, role="worker")
@@ -425,7 +504,7 @@ class LLMProvider:
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
-        chain = self._chain_for(provider_override, role)
+        chain = self._available(self._chain_for(provider_override, role))
 
         for provider, model in chain:
             data = await self._post_chat(provider, model, messages, timeout=self.timeout, role=role)
@@ -462,7 +541,7 @@ class LLMProvider:
             max_tool_rounds,
             force_tool_first,
         )
-        chain = self._chain_for(provider_override, role, model_override=model_override)
+        chain = self._available(self._chain_for(provider_override, role, model_override=model_override))
 
         for provider, model in chain:
             messages: list[dict[str, Any]] = [
