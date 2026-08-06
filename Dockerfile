@@ -13,8 +13,7 @@ RUN apt-get update \
 
 COPY pyproject.toml README.md QUICKSTART.md /app/
 COPY src /app/src
-COPY examples /app/examples
-RUN mkdir -p /app/data/chroma /app/data/knowledge /app/data/operations /app/data/evaluation /app/cache
+RUN mkdir -p /app/data/operations
 
 ENV UV_CONCURRENT_BUILDS=1
 ENV UV_LINK_MODE=copy

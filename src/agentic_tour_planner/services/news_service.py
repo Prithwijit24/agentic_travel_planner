@@ -10,13 +10,13 @@ from typing import Any, cast
 
 from pydantic import BaseModel
 
-from agentic_tour_planner.cache.redis_cache import RedisCache
 from agentic_tour_planner.llm.provider import LLMProvider
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 _CACHE_TTL = 3600  # 1 hour
+_MEMORY_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 class NewsArticle(BaseModel):
@@ -43,7 +43,6 @@ class NewsService:
 
     def __init__(self, llm: LLMProvider | None = None) -> None:
         self.llm = llm or LLMProvider()
-        self.cache = RedisCache()
 
     async def _fetch_from_stack(
         self,
@@ -84,17 +83,14 @@ class NewsService:
         destination: str,
         interests: list[str] | None = None,
     ) -> NewsDigest:
-        """Fetch news, deduplicate, LLM-summarize, cache."""
+        """Fetch news, deduplicate, LLM-summarize, cache (in-memory, 1h TTL)."""
         cache_key = f"news:{destination}"
+        now = datetime.now(UTC).timestamp()
 
-        # Check cache
-        try:
-            cached = await self.cache.get_json(cache_key)
-            if cached:
-                logger.info(f"[news] cache hit for {destination}")
-                return NewsDigest(**cached)
-        except Exception as exc:
-            logger.debug(f"[news] cache read failed: {exc}")
+        cached = _MEMORY_CACHE.get(cache_key)
+        if cached and now - cached[0] < _CACHE_TTL:
+            logger.info(f"[news] cache hit for {destination}")
+            return NewsDigest(**cached[1])
 
         # Fetch news: AI Stack first, DDGS fallback
         topics = ", ".join(interests) if interests else ""
@@ -149,11 +145,7 @@ class NewsService:
             fetched_at=datetime.now(UTC).isoformat(),
         )
 
-        # Cache for 1 hour
-        try:
-            await self.cache.set_json(cache_key, digest.model_dump(), ttl_seconds=_CACHE_TTL)
-        except Exception as exc:
-            logger.debug(f"[news] cache write failed: {exc}")
+        _MEMORY_CACHE[cache_key] = (now, digest.model_dump())
 
         return digest
 

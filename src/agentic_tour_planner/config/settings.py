@@ -14,28 +14,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 _PATH_FIELDS = frozenset(
     {
-        "vector_store_dir",
-        "knowledge_base_dir",
         "operations_db_path",
-        "evaluation_dir",
-        "wikivoyage_dump_path",
     }
 )
 
 _API_KEY_FIELDS = frozenset(
     {
-        "langsmith_api_key",
-        "openai_api_key",
-        "google_api_key",
-        "openrouter_api_key",
-        "xai_api_key",
-        "tavily_api_key",
-        "serp_api_key",
-        "serpapi_api_key",
-        "youtube_api_key",
         "openweather_api_key",
         "google_maps_api_key",
-        "google_places_api_key",
         "unsplash_access_key",
         "pexels_api_key",
     }
@@ -66,28 +52,14 @@ class Settings:
     enable_prometheus_metrics: bool = True
     default_llm_provider: str | None = None
 
-    # ── Cache / Redis ──────────────────────────────────────────────
-    redis_url: str = "redis://localhost:6379/0"
-    redis_cache_enabled: bool = False
-    redis_cache_namespace: str = "agentic-travel-planner"
-    redis_cache_ttl_seconds: int = 3600
-    redis_socket_timeout_seconds: float = 1.0
-
     # ── Storage / knowledge paths (resolved to absolute Path at load) ─
     operations_db_path: Path | None = None
-    knowledge_base_dir: Path | None = None
-    evaluation_dir: Path | None = None
 
-    # ── Retrieval / graph ──────────────────────────────────────────
+    # Gates the AI Infra Stack /cache endpoints for image results (legacy name).
+    redis_cache_enabled: bool = False
+
+    # ── Context gathering ─────────────────────────────────────────
     retrieval_top_k: int = 8
-    chunk_size: int = 850
-    neo4j_uri: str = "bolt://localhost:7687"
-    neo4j_user: str = "neo4j"
-    # Empty fallback; the real value always comes from config/retrieval.yml.
-    neo4j_password: str = ""
-
-    # ── Ingestion ──────────────────────────────────────────────────
-    crawl_max_concurrency: int = 4
     request_timeout_seconds: float = 20.0
 
     # ── External API keys (env-overridable, may be unset) ──────────
@@ -217,16 +189,6 @@ def get_settings() -> Settings:
         f"Config loaded: app_env={getattr(settings, 'app_env', '<unset>')}, "
         f"default_llm_provider={getattr(settings, 'default_llm_provider', '<unset>')}"
     )
-
-    for attr in ("vector_store_dir", "knowledge_base_dir", "evaluation_dir"):
-        path: Path | None = getattr(settings, attr, None)
-        if path is not None:
-            path.mkdir(parents=True, exist_ok=True)
-
-    kb_dir: Path | None = getattr(settings, "knowledge_base_dir", None)
-    if kb_dir is not None:
-        (kb_dir / "raw").mkdir(parents=True, exist_ok=True)
-        (kb_dir / "processed").mkdir(parents=True, exist_ok=True)
 
     db_path: Path | None = getattr(settings, "operations_db_path", None)
     if db_path is not None:

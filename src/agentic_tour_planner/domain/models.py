@@ -10,8 +10,6 @@ from pydantic import BaseModel, Field, HttpUrl, field_validator
 ProviderName = Literal["openai", "google", "ollama", "openrouter", "xai"]
 BudgetLevel = Literal["budget", "midrange", "luxury"]
 SourceKind = Literal["wikivoyage", "web", "youtube", "file", "search"]
-CrawlBackend = Literal["trafilatura", "scrapling"]
-ProxyRoutingStrategy = Literal["direct", "round_robin", "hash"]
 
 
 class PlanningRequest(BaseModel):
@@ -286,71 +284,6 @@ class PlanFeedback(BaseModel):
     plan_id: str
     rating: int = Field(ge=1, le=5)
     comments: str | None = None
-
-
-class SourceSeed(BaseModel):
-    destination: str | None = None
-    title: str
-    url: HttpUrl | str
-    source_type: SourceKind = "web"
-    tags: list[str] = Field(default_factory=list)
-    priority: int = 50
-    refresh_days: int = 14
-    crawl_backend: CrawlBackend | None = None
-    metadata: dict = Field(default_factory=dict)
-
-
-class SourceManifestDefaults(BaseModel):
-    crawl_backend: CrawlBackend = "trafilatura"
-    refresh_days: int = 14
-    tags: list[str] = Field(default_factory=list)
-    max_concurrency: int = 4
-
-
-class SourceManifest(BaseModel):
-    description: str | None = None
-    defaults: SourceManifestDefaults = Field(default_factory=SourceManifestDefaults)
-    seeds: list[SourceSeed] = Field(default_factory=list)
-
-
-class IngestedSourceRecord(BaseModel):
-    source_id: str
-    source_key: str
-    title: str
-    url: HttpUrl | str | None = None
-    destination: str | None = None
-    source_type: SourceKind
-    tags: list[str] = Field(default_factory=list)
-    content_hash: str
-    chunk_count: int = 0
-    last_ingested_at: datetime = Field(default_factory=datetime.utcnow)
-    error_message: str | None = None
-    metadata: dict = Field(default_factory=dict)
-
-
-class IngestionRunRecord(BaseModel):
-    run_id: str
-    started_at: datetime = Field(default_factory=datetime.utcnow)
-    finished_at: datetime | None = None
-    total_sources: int = 0
-    indexed_sources: int = 0
-    skipped_sources: int = 0
-    failed_sources: int = 0
-    indexed_chunks: int = 0
-
-
-class RagEvaluationCase(BaseModel):
-    question: str
-    ground_truth: str
-    reference_contexts: list[str] = Field(default_factory=list)
-    metadata: dict = Field(default_factory=dict)
-
-
-class RagEvaluationReport(BaseModel):
-    report_id: str = Field(default_factory=lambda: str(uuid4()))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    metrics: dict = Field(default_factory=dict)
-    output_path: str | None = None
 
 
 class LogEvent(BaseModel):

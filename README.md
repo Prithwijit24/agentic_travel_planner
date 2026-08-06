@@ -6,12 +6,11 @@ Welcome to the **Agentic Travel Planner**! 🌍 This project brings you a produc
 
 ## 🌟 Key Features & Capabilities:
 
--   **📚 Manifest-driven Ingestion:** Easily load data from diverse sources like the web, Wikivoyage, YouTube, and local files.
--   **⚙️ Flexible Crawl Backend:** Choose your crawling backend with robust proxy routing support.
--   **🔍 Advanced Retrieval:** Benefit from vector retrieval coupled with hybrid reranking for highly relevant information.
 -   **👷 Specialist Planning Workers:** Get expert guidance for crafting your route, managing your budget, and optimizing your trip timing.
--   **⚡ Robust Runtime Surfaces:** Powered by **FastAPI** for the backend and a stunning **Streamlit UI** for an interactive experience.
--   **📊 RAGAS-aligned Evaluation:** An integrated pipeline to rigorously assess and improve planning performance.
+-   **📝 Detailed Itineraries:** Per-day guidebook-style descriptions with opening hours, best times, transport, and (optional) place markers.
+-   **🖼️ Destination Imagery:** Auto-resolved images per place with deterministic place-type search hints.
+-   **⚡ Robust Runtime Surfaces:** Powered by **FastAPI** (with SSE progress + Prometheus metrics) for the backend and a stunning **Streamlit UI** for an interactive experience.
+-   **🧠 Direct LLM Provider Layer:** Pluggable multi-provider routing with failover, per-provider timeouts, and cooldowns — no heavyweight frameworks.
 
 ---
 
@@ -24,49 +23,38 @@ User
   |
   v
 UI / CLI (Your Interaction Hub!)
-  - Streamlit UI
-  - ingestion CLI
-  - evaluation CLI
+  - Streamlit UI (tour-planner-ui)
+  - Interactive CLI (tour-planner-plan)
   |
   v
 FastAPI (The Brains of the Operation!)
-  - /plans
-  - /sources
-  - /feedback
-  - /metrics
+  - POST /plans            (async job + SSE progress stream)
+  - GET /plans/{id}/images
+  - POST /feedback
+  - GET /metrics
   |
   v
 Agentic Planning Layer (Orchestrating Intelligence!)
-  - LangGraph orchestration
-  - prompt builder
-  - LLM provider adapter
+  - agentic pipeline (prompt builder + LLM calls)
+  - LLM provider adapter (failover, cooldowns, per-provider timeouts)
   |
   v
 Specialist Workers (Your Personal Travel Experts!)
   - route worker
   - budget worker
   - timing worker
+  (LLM with deterministic heuristic fallback on schema violations)
   |
   v
 Context Assembly (Gathering All the Info!)
-  - web search
-  - place intel
-  - weather
-  - retrieval + reranking
+  - AI Infra Stack (search / crawl / news)
+  - DDGS live news fallback
+  - weather tool
+  - geonames search + geo day-clustering
   |
   v
-Knowledge Base Pipeline (Building Your Data Foundation!)
-  - IngestionService
-  - SourceConnectors
-  - WebCrawler
-  - proxy routing
-  - chunking + embeddings + Chroma
-  |
-  v
-Knowledge Base / Operations Store (Where Knowledge Resides!)
-  - vector store
-  - SQLite plan store
-  - ingestion metadata
+Operations Store (Where History Resides!)
+  - SQLite plan store (data/operations/plans.db)
 ```
 
 ---
@@ -75,12 +63,12 @@ Knowledge Base / Operations Store (Where Knowledge Resides!)
 
 Explore the core components that make this planner tick:
 
--   **`src/agentic_tour_planner/ingestion`**: 📥 Handles all aspects of data ingestion, including the service, manifest loader, crawler, connectors, and CLI.
--   **`src/agentic_tour_planner/retrieval`**: 🧠 Manages information retrieval with chunking, vector storage, and reranking.
--   **`src/agentic_tour_planner/services/planning_workers.py`**: 🤖 Contains the deterministic worker agents specialized in routing, budgeting, and timing.
--   **`src/agentic_tour_planner/pipeline`**: 🚀 Orchestrates the planning workflow using a prompt builder, LangGraph, and the main pipeline.
--   **`src/agentic_tour_planner/evaluation`**: 📈 Provides tools for dataset export and RAGAS scoring to measure performance.
--   **`src/agentic_tour_planner/api`**: 🔗 Defines the FastAPI application, complete with metrics and persistence capabilities.
+-   **`src/agentic_tour_planner/llm/provider.py`**: 🧠 Direct-httpx multi-provider LLM adapter with priority routing, failover, and per-provider timeouts.
+-   **`src/agentic_tour_planner/services/planning_workers.py`**: 🤖 Specialist worker agents for routing, budgeting, and timing (LLM + heuristic fallback).
+-   **`src/agentic_tour_planner/pipeline`**: 🚀 Orchestrates the planning workflow: prompts, geo day-clustering, travel constraints, and dedupe guards.
+-   **`src/agentic_tour_planner/services/news_service.py`**: 📰 Live destination news with AI-stack + DDGS fallback and in-memory caching.
+-   **`src/agentic_tour_planner/images`**: 🖼️ Image resolution pipeline (cache, sources, processors).
+-   **`src/agentic_tour_planner/api`**: 🔗 FastAPI application with SSE events, Prometheus metrics, and SQLite persistence.
 
 ---
 
@@ -88,28 +76,21 @@ Explore the core components that make this planner tick:
 
 Interact with the Agentic Travel Planner using these powerful entry points:
 
--   `tour-planner-api`
--   `tour-planner-ui`
--   `tour-planner-ingest`
--   `tour-planner-eval`
--   `streamlit run src/agentic_tour_planner/app/streamlit_app.py`
+-   `tour-planner-api` — FastAPI backend (`uvicorn`, port 8000)
+-   `tour-planner-ui` — Streamlit UI
+-   `tour-planner-plan` — interactive rich CLI (or `streamlit run src/agentic_tour_planner/app/streamlit_app.py`)
 
 ### 💻 CLI Commands (Examples):
 
 ```bash
-# Ingestion
-tour-planner-ingest --help
-tour-planner-ingest wikivoyage Rome
-tour-planner-ingest web https://en.wikivoyage.org/wiki/Rome
-tour-planner-ingest youtube https://www.youtube.com/watch?v=dQw4w9WgXcQ
-tour-planner-ingest file README.md
-tour-planner-ingest manifest examples/rome_manifest.json --limit 2
-tour-planner-ingest sources --limit 10
+# Interactive planning
+tour-planner-plan interactive
 
-# Evaluation
-tour-planner-eval --help
-tour-planner-eval export examples/ragas_cases.json
-tour-planner-eval ragas examples/ragas_cases.json
+# One-shot plan (rich output, saves to SQLite)
+tour-planner-plan plan "Sikkim" --days 5 --origin "Kolkata"
+
+# Live news about a destination
+tour-planner-plan news --destination Sikkim
 
 # Running the applications
 tour-planner-api
@@ -119,45 +100,12 @@ tour-planner-ui
 ### 🌐 API Routes:
 
 -   `GET /health`
--   `POST /plans`
+-   `POST /plans` (async job)
 -   `GET /plans`
--   `GET /sources`
+-   `GET /plans/{plan_id}/images`
+-   `GET /plans/stream/{request_id}` (SSE progress)
 -   `POST /feedback`
--   `GET /metrics`
-
----
-
-## 📥 Ingestion: Fueling Your Knowledge Base
-
-The planner supports various source types to build its comprehensive knowledge base:
-
--   `wikivoyage` 🗺️
--   `web` 🕸️
--   `youtube` 🎬
--   `file` 📄
-
-**Manifest Example:** Check out the [Rome manifest example](examples/rome_manifest.json) for structured ingestion.
-
-### ⚙️ Important Crawler Settings:
-
--   `WEB_CRAWL_BACKEND=trafilatura|httpx|crawl4ai` (Choose your web crawling engine!)
--   `PROXY_ROUTING_STRATEGY=direct|round_robin|hash` (Control your proxy usage!)
--   `OUTBOUND_PROXY_URLS=["http://proxy-a","http://proxy-b"]` (List your proxy servers!)
--   `CRAWL_MAX_CONCURRENCY=4` (Optimize for speed!)
-
-_Note:_ `crawl4ai` is an optional extra: `pip install -e '.[crawl]'`
-
----
-
-## 📊 Evaluation: Measuring Success!
-
-The integrated evaluation pipeline helps you understand and improve the planner's performance:
-
--   **Export Dataset Rows:** Easily generate datasets from curated cases.
--   **RAGAS Evaluation:** Run comprehensive RAGAS evaluations when dependencies are met.
--   **Lightweight Heuristic Scoring:** Enjoy fallback scoring for CI/CD or local smoke tests, ensuring stability.
-
-**Example Cases:** See [examples/ragas_cases.json](examples/ragas_cases.json) for evaluation examples.
+-   `GET /metrics` (Prometheus)
 
 ---
 
@@ -173,13 +121,6 @@ docker build -t agentic-travel-planner:latest .
 docker run --rm -p 8000:8000 --env-file .env agentic-travel-planner:latest
 ```
 
-### Run Ingestion within the Docker Image:
-
-```bash
-docker run --rm --env-file .env agentic-travel-planner:latest \
-  tour-planner-ingest manifest examples/rome_manifest.json --limit 2
-```
-
 **Relevant Files:**
 
 -   [Dockerfile](Dockerfile)
@@ -187,44 +128,12 @@ docker run --rm --env-file .env agentic-travel-planner:latest \
 
 ---
 
-## ☸️ Kubernetes: Orchestrate Your Deployment!
-
-Deploy your Agentic Travel Planner seamlessly on Kubernetes:
-
-**Example Manifests:**
-
--   [k8s/configmap.yaml](k8s/configmap.yaml)
--   [k8s/api-deployment.yaml](k8s/api-deployment.yaml)
--   [k8s/api-service.yaml](k8s/api-service.yaml)
--   [k8s/ui-deployment.yaml](k8s/ui-deployment.yaml)
--   [k8s/ui-service.yaml](k8s/ui-service.yaml)
-
-### Apply them to your cluster:
-
-```bash
-kubectl apply -f k8s/configmap.yaml
-kubectl apply -f k8s/api-deployment.yaml
-kubectl apply -f k8s/api-service.yaml
-kubectl apply -f k8s/ui-deployment.yaml
-kubectl apply -f k8s/ui-service.yaml
-```
-
-**⚠️ Important:** If you're using external providers, create your secrets _before_ deployment:
-
-```bash
-kubectl create secret generic agentic-travel-planner-secrets \
-  --from-literal=OPENAI_API_KEY=your-key
-```
-
-_Note:_ The sample deployment uses `/app/data` as an `emptyDir`. For production environments, consider replacing this with a **persistent volume** for Chroma and SQLite to ensure data durability.
-
----
-
 ## 💡 Development Notes & Fallbacks:
 
--   **LLM Fallback:** When no provider credentials or local model runtime are available, LLM calls gracefully degrade to a **deterministic JSON fallback**.
--   **Retrieval Fallback:** Retrieval also works in a fallback **in-memory mode** if Chroma or the embedding runtime is inaccessible.
--   **Data Storage:** SQLite stores both ingestion metadata and your saved plan history within `data/operations/plans.db`.
+-   **LLM Failover:** Providers are tried in priority order (`oraclellm`, `agnes`, `nararouter`, `llm7io`, `opencode`); hung/busy providers are marked down with a cooldown and the next healthy provider serves the call.
+-   **Worker Fallback:** When an LLM worker returns schema-violating JSON, deterministic heuristics generate the route/budget/timing guidance.
+-   **Deterministic Guards:** Detailed places are deduplicated (same-day and cross-day, ignoring `(optional)` markers and markdown) and day themes/summaries are realigned after geo-clustering.
+-   **Data Storage:** SQLite stores your saved plan history within `data/operations/plans.db`.
 
 ---
 

@@ -17,14 +17,12 @@ from agentic_tour_planner.config.settings import Settings, get_settings
 from agentic_tour_planner.domain.models import (
     DetailedPlan,
     ImageResponse,
-    IngestedSourceRecord,
     LogEvent,
     PlanAPIResponse,
     PlanFeedback,
     PlanningRequest,
     StoredPlanRecord,
 )
-from agentic_tour_planner.ingestion.service import IngestionService
 from agentic_tour_planner.pipeline.output_builder import build_output
 from agentic_tour_planner.storage.sqlite_store import SQLitePlanStore
 from agentic_tour_planner.utils.logging import get_logger
@@ -255,13 +253,7 @@ async def get_plan_images(plan_id: str) -> ImageResponse:
     return ImageResponse(plan_id=plan_id, images=images)
 
 
-@app.get("/sources", response_model=list[IngestedSourceRecord])
-async def list_sources(limit: int = 100) -> list[IngestedSourceRecord]:
-    logger.info(f"GET /sources limit={limit}")
-    return IngestionService().list_sources(limit)
-
-
-@app.post("/feedback")
+@app.get("/feedback")
 async def create_feedback(feedback: PlanFeedback) -> dict:
     logger.info(f"POST /feedback plan_id={feedback.plan_id}")
     SQLitePlanStore().save_feedback(feedback)

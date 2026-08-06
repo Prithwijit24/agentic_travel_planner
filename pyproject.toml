@@ -5,54 +5,36 @@ build-backend = "hatchling.build"
 [project]
 name = "agentic-travel-planner"
 version = "0.1.0"
-description = "Production-oriented agentic travel planner with ingestion, retrieval, planning workers, and RAG evaluation."
+description = "Agentic travel planner with LLM planning workers, detailed itineraries, and destination imagery."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Prithwijit" }]
 dependencies = [
-  "beautifulsoup4>=4.12.3",
-  "duckduckgo-search>=8.0.0",
+  "ddgs>=9.14.4",
   "fastapi>=0.115.0",
   "folium>=0.15.0",
   "graphifyy>=0.8.14",
   "httpx>=0.27.2",
-  "jupyterlab>=4.6.1",
-  "langchain-core>=0.3.25",
-  "langchain-google-genai>=2.0.6",
-  "langchain-ollama>=0.2.1",
-  "langchain-openai>=0.2.10",
-  "langgraph>=0.2.56",
-  "lxml>=6.0.2; python_version >= '3.14'",
+  "loguru>=0.7.3",
+  "marisa-trie>=0.8.0",
+  "Pillow>=10.0",
   "prometheus-client>=0.21.0",
   "pydantic>=2.10.2",
   "pyyaml>=6.0",
-  "ragas>=0.2.6",
-  "redis>=5.2.1",
+  "rapidfuzz>=3.0.0",
+  "sse-starlette>=3.4.6",
   "streamlit>=1.40.2",
   "streamlit-folium>=0.19.0",
-  "ortools>=9.8.0",
-  "loguru>=0.7.3",
-  "neo4j>=5.28.0",
-  "tenacity>=9.0.0",
+  "streamlit-searchbox>=0.1.24",
   "typer>=0.15.1",
   "uvicorn>=0.32.1",
-  "ddgs>=9.14.4",
-  "google-genai>=2.0.0",
-  "sse-starlette>=3.4.6",
-  "marisa-trie>=0.8.0",
-  "rapidfuzz>=3.0.0",
-  "Pillow>=10.0",
-  "streamlit-searchbox>=0.1.24",
 ]
 
 [project.scripts]
 tour-planner-api = "agentic_tour_planner.api.main:run"
 tour-planner-ui = "agentic_tour_planner.app.streamlit_app:run"
 tour-planner-plan = "agentic_tour_planner.cli.plan:app"
-tour-planner-ingest = "agentic_tour_planner.ingestion.cli:app"
-tour-planner-eval = "agentic_tour_planner.evaluation.cli:app"
-tour-planner = "agentic_tour_planner.main:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentic_tour_planner"]
