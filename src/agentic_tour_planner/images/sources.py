@@ -338,9 +338,9 @@ async def fetch_stack_images(place_name: str) -> list[ImageCandidate]:
     returning results with pre-computed clip_score (0-1).
     Fallback chain: DDGS → Unsplash → Pexels.
     """
-    from agentic_tour_planner.tools.ai_stack_client import AiStackClient
+    from agentic_tour_planner.images._stack import get_ai_stack
 
-    stack = AiStackClient()
+    stack = get_ai_stack()
     try:
         result = await stack.images(
             query=place_name,

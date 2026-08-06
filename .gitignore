@@ -45,17 +45,7 @@ cache/
 media_cache/
 
 # Local databases and generated data
-data/chroma/*
-!data/chroma/.gitkeep
-data/operations/*.db
-!data/operations/.gitkeep
-data/evaluation/*
-data/knowledge/raw/*
-!data/knowledge/raw/.gitkeep
-data/knowledge/processed/*
-!data/knowledge/processed/.gitkeep
 **/data/**
-!**/data/.gitkeep
 
 # Integration tests with credentials
 tests/integration/test_ai_stack_real.py
@@ -65,7 +55,6 @@ tests/integration/test_ai_stack_real.py
 Thumbs.db
 .idea/inspectionProfiles/profiles_settings.xml
 .vscode/
-*/data/*
 .codegraph/
 .opencode/
 .kilo/

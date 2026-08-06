@@ -253,7 +253,7 @@ async def get_plan_images(plan_id: str) -> ImageResponse:
     return ImageResponse(plan_id=plan_id, images=images)
 
 
-@app.get("/feedback")
+@app.post("/feedback")
 async def create_feedback(feedback: PlanFeedback) -> dict:
     logger.info(f"POST /feedback plan_id={feedback.plan_id}")
     SQLitePlanStore().save_feedback(feedback)
