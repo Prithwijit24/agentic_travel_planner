@@ -1,89 +1,118 @@
-"""Tests for the cost estimator, focusing on the records-based fallback.
+"""Tests for the deterministic cost estimator.
 
-The LLM sometimes completes all of its arithmetic through the calculator tool
-and then returns an unparseable final message (prose / empty / truncated). In
-that case the estimator must rebuild the estimate from the tool records instead
-of handing the UI an empty "N/A" card.
+The estimator is computed from the plan structure + trip inputs using a fixed
+price table. It never touches an LLM, so it always returns concrete numbers
+(no "N/A" cost card when model gateways are down).
 """
 
-from agentic_tour_planner.domain.models import CostLineItem, PlanningRequest
+import asyncio
+
+from agentic_tour_planner.domain.models import PlanningRequest
 from agentic_tour_planner.services.cost_estimator import CostEstimator
 
 
-def _make_request(travelers: int = 4) -> PlanningRequest:
+def _make_request(travelers: int = 4, budget: str = "midrange") -> PlanningRequest:
     return PlanningRequest(
         destination="Sikkim",
         origin="Kolkata",
         trip_length_days=4,
         interests=["nature", "monasteries"],
-        budget_level="midrange",
+        budget_level=budget,
         travel_month="September",
         transport_mode="public",
         travelers=travelers,
     )
 
 
-def _calculator_records() -> list[dict]:
-    return [
-        {"label": "Hotel total (2 rooms x 4 nights)", "expression": "1800 * 2 * 4", "result": 14400.0, "steps": []},
-        {"label": "Food total (4 people x 4 days)", "expression": "600 * 4 * 4", "result": 9600.0, "steps": []},
-        {"label": "Day 1 transport (3 auto rides)", "expression": "100 * 3", "result": 300.0, "steps": []},
-        {"label": "Day 1 tickets", "expression": "(100 + 100) * 4", "result": 800.0, "steps": []},
-        {"label": "Day 1 total", "expression": "3600 + 2400 + 300 + 800", "result": 7100.0, "steps": []},
-        {"label": "Day 2 total", "expression": "3600 + 2400 + 560 + 2800", "result": 9360.0, "steps": []},
-        {"label": "Day 3 total", "expression": "3600 + 2400 + 540 + 1400", "result": 7940.0, "steps": []},
-        {"label": "Day 4 total", "expression": "0 + 2400 + 1300 + 800", "result": 4500.0, "steps": []},
-        {"label": "Grand total", "expression": "14400 + 9600 + 2700 + 5800", "result": 32500.0, "steps": []},
-        {"label": "Per person total", "expression": "32500 / 4", "result": 8125.0, "steps": []},
-    ]
-
-
-def test_parse_rebuilds_estimate_from_records_when_json_unparseable():
-    """A raw/error response with calculator records still yields full totals."""
-    result = CostEstimator._parse({"raw": "Here is the cost breakdown:"}, _calculator_records(), _make_request())
-
-    assert result.overall is not None
-    assert result.overall.per_person_total == 8125.0
-    assert result.overall.grand_total == 32500.0
-    assert result.overall.members == 4
-
-    assert [d.day for d in result.daily] == [1, 2, 3, 4]
-    assert [d.subtotal for d in result.daily] == [7100.0, 9360.0, 7940.0, 4500.0]
-    assert result.daily[0].items == [
-        CostLineItem(label="Day 1 transport (3 auto rides)", amount=300.0),
-        CostLineItem(label="Day 1 tickets", amount=800.0),
-    ]
-
-
-def test_parse_rebuild_derives_missing_grand_and_per_person_totals():
-    """When only day totals exist, grand total and per-person are computed."""
-    records = _calculator_records()[:-2]  # drop "Grand total" and "Per person total"
-    result = CostEstimator._parse({"raw": "done"}, records, _make_request(travelers=2))
-
-    assert result.overall is not None
-    assert result.overall.grand_total == 7100.0 + 9360.0 + 7940.0 + 4500.0
-    assert result.overall.per_person_total == round((7100.0 + 9360.0 + 7940.0 + 4500.0) / 2, 2)
-    assert result.overall.members == 2
-
-
-def test_parse_error_without_records_returns_empty_estimate():
-    """No usable records means we fall back to the empty (calculations-only) estimate."""
-    result = CostEstimator._parse({"error": "All providers failed"}, [], _make_request())
-
-    assert result.overall is None
-    assert result.daily == []
-
-
-def test_parse_still_accepts_normal_json_shape():
-    """The canonical shape keeps working untouched."""
-    data = {
-        "daily": [{"day": 1, "items": [{"label": "Hotel", "amount": "2000 rupees"}], "subtotal": "2000 rupees"}],
-        "overall": {"per_person_total": "2000 rupees", "members": 1, "grand_total": "2000 rupees"},
+def _plan() -> dict:
+    return {
+        "itinerary": [
+            {
+                "day": 1,
+                "theme": "Gangtok",
+                "spots": [
+                    {"name": "MG Marg", "lat": 27.3314, "lon": 88.6138},
+                    {"name": "Rumtek Monastery", "lat": 27.2857, "lon": 88.5615},
+                    {"name": "Namchi Char Dham", "lat": 27.1650, "lon": 88.3500},
+                ],
+            },
+            {
+                "day": 2,
+                "theme": "Pelling",
+                "spots": [
+                    {"name": "Khecheopalri Lake", "lat": 27.3617, "lon": 88.2130},
+                    {"name": "Pelling Skywalk", "lat": 27.3010, "lon": 88.2170},
+                ],
+            },
+            {
+                "day": 3,
+                "theme": "Ravangla",
+                "spots": [{"name": "Ravangla Buddha Park", "lat": 27.3050, "lon": 88.3630}],
+            },
+            {"day": 4, "theme": "Departure", "morning": ["Drive to airport"], "spots": []},
+        ]
     }
-    result = CostEstimator._parse(data, [], _make_request(travelers=1))
+
+
+def test_deterministic_estimate_matches_price_table():
+    result = asyncio.run(CostEstimator().estimate(_make_request(), _plan()))
 
     assert result.overall is not None
-    assert result.overall.per_person_total == 2000.0
-    assert result.overall.grand_total == 2000.0
-    assert len(result.daily) == 1
-    assert result.daily[0].items[0] == CostLineItem(label="Hotel", amount=2000.0)
+    # 4 people, 2 rooms, midrange: hotel 1500/night, food 600/person, public transport 80/leg.
+    # Day 1: 3 spots -> hotel 3000 + food 2400 + transport 80*3*4=960 + tickets (100+600+100)*4=3200 = 9560
+    # Day 2: 2 spots -> hotel 3000 + food 2400 + transport 640 + tickets (300+100)*4=1600 = 7640
+    # Day 3: 1 spot  -> hotel 3000 + food 2400 + transport 320 + tickets 300*4=1200 = 6920
+    # Day 4: 1 activity -> hotel 3000 + food 2400 + transport 320 + tickets 400 = 6120
+    # Grand 30240, per person 7560.
+    assert result.overall.grand_total == 30240.0
+    assert result.overall.per_person_total == 7560.0
+    assert result.overall.members == 4
+    assert [d.subtotal for d in result.daily] == [9560.0, 7640.0, 6920.0, 6120.0]
+
+    assert result.daily[0].items[0].label == "Hotel (1500 x 2 room(s))"
+    assert result.daily[0].items[0].amount == 3000.0
+    assert result.daily[0].items[-1].label == "Entry tickets (3 place(s) x 4 people)"
+
+
+def test_no_na_always_concrete_totals():
+    result = asyncio.run(CostEstimator().estimate(_make_request(travelers=1), _plan()))
+    assert result.overall is not None
+    assert result.overall.per_person_total is not None
+    assert result.overall.grand_total is not None
+
+
+def test_caps_daily_cost_at_8000_per_person():
+    # Luxury, solo traveller, all 8 major sites in one day:
+    # hotel 3000 + food 1200 + transport 150*8 + tickets 600*8 = 10200 per person -> capped at 8000.
+    request = _make_request(travelers=1, budget="luxury")
+    plan = {
+        "itinerary": [
+            {
+                "day": 1,
+                "spots": [{"name": f"Major {i} Temple", "lat": float(i), "lon": 0.0} for i in range(8)],
+            }
+        ]
+    }
+    result = asyncio.run(CostEstimator().estimate(request, plan))
+    assert result.daily[0].subtotal == 8000.0
+    assert "capped" in result.daily[0].steps[-1]
+
+
+def test_empty_itinerary_yields_zero():
+    result = asyncio.run(CostEstimator().estimate(_make_request(), {"itinerary": []}))
+    assert result.overall is not None
+    assert result.overall.grand_total == 0.0
+    assert result.overall.per_person_total == 0.0
+
+
+def test_ticket_tier_by_place_name():
+    request = _make_request(travelers=1)
+    plan = {
+        "itinerary": [
+            {"day": 1, "spots": [{"name": "Gangtok Monastery"}, {"name": "Temi Tea Garden"}, {"name": "MG Marg"}]}
+        ]
+    }
+    result = asyncio.run(CostEstimator().estimate(request, plan))
+    # Monastery=600, garden=300, MG Marg=100 -> 1000 x 1 person.
+    tickets = next(i for i in result.daily[0].items if i.label.startswith("Entry tickets"))
+    assert tickets.amount == 1000.0

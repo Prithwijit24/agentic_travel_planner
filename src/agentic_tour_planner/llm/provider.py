@@ -10,7 +10,6 @@ import httpx
 from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import PlanningRequest
 from agentic_tour_planner.llm.hooks import CallMetrics, metrics_bus
-from agentic_tour_planner.tools.calculator import run_calculator
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -43,10 +42,11 @@ PLANNER_SYSTEM_PROMPT = (
     "Include a top-level transport_options list (mode, description, fare, notes) when public transport is relevant.\n"
     "\n"
     "STRICT PLANNING RULES — you MUST obey these exactly on every plan:\n"
-    "• PLACES PER DAY MINIMUM: Always schedule AT LEAST the number of places the user requested per day. "
-    "If they request 6-7, every regular day MUST contain at least 6 distinct notable places — never fewer. "
-    "Populate the 'spots' list with the same minimum count. (The final return/departure day is the only "
-    "exception and stays attraction-free.)\n"
+    "• PLACES PER DAY (SOFT TARGET): Aim for the number of places the user requested per day "
+    "(e.g. if they ask for 6-7, aim for about 6-7 on regular days). This is a preference, not a quota: "
+    "fewer places are fine on arrival/transfer/departure days or when the region is sparse, and never pad "
+    "a day with distant places just to hit the count. Populate the 'spots' list with the places you "
+    "actually schedule.\n"
     "• TRIP-LENGTH ROUTING STRATEGY:\n"
     "  - 2-3 days: stay compact — wander the nearer places around a single base; minimise long transfers.\n"
     "  - 4-6 days: cover the main sights AND add 1-2 offbeat / lesser-known places in addition to the popular ones.\n"
@@ -69,6 +69,7 @@ TIMING_PROMPT = (
 # llm.yml are used; entries here that are commented out in config are skipped.
 # The chain is intentionally short so a degraded provider fails over fast.
 PROVIDER_PRIORITY = [
+    "oraclellm",
     "agnes",
     "nararouter",
     "llm7io",
@@ -77,6 +78,7 @@ PROVIDER_PRIORITY = [
 
 # API-key env-var aliases per provider (handles typos / vendor naming in .env)
 API_KEY_ALIASES = {
+    "oraclellm": ["oraclellm_api_key"],
     "agnes": ["agnes_api_key"],
     "nararouter": ["nararouter_api_key"],
     "llm7io": ["llm7io_api_key"],
@@ -126,6 +128,27 @@ def _is_gateway_error_content(content: str) -> bool:
         return False
     lowered = content.strip().lower()
     return any(lowered.startswith(hint) or hint in lowered[:80] for hint in _GATEWAY_ERROR_HINTS)
+
+
+# Providers that expose a non-standard endpoint: they accept a single `prompt`
+# string (not OpenAI `messages`) and return {"response": "..."} instead of
+# {"choices": [{"message": {"content": ...}}]}.
+_PROMPT_FIELD_PROVIDERS = frozenset({"oraclellm"})
+
+
+def _payload_for(provider: str, model: str, messages: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build the request body for a provider, adapting non-OpenAI formats."""
+    if provider in _PROMPT_FIELD_PROVIDERS:
+        text = "\n\n".join(f"{m.get('role', 'user')}: {m.get('content', '')}" for m in messages)
+        return {"model": model, "prompt": text, "temperature": 0}
+    return {"model": model, "messages": messages, "temperature": 0}
+
+
+def _content_of(provider: str, data: dict[str, Any]) -> str:
+    """Extract the assistant text from a response body, adapting non-OpenAI formats."""
+    if provider in _PROMPT_FIELD_PROVIDERS:
+        return str(data.get("response") or "")
+    return (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
 
 
 class LLMProvider:
@@ -254,6 +277,18 @@ class LLMProvider:
             return [m for m in model if m]
         return []
 
+    def _timeout_for(self, provider: str, role: str, default: float) -> float:
+        """Per-provider timeout override from llm.yml (e.g. a slow self-hosted
+        model gets more headroom), falling back to the global default."""
+        cfg = self.providers.get(provider, {})
+        value = cfg.get(f"{role}_timeout") or cfg.get("timeout")
+        if value is None:
+            return default
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
     def _chain_for(
         self, provider_override: str | None, role: str, model_override: str | None = None
     ) -> list[tuple[str, str]]:
@@ -353,8 +388,6 @@ class LLMProvider:
         *,
         timeout: float,
         role: str = "worker",
-        tools: list[dict[str, Any]] | None = None,
-        tool_choice: str | dict[str, Any] = "auto",
     ) -> dict[str, Any] | None:
         """POST /chat/completions to an OpenAI-compatible endpoint. Returns the
         parsed response body, or None on any failure (error already logged)."""
@@ -364,10 +397,7 @@ class LLMProvider:
             return None
         base_url = str(cfg["base_url"]).rstrip("/")
         api_key = self._api_key_for(provider) or "sk-noauth"
-        payload: dict[str, Any] = {"model": model, "messages": messages, "temperature": 0}
-        if tools:
-            payload["tools"] = tools
-            payload["tool_choice"] = tool_choice
+        payload = _payload_for(provider, model, messages)
 
         started = time.perf_counter()
         try:
@@ -375,7 +405,7 @@ class LLMProvider:
             # chunk, so a gateway that trickles keepalive bytes but never finishes
             # the response body would run far past the deadline. wait_for caps the
             # whole exchange; the raised TimeoutError maps to "timeout" cooldown.
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
 
                 async def _post() -> httpx.Response:
                     return await client.post(
@@ -392,7 +422,7 @@ class LLMProvider:
                 data: dict[str, Any] = response.json()
             elapsed = time.perf_counter() - started
             usage = data.get("usage") or {}
-            content = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+            content = _content_of(provider, data)
             # Some gateways (e.g. agnes) return HTTP 200 with an error message in
             # the content body when their request queue is full. Treat that as a
             # server-busy failure so we fail over instead of trying to parse it.
@@ -431,17 +461,13 @@ class LLMProvider:
         *,
         timeout: float,
         role: str = "worker",
-        tools: list[dict[str, Any]] | None = None,
-        tool_choice: str | dict[str, Any] = "auto",
     ) -> tuple[str, str, str] | None:
         """Try each (provider, model) in the chain until one returns a response.
         Returns (provider, model, content) or None if all fail."""
         for provider, model in chain:
-            data = await self._post_chat(
-                provider, model, messages, timeout=timeout, role=role, tools=tools, tool_choice=tool_choice
-            )
+            data = await self._post_chat(provider, model, messages, timeout=timeout, role=role)
             if data is not None:
-                content = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+                content = _content_of(provider, data)
                 return provider, model, content
         return None
 
@@ -464,10 +490,16 @@ class LLMProvider:
         chain = self._available(self._chain_for(explicit_provider, "planner", model_override=model_override))
 
         for provider, model in chain:
-            data = await self._post_chat(provider, model, messages, timeout=self.planner_timeout, role="planner")
+            data = await self._post_chat(
+                provider,
+                model,
+                messages,
+                timeout=self._timeout_for(provider, "planner", self.planner_timeout),
+                role="planner",
+            )
             if data is None:
                 continue
-            content = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+            content = _content_of(provider, data)
             try:
                 result: dict[str, Any] = json.loads(_extract_json(content))
                 self.last_planner = (provider, model)
@@ -506,10 +538,16 @@ class LLMProvider:
         chain = self._available(self._chain_for(provider_override, "worker", model_override=model_override))
 
         for provider, model in chain:
-            data = await self._post_chat(provider, model, messages, timeout=self.timeout, role="worker")
+            data = await self._post_chat(
+                provider,
+                model,
+                messages,
+                timeout=self._timeout_for(provider, "worker", self.timeout),
+                role="worker",
+            )
             if data is None:
                 continue
-            content = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+            content = _content_of(provider, data)
             try:
                 result: dict[str, Any] = json.loads(_extract_json(content))
                 self.last_worker = (provider, model)
@@ -539,100 +577,18 @@ class LLMProvider:
         chain = self._available(self._chain_for(provider_override, role))
 
         for provider, model in chain:
-            data = await self._post_chat(provider, model, messages, timeout=self.timeout, role=role)
+            data = await self._post_chat(
+                provider,
+                model,
+                messages,
+                timeout=self._timeout_for(provider, "worker", self.timeout),
+                role=role,
+            )
             if data is None:
                 continue
-            content = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+            content = _content_of(provider, data)
             if content:
                 logger.debug("complete_text success provider={} model={}", provider, model)
                 return content
         logger.warning("complete_text failed for all providers role={}", role)
         return None
-
-    async def complete_with_tools(
-        self,
-        prompt: str,
-        system_prompt: str,
-        tools: list[dict[str, Any]],
-        role: str = "worker",
-        provider_override: str | None = None,
-        model_override: str | None = None,
-        max_tool_rounds: int = 8,
-        force_tool_first: bool = False,
-    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        """Complete a prompt while letting the model call tools (e.g. calculator).
-
-        Returns (parsed_result, tool_call_records). On total failure returns
-        ({"error": "..."}, []).
-        """
-        logger.info(
-            "complete_with_tools start role={} provider_override={} model_override={} max_tool_rounds={} force_tool_first={}",
-            role,
-            provider_override,
-            model_override,
-            max_tool_rounds,
-            force_tool_first,
-        )
-        chain = self._available(self._chain_for(provider_override, role, model_override=model_override))
-
-        for provider, model in chain:
-            messages: list[dict[str, Any]] = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt},
-            ]
-            records: list[dict[str, Any]] = []
-            for round_idx in range(max_tool_rounds):
-                # Force the model to actually invoke a tool on the first round so the
-                # calculator is genuinely used and its steps are captured for trust.
-                tool_choice = (
-                    {"type": "function", "function": {"name": "calculator"}}
-                    if (force_tool_first and round_idx == 0)
-                    else "auto"
-                )
-                data = await self._post_chat(
-                    provider, model, messages, timeout=self.timeout, role=role, tools=tools, tool_choice=tool_choice
-                )
-                if data is None:
-                    break
-                msg = (data.get("choices") or [{}])[0].get("message", {})
-                tool_calls = msg.get("tool_calls") or []
-                if tool_calls:
-                    messages.append(msg)
-                    for tc in tool_calls:
-                        fn = tc.get("function", {})
-                        try:
-                            args = json.loads(fn.get("arguments") or "{}")
-                        except Exception:
-                            args = {}
-                        if fn.get("name") == "calculator":
-                            result = run_calculator(args)
-                        else:
-                            result = {"error": f"unknown tool {fn.get('name')}"}
-                        records.append(result)
-                        messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": tc.get("id"),
-                                "content": json.dumps(result),
-                            }
-                        )
-                    logger.debug(
-                        "complete_with_tools round={} tool_calls={} records={}",
-                        round_idx,
-                        len(tool_calls),
-                        len(records),
-                    )
-                    continue
-                content = msg.get("content") or ""
-                self.last_worker = (provider, model)
-                try:
-                    parsed = json.loads(_extract_json(content))
-                    logger.debug(
-                        "complete_with_tools success provider={} model={} records={}", provider, model, len(records)
-                    )
-                    return parsed, records
-                except Exception:
-                    return {"raw": content}, records
-        logger.error(f"[LLM] All tool-calling providers failed for {role}")
-        self.last_worker = ("fallback", "heuristic")
-        return {"error": "All providers failed"}, []

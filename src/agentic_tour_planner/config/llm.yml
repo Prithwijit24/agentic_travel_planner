@@ -1,9 +1,8 @@
 # Default provider/model used when a request does not specify one.
-# `agnes` is the proven-reliable, fast provider; `openrouter`'s free model
-# (gpt-oss-20b:free) currently returns InternalServerError, so it is not the
-# default. The provider layer cascades to other providers on failure anyway.
-default_llm_provider: agnes
-default_llm_model: agnes-2.0-flash
+# `oraclellm` is the self-hosted primary provider; the provider layer
+# cascades to the other providers (agnes, nararouter, ...) on failure anyway.
+default_llm_provider: oraclellm
+default_llm_model: deepseek-r1-80k:latest
 
 # # Default fallback models
 # default_llm_provider: openai
@@ -56,6 +55,18 @@ agnes:
   api_type: openai
   planner_model: agnes-2.0-flash
   worker_model: agnes-2.0-flash
+
+oraclellm:
+  base_url: https://oraclellm.duckdns.org/v1
+  api_type: openai
+  # Single model for both roles: model loading/unloading is the server's main
+  # cost, so keep exactly one healthy model resident for planner AND worker.
+  planner_model: deepseek-r1-80k:latest
+  worker_model: deepseek-r1-80k:latest
+  # deepseek-r1 is a reasoning model: a real prompt can take ~110-170s, so give
+  # both roles headroom over the global 60s default.
+  planner_timeout: 300
+  worker_timeout: 240
 
 #nvidia:
 #  base_url: https://integrate.api.nvidia.com/v1

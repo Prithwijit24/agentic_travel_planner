@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from typing import ClassVar
+from collections.abc import Callable
+from typing import Any, ClassVar, TypeVar
+
+import pydantic
 
 from agentic_tour_planner.domain.models import (
     BudgetGuidance,
@@ -15,6 +18,19 @@ from agentic_tour_planner.llm.provider import LLMProvider
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+T = TypeVar("T")
+
+
+def _safe_build(model_cls: type[T], heuristic: Callable[[], T], **fields: Any) -> T:
+    """Validate LLM-produced fields into a pydantic model. If the model output
+    parsed as JSON but violates the schema (common with small models), fall
+    back to the heuristic instead of raising into the pipeline."""
+    try:
+        return model_cls(**fields)
+    except pydantic.ValidationError as exc:
+        logger.warning("LLM worker JSON failed schema validation, using heuristic fallback: {}", str(exc)[:120])
+        return heuristic()
 
 
 class RoutePlannerWorker:
@@ -80,22 +96,28 @@ Return JSON with keys: strategy, cluster_advice (list), transit_notes (list)
         if "error" in result or not result:
             # Fallback to basic guidance
             logger.warning("RoutePlannerWorker.build fell back to heuristic guidance")
-            return RouteGuidance(
-                strategy=routing_directive,
-                cluster_advice=[f"Group major sights in {request.destination} by neighborhood."],
-                transit_notes=[
-                    "Start from transport hub first when arriving."
-                    if request.origin
-                    else "Anchor day one near city center.",
-                    "Group nearby attractions into walkable or single-transit corridors.",
-                ],
-            )
+            return self._heuristic(request, routing_directive)
 
         logger.debug("RoutePlannerWorker.build done strategy_len={}", len(result.get("strategy", "")))
+        return _safe_build(
+            RouteGuidance,
+            lambda: self._heuristic(request, routing_directive),
+            strategy=result.get("strategy") or f"Navigate {request.destination} by geographic clusters.",
+            cluster_advice=result.get("cluster_advice"),
+            transit_notes=result.get("transit_notes"),
+        )
+
+    @staticmethod
+    def _heuristic(request: PlanningRequest, routing_directive: str) -> RouteGuidance:
         return RouteGuidance(
-            strategy=result.get("strategy", f"Navigate {request.destination} by geographic clusters."),
-            cluster_advice=result.get("cluster_advice", []),
-            transit_notes=result.get("transit_notes", []),
+            strategy=routing_directive,
+            cluster_advice=[f"Group major sights in {request.destination} by neighborhood."],
+            transit_notes=[
+                "Start from transport hub first when arriving."
+                if request.origin
+                else "Anchor day one near city center.",
+                "Group nearby attractions into walkable or single-transit corridors.",
+            ],
         )
 
 
@@ -131,35 +153,41 @@ Return JSON with keys: estimated_daily_budget, estimated_total_budget, assumptio
         if "error" in result or not result:
             # Fallback to calculated guidance
             logger.warning("BudgetPlannerWorker.build fell back to calculated guidance")
-            daily_budgets = {"budget": 70.0, "midrange": 160.0, "luxury": 320.0}
-            base = daily_budgets.get(request.budget_level, 160.0)
-            multiplier = 1.0 + min(len(request.interests), 5) * 0.05
-            daily = round(base * multiplier, 2)
-            total = round(daily * request.trip_length_days, 2)
-
-            return BudgetGuidance(
-                estimated_daily_budget=daily,
-                estimated_total_budget=total,
-                assumptions=[
-                    "Estimate includes lodging, local transport, attraction tickets, and meals.",
-                    "Flight or long-haul rail to destination is excluded.",
-                ],
-                saving_tips=[
-                    "Reserve flagship attractions early to avoid surge pricing.",
-                    "Use neighborhood clusters to reduce repeated transit fares.",
-                ],
-            )
+            return self._heuristic(request)
 
         logger.debug(
             "BudgetPlannerWorker.build done daily={} total={}",
             result.get("estimated_daily_budget"),
             result.get("estimated_total_budget"),
         )
+        return _safe_build(
+            BudgetGuidance,
+            lambda: self._heuristic(request),
+            estimated_daily_budget=result.get("estimated_daily_budget") or 160.0,
+            estimated_total_budget=result.get("estimated_total_budget") or 640.0,
+            assumptions=result.get("assumptions") or [],
+            saving_tips=result.get("saving_tips") or [],
+        )
+
+    @staticmethod
+    def _heuristic(request: PlanningRequest) -> BudgetGuidance:
+        daily_budgets = {"budget": 70.0, "midrange": 160.0, "luxury": 320.0}
+        base = daily_budgets.get(request.budget_level, 160.0)
+        multiplier = 1.0 + min(len(request.interests), 5) * 0.05
+        daily = round(base * multiplier, 2)
+        total = round(daily * request.trip_length_days, 2)
+
         return BudgetGuidance(
-            estimated_daily_budget=result.get("estimated_daily_budget", 160.0),
-            estimated_total_budget=result.get("estimated_total_budget", 640.0),
-            assumptions=result.get("assumptions", []),
-            saving_tips=result.get("saving_tips", []),
+            estimated_daily_budget=daily,
+            estimated_total_budget=total,
+            assumptions=[
+                "Estimate includes lodging, local transport, attraction tickets, and meals.",
+                "Flight or long-haul rail to destination is excluded.",
+            ],
+            saving_tips=[
+                "Reserve flagship attractions early to avoid surge pricing.",
+                "Use neighborhood clusters to reduce repeated transit fares.",
+            ],
         )
 
 
@@ -204,36 +232,41 @@ Return JSON with keys: season_summary, booking_window, day_planning_notes (list)
         if "error" in result or not result:
             # Fallback to calculated guidance
             logger.warning("TimingPlannerWorker.build fell back to calculated guidance")
-            season_summary = (
-                f"{request.travel_month} is likely a busier travel month for {request.destination}."
-                if high_season and request.travel_month
-                else f"{request.travel_month or 'Your target month'} is likely manageable for balanced pacing in {request.destination}."
-            )
-            booking_window = (
-                "Book 8-12 weeks ahead for lodging and high-demand tickets."
-                if high_season
-                else "Book 4-8 weeks ahead and recheck prices weekly."
-            )
-            notes = [
-                "Front-load reservation-only sights earlier in the trip.",
-                "Keep one flexible indoor block each day for weather or fatigue swings.",
-            ]
-            if context.place_hours:
-                notes.append("Validate venue opening windows again 24 hours before the visit.")
-
-            return TimingGuidance(
-                season_summary=season_summary,
-                booking_window=booking_window,
-                day_planning_notes=notes,
-            )
+            return self._heuristic(request, context, high_season)
 
         logger.debug("TimingPlannerWorker.build done season_summary_len={}", len(result.get("season_summary", "")))
+        return _safe_build(
+            TimingGuidance,
+            lambda: self._heuristic(request, context, high_season),
+            season_summary=result.get("season_summary")
+            or f"Plan for {request.travel_month or 'optimal timing'} in {request.destination}.",
+            booking_window=result.get("booking_window") or "Book 4-8 weeks ahead.",
+            day_planning_notes=result.get("day_planning_notes") or [],
+        )
+
+    @staticmethod
+    def _heuristic(request: PlanningRequest, context: RetrievedContext, high_season: bool) -> TimingGuidance:
+        season_summary = (
+            f"{request.travel_month} is likely a busier travel month for {request.destination}."
+            if high_season and request.travel_month
+            else f"{request.travel_month or 'Your target month'} is likely manageable for balanced pacing in {request.destination}."
+        )
+        booking_window = (
+            "Book 8-12 weeks ahead for lodging and high-demand tickets."
+            if high_season
+            else "Book 4-8 weeks ahead and recheck prices weekly."
+        )
+        notes = [
+            "Front-load reservation-only sights earlier in the trip.",
+            "Keep one flexible indoor block each day for weather or fatigue swings.",
+        ]
+        if context.place_hours:
+            notes.append("Validate venue opening windows again 24 hours before the visit.")
+
         return TimingGuidance(
-            season_summary=result.get(
-                "season_summary", f"Plan for {request.travel_month or 'optimal timing'} in {request.destination}."
-            ),
-            booking_window=result.get("booking_window", "Book 4-8 weeks ahead."),
-            day_planning_notes=result.get("day_planning_notes", []),
+            season_summary=season_summary,
+            booking_window=booking_window,
+            day_planning_notes=notes,
         )
 
 

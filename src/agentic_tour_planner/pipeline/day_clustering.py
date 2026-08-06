@@ -1,35 +1,33 @@
 """
 day_clustering.py
-==================
+=================
 Deterministic module for splitting a list of geo-tagged POIs into N day-clusters
-with a HARD [min_per_day, max_per_day] size constraint, while keeping clusters
-geographically coherent. Replaces "ask the LLM nicely" with an actual solver.
+that are geographically coherent first, with a SOFT preference for the user's
+places-per-day ask.
+
+The user's places-per-day request is honoured as a soft cap (the high end of the
+range): clusters never exceed it unless geography forces it (phase 2 below). The
+low end is NOT enforced: forcing a minimum count is what caused the old
+day-mixing failure mode (a distant place being dragged into a day just to fill
+a count). Geographic coherence always wins over counts.
 
 Pipeline position:
     LLM (extract POIs + coords) -> [THIS MODULE] -> LLM (write narrative/timing only)
 
-Algorithm:
-    1. Capacitated Lloyd's algorithm (alternating optimization):
-         a. Assignment step -> solved EXACTLY each iteration via OR-Tools CP-SAT
-            as a min-cost balanced assignment problem (this is what actually
-            enforces the 3-5 bound; the LLM never gets a chance to violate it).
-         b. Update step -> recompute centroids as mean of assigned points.
-         c. Repeat until assignment stabilizes (usually 3-6 iterations).
-    2. Day ordering -> nearest-neighbor chain over day-centroids, anchored at origin.
-    3. Within-day stop ordering -> nearest-neighbor + 2-opt TSP improvement.
-
-Why this fixes the Day1/Day2 bleed:
-    The old failure mode was the LLM "borrowing" a geographically distant point
-    to satisfy min=3 when a cluster only had 2 natural neighbors. Here, the
-    solver picks the borrowed point that minimizes total assignment cost across
-    ALL days simultaneously (a global optimum for that iteration), not a local
-    guess. It also converges to a self-consistent geographic partition, since
-    centroids and assignments are updated jointly.
+Algorithm: single-linkage agglomerative clustering (HAC).
+    1. Every POI starts as its own cluster.
+    2. Phase 1: repeatedly merge the CLOSEST pair of clusters whose combined
+       size stays within the soft cap (e.g. <= 5). This forms tight regional
+       blobs (Gangtok city, the east-pass excursion, the Pelling monastery
+       belt) and honestly leaves genuinely remote POIs (e.g. Yumthang Valley,
+       60 km from everything) as their own day.
+    3. Phase 2: if more clusters remain than days (sparse geography), merge the
+       closest pairs regardless of size until exactly `num_days` remain.
+    4. Day ordering -> nearest-neighbor chain over day-centroids, anchored at origin.
+    5. Within-day stop ordering -> nearest-neighbor + 2-opt TSP improvement.
 """
 
 import math
-
-from ortools.sat.python import cp_model
 
 
 def haversine(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -41,78 +39,54 @@ def haversine(a: tuple[float, float], b: tuple[float, float]) -> float:
     return 2 * 6371 * math.asin(math.sqrt(h))
 
 
-def _capacitated_assignment(
+def _single_link_distance(points: list[tuple[float, float]], a: set[int], b: set[int]) -> float:
+    """Distance between two clusters = min pairwise great-circle distance."""
+    return min(haversine(points[i], points[j]) for i in a for j in b)
+
+
+def _closest_pair(
     points: list[tuple[float, float]],
-    centroids: list[tuple[float, float]],
-    min_per_day: int,
-    max_per_day: int,
-    time_limit_s: float = 5.0,
-) -> list[int]:
+    clusters: list[set[int]],
+    cap: int | None,
+) -> tuple[int, int, float] | None:
+    """Find the closest pair of clusters; skip pairs exceeding ``cap``.
+
+    Returns (a, b, distance) with a < b, or None when no pair is mergeable
+    under the cap.
     """
-    Exact min-cost assignment of points -> clusters subject to per-cluster
-    size bounds. Solved with CP-SAT (fast + exact at this problem size).
-    Returns a list `assignment[i] = cluster_index`.
-    """
-    n, k = len(points), len(centroids)
-    model = cp_model.CpModel()
-
-    x = {(i, j): model.NewBoolVar(f"x_{i}_{j}") for i in range(n) for j in range(k)}
-
-    for i in range(n):
-        model.Add(sum(x[i, j] for j in range(k)) == 1)
-
-    for j in range(k):
-        model.Add(sum(x[i, j] for i in range(n)) >= min_per_day)
-        model.Add(sum(x[i, j] for i in range(n)) <= max_per_day)
-
-    scale = 1000
-    cost = {(i, j): int(haversine(points[i], centroids[j]) * scale) for i in range(n) for j in range(k)}
-    model.Minimize(sum(cost[i, j] * x[i, j] for i in range(n) for j in range(k)))
-
-    solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = time_limit_s
-    solver.parameters.num_search_workers = 8
-    status = solver.Solve(model)
-
-    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        raise RuntimeError(
-            f"No feasible day assignment exists for n={n} points into k={k} "
-            f"days with bounds [{min_per_day},{max_per_day}]. "
-            f"Check that min_per_day*k <= n <= max_per_day*k."
-        )
-
-    assignment: list[int] = [-1] * n
-    for i in range(n):
-        for j in range(k):
-            if solver.Value(x[i, j]) == 1:
-                assignment[i] = j
-    return assignment
+    best: tuple[int, int, float] | None = None
+    for a in range(len(clusters)):
+        for b in range(a + 1, len(clusters)):
+            if cap is not None and len(clusters[a]) + len(clusters[b]) > cap:
+                continue
+            d = _single_link_distance(points, clusters[a], clusters[b])
+            if best is None or d < best[2]:
+                best = (a, b, d)
+    return best
 
 
-def capacitated_geo_cluster(
+def balanced_geo_cluster(
     pois: list[dict],
     num_days: int,
-    min_per_day: int = 3,
-    max_per_day: int = 5,
-    max_iterations: int = 15,
+    target_range: tuple[int, int] | None = None,
 ) -> list[list[dict]]:
     """
-    Split POIs into `num_days` geographically coherent clusters, each with
-    between min_per_day and max_per_day points.
+    Split POIs into `num_days` geographically coherent clusters.
+
+    ``target_range`` (e.g. (3, 5)) is the user's places-per-day preference. Its
+    high end acts as a soft cap during agglomeration; its low end is ignored —
+    a day is never padded with a distant place to reach a minimum (the old
+    day-mixing failure mode).
 
     pois: list of dicts, each MUST have 'lat' and 'lon' keys (any other keys,
           e.g. 'name', pass through untouched).
     Returns: list of length num_days, each element a list of POI dicts.
     """
     n = len(pois)
-    if not (min_per_day * num_days <= n <= max_per_day * num_days):
-        raise ValueError(
-            f"{n} POIs cannot be split into {num_days} days within "
-            f"[{min_per_day},{max_per_day}] per day. "
-            f"Valid range is [{min_per_day * num_days}, {max_per_day * num_days}] POIs."
-        )
+    if n < num_days:
+        raise ValueError(f"{n} POIs cannot be split into {num_days} days (need at least one POI per day).")
 
-    points = []
+    points: list[tuple[float, float]] = []
     for p in pois:
         if "lat" not in p or "lon" not in p:
             raise ValueError(
@@ -121,28 +95,31 @@ def capacitated_geo_cluster(
             )
         points.append((p["lat"], p["lon"]))
 
-    sorted_idx = sorted(range(n), key=lambda i: (points[i][0] + points[i][1]))
-    seed_idx = [sorted_idx[int(i * (n - 1) / max(num_days - 1, 1))] for i in range(num_days)]
-    centroids = [points[i] for i in seed_idx]
+    cap = target_range[1] if target_range is not None else None
 
-    assignment: list[int] = []
-    for _ in range(max_iterations):
-        new_assignment = _capacitated_assignment(points, centroids, min_per_day, max_per_day)
-        if new_assignment == assignment:
+    # Phase 1: agglomerate the closest pairs, never exceeding the soft cap.
+    clusters: list[set[int]] = [{i} for i in range(n)]
+    while len(clusters) > num_days:
+        pair = _closest_pair(points, clusters, cap)
+        if pair is None:
             break
-        assignment = new_assignment
-        for j in range(num_days):
-            members = [points[i] for i in range(n) if assignment[i] == j]
-            if members:
-                centroids[j] = (
-                    sum(p[0] for p in members) / len(members),
-                    sum(p[1] for p in members) / len(members),
-                )
+        a, b, _ = pair
+        clusters[a] |= clusters[b]
+        del clusters[b]
 
-    clusters: list[list[dict]] = [[] for _ in range(num_days)]
-    for i, j in enumerate(assignment):
-        clusters[j].append(pois[i])
-    return clusters
+    # Phase 2: geography too sparse for the cap — merge closest pairs until
+    # exactly num_days remain (the cap is soft after all).
+    while len(clusters) > num_days:
+        pair = _closest_pair(points, clusters, cap=None)
+        if pair is None:
+            break
+        a, b, _ = pair
+        clusters[a] |= clusters[b]
+        del clusters[b]
+
+    # Stable output order: smallest member index first within a day; days keep
+    # the merge order (the caller may re-order days narratively).
+    return [[pois[i] for i in sorted(c)] for c in clusters]
 
 
 def _tsp_order(points: list[tuple[float, float]]) -> list[int]:
@@ -225,7 +202,7 @@ if __name__ == "__main__":
         {"name": "Solophok Chardham", "lat": 27.1600, "lon": 88.3450},
     ]
 
-    clusters = capacitated_geo_cluster(pois, num_days=4, min_per_day=3, max_per_day=5)
+    clusters = balanced_geo_cluster(pois, num_days=4, target_range=(3, 5))
     ordered = order_days_and_stops(clusters, origin=(26.7271, 88.3953))
 
     for d, day in enumerate(ordered, 1):

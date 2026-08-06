@@ -46,6 +46,19 @@ def _is_real_place_name(name: str) -> bool:
     return not _LOGISTICS_NAME_PATTERNS.match(stripped)
 
 
+def strip_place_markdown(name: str) -> str:
+    """Remove markdown emphasis from a route-place `name` (e.g. '**Nathula Pass**' -> 'Nathula Pass').
+
+    Bold/italic markdown is allowed in narrative fields (description, key_note,
+    transport, best_time) but must never leak into the `name` field itself, which
+    the renderer treats as literal text.
+    """
+    if not name:
+        return ""
+    cleaned = re.sub(r"[*_`]+", " ", str(name)).strip()
+    return re.sub(r"\s+", " ", cleaned)
+
+
 def _format_live_brief(brief: LiveWebBrief) -> str:
     logger.debug(
         f"Formatting live brief (sections filled={sum(1 for _ in [brief.path_instructions, brief.fair_charges, brief.transport_availability, brief.place_reviews, brief.daywise_guide] if _)}, sources={len(brief.sources)})"
@@ -125,16 +138,15 @@ def build_itinerary_prompt(
 
     place_lo, place_hi = parse_place_range(request.places_per_day)
     places_rule = (
-        f"STRICT MINIMUM: Schedule AT LEAST {place_lo} notable places every day "
-        f"(user requested '{request.places_per_day}'). Treat {place_lo}-{place_hi} as the "
-        f"recommended/core places range for each day ({place_lo}-{place_hi} recommended/core places). "
-        f"Populate 'spots' with at least {place_lo} distinct places; never fewer, even on the last "
-        f"day. Places above {place_hi} must be clearly lower-priority optional extras. There are NO exceptions: "
-        f"arrival, transfer, and departure days still need at least {place_lo} places."
+        f"PLACES PER DAY (SOFT TARGET): Aim for about {place_lo}-{place_hi} places on regular days "
+        f"(user asked '{request.places_per_day}'). This is a preference, not a quota: fewer places are "
+        f"fine on arrival/transfer/departure days or when a region is sparse, and never pad a day with "
+        f"distant places just to reach the count."
         if place_lo != place_hi
-        else f"STRICT MINIMUM: Schedule AT LEAST {place_lo} notable places every day "
-        f"(user requested '{request.places_per_day}'). Never fewer. Populate 'spots' with the "
-        f"same minimum. There are NO exceptions: arrival, transfer, and departure days still need at least {place_lo} places."
+        else f"PLACES PER DAY (SOFT TARGET): Aim for about {place_lo} places on regular days "
+        f"(user asked '{request.places_per_day}'). This is a preference, not a quota: fewer places are "
+        f"fine on arrival/transfer/departure days or when a region is sparse, and never pad a day with "
+        f"distant places just to reach the count."
     )
 
     authority_rule = (
@@ -161,7 +173,7 @@ def build_itinerary_prompt(
         Transport mode: {transport_mode}
 
         STRICT PLANNING RULES:
-        - PLACES PER DAY: {places_rule}  (do NOT default to exactly 2; follow this rate)
+        - PLACES PER DAY (SOFT TARGET): {places_rule}  (do NOT default to 1-2 places; aim for this preference)
         - GEOGRAPHIC CLUSTERING FIRST (MANDATORY): Before assigning places to days, group selected places into
           clusters by realistic road/transit proximity, NOT input order and NOT the same name everywhere.
           Places in the same day MUST sit within a 1-2 hour travel radius.
@@ -239,10 +251,16 @@ def build_itinerary_prompt(
               (e.g. ['Breakfast: hotel buffet', 'Lunch: riverside cafe', 'Dinner: local izakaya']).
             * At least the requested minimum number of activities are FULL entries:
               write the activity string AND add a spots entry with name, slot, a 2-3 sentence history,
-              opening_hours, closing_hours, best_time, and a 2-3 sentence description of its scenic beauty.
+              opening_hours, closing_hours, best_time, a 2-3 sentence description of its scenic beauty,
+              and an image_query.
               Use the exact place name in the matching activity string so they link.
             * Additional places above the requested range may be marked optional.
             * Always start the timeline with breakfast and include a lunch entry midday.
+        - IMAGE QUERY (place-restricted): For every spot, `image_query` must be a photo-search
+          phrase for THE PLACE ITSELF — its building, temple, monastery, monument or landscape,
+          named with the destination, e.g. "Hanuman Tok temple, Gangtok". It must describe the
+          physical landmark, never a generic animal, deity, celebrity or object the place name
+          might evoke (e.g. "Hanuman Tok" must NOT become a plain "monkey" photo).
         - HOTEL: For EVERY day, provide a hotel_recommendation describing where to stay that night,
           placed just before the weather block. Tailor it to that day's area and base:
           Day 1 (arrival/base): "Take a hotel near '<area name>' because it is central to today's sights and transit."
@@ -256,8 +274,9 @@ def build_itinerary_prompt(
            geographic solver can assign places to days. Example: {{"name": "MG Marg", "lat": 27.3314, "lon": 88.6138}}.
         - SOLVER-BASED DAY ASSIGNMENT: A deterministic geographic solver assigns places to days
           after your extraction. Do NOT assign places to specific days in your output —
-          only group places loosely by region to help the solver. The solver enforces
-          the 3-5 per-day bound and ensures geographic coherence. Your job is to
+          only group places loosely by region to help the solver. The solver keeps days
+          geographically coherent and honours your places-per-day figure as a soft
+          preference. Do NOT pad days to hit a count. Your job is to
           extract accurate POIs with coordinates and write high-quality narrative text.
 
         LIVE WEB INTELLIGENCE (authoritative source of truth):
@@ -274,7 +293,7 @@ def build_itinerary_prompt(
         Itinerary must be a list of day objects with:
         day, theme, summary, rationale, transport, morning, afternoon, evening, meals, logistics, weather, spots,
         needs_hotel_change, hotel_recommendation.
-        Each spot in spots must include: name, lat, lon, slot, history, opening_hours, closing_hours, best_time, description.
+        Each spot in spots must include: name, lat, lon, slot, history, opening_hours, closing_hours, best_time, description, image_query.
           Citations must be grounded in the evidence above (favour the Live Web sources).
           """
     ).strip()
@@ -334,16 +353,16 @@ def build_detailed_places_prompt(
         hours_lines.append(f"- {venue}: {joined}")
     hours_block = "\n".join(hours_lines) if hours_lines else "No opening-hour data was retrieved."
 
-    # ---- CORE places per day (mandatory, from the standard plan) ----
+    # ---- CORE places per day (from the standard plan) ----
     # Filtered through _is_real_place_name so logistics/day-phase labels
     # (e.g. "Arrive", "Depart Gangtok", "Early", "Transit") never get promoted
     # into the detailed-places prompt as if they were real attractions.
     core_lines: list[str] = []
+    other_lines: list[str] = []
     dropped_logistics: list[str] = []
     for day in getattr(response, "itinerary", []):
         day_num = getattr(day, "day", None)
-        if target_day is not None and day_num != target_day:
-            continue
+        is_target = target_day is None or day_num == target_day
         spots = getattr(day, "spots", None) or []
         names: list[str] = []
         for s in spots:
@@ -357,12 +376,16 @@ def build_detailed_places_prompt(
         names = names[:place_hi]
         if not names:
             names = [f"(let the model choose a real place in {request.destination})"]
-        core_lines.append(f"Day {day_num} core places: " + " | ".join(names))
+        if is_target:
+            core_lines.append(f"Day {day_num} core places: " + " | ".join(names))
+        else:
+            other_lines.append(f"Day {day_num}: " + " | ".join(names))
     if dropped_logistics:
         logger.debug(
             f"Dropped {len(dropped_logistics)} logistics/day-phase labels from core places: {dropped_logistics}"
         )
     core_block = "\n".join(core_lines) if core_lines else "No core places pre-selected."
+    other_block = "\n".join(other_lines) if other_lines else "None known — you are the only author of the plan."
 
     live_block = _format_live_brief(live_brief) if live_brief else "Not collected."
 
@@ -398,16 +421,33 @@ def build_detailed_places_prompt(
         Interests: {", ".join(request.interests) or "General sightseeing"}
         Travel month: {request.travel_month or "Flexible"}
         Budget level: {request.budget_level}
-        Mandatory CORE places per day: between {place_lo} and {place_hi} (these MUST each get the full block).
-        STRICT MINIMUM: every day MUST contain AT LEAST {place_lo} places (user requested '{request.places_per_day}').
-        If the core list above has fewer than {place_lo} names, ADD real, verifiable places of {request.destination}
-        to reach the minimum — never output fewer than {place_lo} places on any regular day.
+        CORE places per day (soft target): aim for between {place_lo} and {place_hi}
+        (user asked '{request.places_per_day}'). These get the full detail block.
+        Fewer than {place_lo} is acceptable when the day's core list is genuinely
+        short (e.g. travel days or sparse regions) — do NOT add filler places just to
+        reach a count.
 
         === ROUTE GUIDANCE (follow this journey order) ===
         {guidance}
 
-        === CORE PLACES PER DAY (MANDATORY — use these real names) ===
+        === CORE PLACES PER DAY (use these real names) ===
         {core_block}
+
+        === PLACES ALREADY SCHEDULED ON OTHER DAYS (never repeat these on this day) ===
+        {other_block}
+
+        STRICT DEDUPE & REGION RULES:
+        - A day MUST NOT contain any place that is already a core place on another day of the
+          trip — including as is_optional=true (e.g. do NOT write 'Enchey Monastery (optional)'
+          on a Tsomgo Lake day when Enchey Monastery is already scheduled on the Gangtok day).
+          Repeating a visited place on a later day is the worst error.
+        - Never list the same place twice within one day.
+        - Any is_optional=true extras must be REAL places in the SAME area/region as that day's
+          core places (same neighbourhood or a short drive) — never halfway across the
+          destination. Prefer 0-2 extras over padding a day with wrong-area stays.
+        - The 'name' field of every place MUST be PLAIN TEXT — no **bold** or *italic* markdown
+          inside the name (write 'Nathula Pass', never '**Nathula Pass**'). Markdown emphasis
+          belongs only inside description, key_note, transport, and best_time.
 
         === REAL OPENING HOURS (from Google Places tool — use these, do not guess) ===
         {hours_block}
@@ -473,6 +513,11 @@ DETAILED_SYSTEM_PROMPT = dedent(
     are day-phase/logistics labels, not tourist places. They belong only in the
     day-level summary/transport text, never as a named place with its own
     description, hours, or transport block.
+
+    Never repeat a place on a day other than the one it is scheduled on, and never
+    list the same place twice within one day. Optional extras must be in the SAME
+    area as the day's core places. Place `name` fields must be plain text (no
+    markdown emphasis).
 
     DESCRIPTION fields MUST be EXACTLY 180-220 words. This is a STRICT requirement.
     Each description must include: history/cultural significance, physical description,

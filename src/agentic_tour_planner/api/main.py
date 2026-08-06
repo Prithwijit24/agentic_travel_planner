@@ -207,6 +207,11 @@ async def _run_plan_job(request_id: str, request: PlanningRequest, emitter: Even
             profile_rows=pipeline.profiler.as_table(),
             images=images_result,
         )
+        # Wall time + LLM usage ride along with the response payload so the UI
+        # can show them on the overview page without extra plumbing.
+        response_payload = base_result.setdefault("response", {})
+        response_payload["wall_time_s"] = round(elapsed, 1)
+        response_payload["llm_usage"] = getattr(pipeline, "llm_usage", {"used": [], "fallback": []})
         full_result = {
             "plan_id": response.plan_id,
             "request_id": request_id,

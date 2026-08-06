@@ -21,20 +21,22 @@ from agentic_tour_planner.domain.models import (
     SourceDocument,
     SpotDetail,
     TransportOption,
+    parse_place_range,
 )
+from agentic_tour_planner.geonames.index import search_places
 from agentic_tour_planner.llm.provider import LLMProvider, LLMUnavailableError
 from agentic_tour_planner.pipeline.day_clustering import (
-    capacitated_geo_cluster,
+    balanced_geo_cluster,
     haversine,
     order_days_and_stops,
 )
-from agentic_tour_planner.pipeline.place_constraints import enforce_minimum_daily_spots
 from agentic_tour_planner.pipeline.prompts import (
     DAY_REALIGN_SYSTEM_PROMPT,
     DETAILED_SYSTEM_PROMPT,
     build_day_realign_prompt,
     build_detailed_places_prompt,
     build_itinerary_prompt,
+    strip_place_markdown,
 )
 from agentic_tour_planner.services.cost_estimator import CostEstimator
 from agentic_tour_planner.services.planning_workers import PlanningInsightsBuilder
@@ -44,6 +46,13 @@ from agentic_tour_planner.utils.logging import get_logger
 from agentic_tour_planner.utils.profiler import StageTimer
 
 logger = get_logger(__name__)
+
+
+def _dedupe_key(plain: str) -> str:
+    """Normalized matching key for a place name: lowercase, and trailing
+    '(optional)' markers stripped so 'Enchey Monastery (optional)' matches
+    the core 'Enchey Monastery'."""
+    return re.sub(r"\s*\(optional\)$", "", plain.lower())
 
 
 class AgenticTourPlannerPipeline:
@@ -57,6 +66,10 @@ class AgenticTourPlannerPipeline:
         self.profiler = StageTimer()
         self._context_summary: dict | None = None
         self._context: RetrievedContext | None = None
+        # LLM usage per pipeline stage, filled during run() / run_detailed_places().
+        # "used" lists stages where the LLM produced the result; "fallback" lists
+        # stages where the LLM failed and a deterministic approach was used.
+        self.llm_usage: dict[str, list[str]] = {"used": [], "fallback": []}
 
         # Use planner model for main itinerary generation
         self.planner_provider, self.planner_model = self.llm_provider.get_planner_model()
@@ -69,6 +82,11 @@ class AgenticTourPlannerPipeline:
     @property
     def context(self) -> RetrievedContext | None:
         return self._context
+
+    def _record_llm_site(self, stage: str, used: bool) -> None:
+        bucket = "used" if used else "fallback"
+        if stage not in self.llm_usage[bucket]:
+            self.llm_usage[bucket].append(stage)
 
     async def gather_context(self, request: PlanningRequest) -> RetrievedContext:
         """Gather context using AI Infra Stack pipeline."""
@@ -181,6 +199,7 @@ class AgenticTourPlannerPipeline:
         async with self.profiler.atrack("Generate Plan"):
             if emitter:
                 emitter.emit(LogEvent(event="step", step="Generate Plan", message="Generating plan..."))
+            planner_fell_back = False
             try:
                 plan_json = await self.llm_provider.complete_json(
                     prompt,
@@ -188,16 +207,25 @@ class AgenticTourPlannerPipeline:
                 )
                 if not plan_json:
                     logger.warning("Planner returned empty result; using fallback plan.")
+                    planner_fell_back = True
                     plan_json = self._fallback_plan(request)
             except LLMUnavailableError:
                 raise
             except Exception as e:
                 logger.error(f"Planner failed, using fallback: {e}")
+                planner_fell_back = True
                 plan_json = self._fallback_plan(request)
+        self._record_llm_site("itinerary planner", used=not planner_fell_back)
 
         # ── Phase 4: Parallel post-processing ───────────────────────────
         planner_provider, planner_model = self.llm_provider.last_planner_used()
         worker_meta = self.insights_builder.last_worker_used
+        if worker_meta:
+            for stage, meta in worker_meta.items():
+                self._record_llm_site(
+                    f"{stage} guidance",
+                    used=bool(meta) and meta != ("fallback", "heuristic"),
+                )
         worker_used = {v for v in worker_meta.values() if v}
         if not worker_used:
             worker_provider, worker_model = "fallback", "heuristic"
@@ -262,22 +290,35 @@ class AgenticTourPlannerPipeline:
                         item[field] = []
                     elif isinstance(value, str):
                         item[field] = [value]
+                # "transport" is the inverse shape: a single string. LLMs
+                # sometimes emit a list — coerce it instead of failing the plan.
+                transport_value = item.get("transport")
+                if transport_value is None:
+                    item["transport"] = ""
+                elif isinstance(transport_value, list):
+                    item["transport"] = " ".join(str(v) for v in transport_value)
                 itinerary.append(DayPlan.model_validate(item))
-            itinerary = enforce_minimum_daily_spots(request, itinerary)
 
-            # --- Deterministic day clustering (replaces LLM-based assignment) ---
+            # Clean spot names: the planner sometimes wraps real names in **bold**
+            # markdown (e.g. "**Nathula Pass**"). The renderer treats `name` as
+            # literal text, so strip emphasis before downstream stages use it.
+            for day in itinerary:
+                for spot in day.spots:
+                    spot.name = strip_place_markdown(spot.name)
+
+            # --- Deterministic day clustering (soft places/day preference) ---
             try:
                 all_pois: list[dict] = []
+                day_bounds: list[tuple[int, int]] = []
                 skipped_no_coords = 0
                 for day in itinerary:
+                    start = len(all_pois)
                     for spot in day.spots:
-                        poi: dict = {"name": spot.name}
                         if spot.lat is not None and spot.lon is not None:
-                            poi["lat"] = spot.lat
-                            poi["lon"] = spot.lon
-                            all_pois.append(poi)
+                            all_pois.append({"name": spot.name, "lat": spot.lat, "lon": spot.lon, "spot": spot})
                         else:
                             skipped_no_coords += 1
+                    day_bounds.append((start, len(all_pois)))
 
                 if skipped_no_coords:
                     logger.warning(
@@ -286,13 +327,22 @@ class AgenticTourPlannerPipeline:
                         f"Using {len(all_pois)} POIs with coordinates."
                     )
 
-                if all_pois and len(all_pois) >= request.trip_length_days * 3:
-                    clusters = capacitated_geo_cluster(
+                target_range = parse_place_range(request.places_per_day) if request.places_per_day else None
+
+                if all_pois and len(all_pois) >= request.trip_length_days:
+                    clusters = balanced_geo_cluster(
                         all_pois,
                         num_days=request.trip_length_days,
-                        min_per_day=3,
-                        max_per_day=5,
+                        target_range=target_range,
                     )
+                    # Keep the LLM's narrative day order: sort clusters by the
+                    # earliest original day that contributed a member.
+                    orig_day = [0] * len(all_pois)
+                    for day_idx, (s, end) in enumerate(day_bounds):
+                        for i in range(s, end):
+                            orig_day[i] = day_idx
+                    idx_of = {id(p): i for i, p in enumerate(all_pois)}
+                    clusters.sort(key=lambda c: min(orig_day[idx_of[id(p)]] for p in c))
                     origin = None
                     if request.origin:
                         try:
@@ -304,21 +354,26 @@ class AgenticTourPlannerPipeline:
                         clusters,
                         origin=origin,
                     )
-                    # Reassign spots to days, preserving original day structure
+                    # Reassign spots to days, carrying each spot's LLM-written
+                    # narrative (description, hours, image_query, ...) along.
                     for d_idx, cluster in enumerate(clusters):
                         if d_idx < len(itinerary):
                             day_spots = []
                             for poi in cluster:
-                                spot = SpotDetail(name=poi["name"])
-                                if "lat" in poi and "lon" in poi:
-                                    spot.lat = poi["lat"]
-                                    spot.lon = poi["lon"]
+                                spot = poi.get("spot") or SpotDetail(name=poi["name"])
+                                spot = spot.model_copy(
+                                    update={
+                                        "name": poi["name"],
+                                        "lat": poi["lat"],
+                                        "lon": poi["lon"],
+                                    }
+                                )
                                 day_spots.append(spot)
                             itinerary[d_idx].spots = day_spots
                     logger.debug(f"Day clustering solver reassigned {len(all_pois)} POIs into {len(itinerary)} days.")
                 else:
                     logger.debug(
-                        f"Day clustering skipped: {len(all_pois)} POIs, need at least {request.trip_length_days * 3}."
+                        f"Day clustering skipped: {len(all_pois)} POIs, need at least {request.trip_length_days}."
                     )
             except ValueError as e:
                 logger.warning(f"Day clustering infeasible, keeping LLM assignment: {e}")
@@ -328,10 +383,11 @@ class AgenticTourPlannerPipeline:
             logger.debug(f"Parsed {len(itinerary)} itinerary days.")
 
         # --- Realign day narrative (theme/summary/hotel) with FINAL spots ----
-        # The solver above may have moved places between days. The LLM's original
-        # theme/summary/hotel describe its own (pre-solver) day composition, so
-        # regenerate them from the final per-day place list. Falls back to a
-        # deterministic derivation when the LLM pass fails.
+        # The solver may have pulled places between days and reordered stops
+        # inside a day. The LLM's original theme/summary/hotel describe its own
+        # (pre-solver) day composition, so regenerate them from the final
+        # per-day place list. Falls back to a deterministic derivation when the
+        # LLM pass fails.
         if itinerary:
             async with self.profiler.atrack("Realign Day Narrative"):
                 await self._realign_day_narratives(request, itinerary)
@@ -475,6 +531,7 @@ class AgenticTourPlannerPipeline:
                 raw["days"].append(found[0])
             if raw["days"]:
                 raw["days"].sort(key=lambda d: int(d.get("day", 0) or 0))
+            raw["days"] = self._dedupe_detailed_days(raw["days"], base_response)
         detailed: DetailedPlan | None = None
         if raw and isinstance(raw, dict) and raw.get("days"):
             try:
@@ -484,7 +541,63 @@ class AgenticTourPlannerPipeline:
                 detailed = None
         else:
             logger.warning("Detailed places generation returned no usable 'days'.")
+        self._record_llm_site("detailed places", used=detailed is not None)
         return detailed
+
+    @staticmethod
+    def _dedupe_detailed_days(raw_days: list[dict], response: Any) -> list[dict]:
+        """Deterministic guard against duplicated or cross-region places.
+
+        The detailed-places stage runs one per-day LLM call. Models sometimes
+        (a) list the same place twice within a day, (b) repeat a core place that
+        is already scheduled on another day (e.g. adding 'Enchey Monastery
+        (optional)' to a Tsomgo Lake day when Enchey is already on the Gangtok
+        day), or (c) leak markdown into the place name. This normalizes names and
+        removes any place that duplicates a core place from a different day.
+        """
+        scheduled: dict[str, int] = {}  # normalized name -> day it is scheduled on
+        for day in getattr(response, "itinerary", []):
+            if isinstance(day, dict):
+                day_num = int(day.get("day") or 0)
+                spots = day.get("spots") or []
+            else:
+                day_num = int(getattr(day, "day", 0) or 0)
+                spots = getattr(day, "spots", None) or []
+            for s in spots:
+                name = s.get("name") if isinstance(s, dict) else getattr(s, "name", None)
+                plain = strip_place_markdown(name or "")
+                key = _dedupe_key(plain)
+                if key and key not in scheduled:
+                    scheduled[key] = day_num
+
+        cleaned: list[dict] = []
+        for day in raw_days:
+            if not isinstance(day, dict):
+                continue
+            day_num = int(day.get("day") or 0)
+            seen: set[str] = set()
+            places: list[dict] = []
+            for p in day.get("places") or []:
+                if not isinstance(p, dict):
+                    continue
+                plain = strip_place_markdown(p.get("name") or "")
+                key = _dedupe_key(plain)
+                if not key:
+                    continue
+                # A place repeated inside one day, or already scheduled as a core
+                # place on another day, is dropped (kept only on its original day).
+                if key in seen or (key in scheduled and scheduled[key] != day_num):
+                    continue
+                seen.add(key)
+                if key not in scheduled:
+                    scheduled[key] = day_num  # reserve for later days
+                p = dict(p)
+                p["name"] = plain
+                places.append(p)
+            day = dict(day)
+            day["places"] = places
+            cleaned.append(day)
+        return cleaned
 
     # ------------------------------------------------------------- day realignment
     async def _realign_day_narratives(self, request: PlanningRequest, itinerary: list[DayPlan]) -> None:
@@ -501,11 +614,11 @@ class AgenticTourPlannerPipeline:
         day_numbers = [d.day for d in itinerary]
         concurrency = max(1, min(4, len(day_numbers)))
 
-        async def _one(idx: int) -> None:
+        async def _one(idx: int) -> bool | None:
             day = itinerary[idx]
             day_places = [s.name for s in day.spots if s.name]
             if not day_places:
-                return
+                return None
             prev_places = [s.name for s in itinerary[idx - 1].spots if s.name] if idx > 0 else []
             prompt = build_day_realign_prompt(
                 request,
@@ -525,18 +638,25 @@ class AgenticTourPlannerPipeline:
                     logger.debug(
                         "Day realign ok day={} theme={!r} hotel={!r}", day.day, day.theme, day.hotel_recommendation
                     )
-                    return
+                    return True
             except Exception as exc:
                 logger.warning(f"Day realign LLM failed for day {day.day}: {exc}")
             self._fallback_day_realign(request, itinerary, idx)
+            return False
 
         semaphore = asyncio.Semaphore(concurrency)
 
-        async def _guarded(idx: int) -> None:
+        async def _guarded(idx: int) -> bool | None:
             async with semaphore:
-                await _one(idx)
+                return await _one(idx)
 
-        await asyncio.gather(*(_guarded(i) for i in range(len(itinerary))))
+        outcomes = await asyncio.gather(*(_guarded(i) for i in range(len(itinerary))))
+        attempted = [o for o in outcomes if o is not None]
+        used_days = [o for o in attempted if o is True]
+        if used_days:
+            self._record_llm_site("day realign", used=True)
+        if len(used_days) != len(attempted):
+            self._record_llm_site("day realign", used=False)
 
     @staticmethod
     def _apply_realign(day: DayPlan, result: dict[str, Any]) -> None:
@@ -595,21 +715,41 @@ class AgenticTourPlannerPipeline:
         return haversine(prev, cur) > threshold_km
 
     def _fallback_plan(self, request: PlanningRequest) -> dict:
-        """Generate a basic plan when LLM fails."""
+        """Generate a basic plan when LLM fails.
+
+        Tries to seed real place names + coordinates from the local geonames
+        index so the deterministic day-clustering solver can still produce a
+        geographically sensible itinerary; degrades to generic themes if the
+        index has nothing for this destination.
+        """
         logger.debug(f"Generating fallback plan for {request.destination!r} days={request.trip_length_days}")
         days = []
         interests = request.interests or ["landmarks", "food", "walks"]
+        all_places = self._fallback_places(request.destination)
         for day in range(1, request.trip_length_days + 1):
             theme = interests[(day - 1) % len(interests)].title()
+            # Round-robin the real places across days; the clustering solver
+            # rebalances them geographically afterwards.
+            day_places = all_places[(day - 1) :: request.trip_length_days] if all_places else []
+            spots: list[dict] = []
+            for place in day_places:
+                name = place.get("name", "")
+                spot: dict[str, Any] = {"name": name}
+                if place.get("lat") is not None and place.get("lon") is not None:
+                    spot["lat"] = place["lat"]
+                    spot["lon"] = place["lon"]
+                spots.append(spot)
+            activity_anchor = ", ".join(p.get("name", "") for p in day_places[:2]) or f"a {theme.lower()} anchor area"
             days.append(
                 {
                     "day": day,
                     "theme": f"{theme} in {request.destination}",
-                    "morning": [f"Explore a {theme.lower()} anchor area."],
-                    "afternoon": [f"Visit a second {theme.lower()} venue and lunch nearby."],
+                    "morning": [f"Start at {activity_anchor}."],
+                    "afternoon": ["Explore nearby highlights and lunch locally."],
                     "evening": ["Wrap with a scenic walk and local dinner."],
                     "meals": ["Breakfast near hotel", "Lunch in activity zone", "Dinner in lively district"],
                     "logistics": ["Use one neighborhood cluster per half day."],
+                    "spots": spots,
                 }
             )
         return {
@@ -621,6 +761,30 @@ class AgenticTourPlannerPipeline:
             ],
             "citations": [],
         }
+
+    @staticmethod
+    def _fallback_places(destination: str, limit: int = 12) -> list[dict]:
+        """Best-effort real places for a destination from the geonames index."""
+        try:
+            suggestions = search_places(destination, limit=limit)
+        except Exception as exc:
+            logger.debug(f"Fallback places lookup failed for {destination!r}: {exc}")
+            return []
+        places: list[dict] = []
+        seen: set[str] = set()
+        dest_lower = (destination or "").strip().lower()
+        for s in suggestions:
+            name = getattr(s, "name", None)
+            if not name:
+                continue
+            if abs(float(s.latitude)) < 0.01 and abs(float(s.longitude)) < 0.01:
+                continue
+            key = str(name).strip().lower()
+            if key in seen or key == dest_lower:
+                continue
+            seen.add(key)
+            places.append({"name": str(name), "lat": float(s.latitude), "lon": float(s.longitude)})
+        return places
 
     def _fallback_transport_options(self, request: PlanningRequest) -> list[TransportOption]:
         """Generate realistic transport options when the LLM doesn't produce any."""

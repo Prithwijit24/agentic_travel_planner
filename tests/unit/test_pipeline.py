@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from agentic_tour_planner.domain.models import (
     BudgetGuidance,
     DayPlan,
@@ -5,10 +7,8 @@ from agentic_tour_planner.domain.models import (
     PlanningRequest,
     RetrievedContext,
     RouteGuidance,
-    SpotDetail,
     TimingGuidance,
 )
-from agentic_tour_planner.pipeline.place_constraints import enforce_minimum_daily_spots
 from agentic_tour_planner.pipeline.prompts import build_itinerary_prompt
 
 
@@ -48,54 +48,103 @@ def test_prompt_requires_geographic_travel_constraints():
     assert "3-4 hours" in prompt
     assert "50-70 km" in prompt
     assert "1.5 hours" in prompt
-    assert "Day N+1 must logically start" in prompt
-    assert "multi-city" in prompt
-    assert "rationale" in prompt
-    assert "4-6 recommended/core places" in prompt
-    assert "above 6" in prompt
 
 
-def test_enforces_requested_minimum_spots_per_regular_day():
+def test_prompt_softens_places_per_day_to_preference_not_quota():
     request = PlanningRequest(destination="Sikkim", trip_length_days=3, places_per_day="4-6")
-    itinerary = [
-        DayPlan(
-            day=1,
-            theme="Monasteries",
-            morning=["Visit Rumtek Monastery (Morning 8:00-9:30)"],
-            afternoon=["Explore Namgyal Institute of Tibetology (Afternoon 14:00-15:30)"],
-            evening=["Walk MG Marg (Evening 19:00-20:30)"],
-            spots=[SpotDetail(name="Rumtek Monastery")],
-        ),
-        DayPlan(day=3, theme="Departure / Return Travel", spots=[]),
+    context = RetrievedContext()
+    insights = PlanningInsights(
+        route=RouteGuidance(strategy="cluster by region"),
+        budget=BudgetGuidance(estimated_daily_budget=100, estimated_total_budget=400),
+        timing=TimingGuidance(season_summary="clear", booking_window="2 weeks"),
+    )
+
+    prompt = build_itinerary_prompt(request, context, insights)
+
+    # The places-per-day ask is now a soft target, never a hard minimum.
+    assert "SOFT TARGET" in prompt
+    assert "preference, not a quota" in prompt
+    assert "STRICT MINIMUM" not in prompt
+    assert "never pad a day with" in prompt
+
+
+def test_strip_place_markdown_cleans_emphasis():
+    from agentic_tour_planner.pipeline.prompts import strip_place_markdown
+
+    assert strip_place_markdown("**Nathula Pass**") == "Nathula Pass"
+    assert strip_place_markdown("  *MG Marg*  ") == "MG Marg"
+    assert strip_place_markdown("plain name") == "plain name"
+    assert strip_place_markdown("") == ""
+
+
+def test_dedupe_key_matches_optional_suffix():
+    from agentic_tour_planner.pipeline.agentic_pipeline import _dedupe_key
+
+    assert _dedupe_key("Enchey Monastery (optional)") == _dedupe_key("Enchey Monastery")
+    assert _dedupe_key("Tsomgo Lake") != _dedupe_key("Baba Mandir")
+
+
+def test_dedupe_detailed_days_removes_cross_day_and_same_day_duplicates():
+    from agentic_tour_planner.pipeline.agentic_pipeline import AgenticTourPlannerPipeline
+
+    class Response:
+        itinerary: ClassVar[list] = [
+            {"day": 1, "spots": [{"name": "MG Marg"}, {"name": "Enchey Monastery"}, {"name": "Do Drul Chorten"}]},
+            {"day": 3, "spots": [{"name": "Tsomgo Lake"}, {"name": "Baba Mandir"}]},
+        ]
+
+    raw = [
+        {"day": 1, "places": [{"name": "MG Marg"}, {"name": "Enchey Monastery"}]},
+        {
+            "day": 3,
+            "places": [
+                {"name": "Tsomgo Lake"},
+                {"name": "Baba Mandir"},
+                # Already scheduled on Day 1 — must be dropped (even with "(optional)").
+                {"name": "Enchey Monastery (optional)"},
+                # Already scheduled on Day 1 with markdown name — must be dropped + cleaned.
+                {"name": "**Do Drul Chorten**"},
+                # Same-day repeat — must be dropped.
+                {"name": "Tsomgo Lake"},
+                # New place not scheduled elsewhere — kept.
+                {"name": "Nathula Pass"},
+            ],
+        },
     ]
 
-    enforced = enforce_minimum_daily_spots(request, itinerary)
+    cleaned = AgenticTourPlannerPipeline._dedupe_detailed_days(raw, Response())
 
-    # Real, activity-derived places are backfilled up to the requested minimum...
-    assert len(enforced[0].spots) >= 4
-    assert "Rumtek Monastery" in [s.name for s in enforced[0].spots]
-    # ...but placeholder/junk spots are never fabricated.
-    assert not any("optional place" in (s.name or "").lower() for day in enforced for s in day.spots)
-    # A departure day with no activities stays empty instead of getting fake spots.
-    assert enforced[1].spots == []
+    assert [p["name"] for p in cleaned[0]["places"]] == ["MG Marg", "Enchey Monastery"]
+    assert [p["name"] for p in cleaned[1]["places"]] == ["Tsomgo Lake", "Baba Mandir", "Nathula Pass"]
 
 
-def test_uses_max_attractions_default_when_places_per_day_missing():
-    request = PlanningRequest(destination="Kyoto", trip_length_days=2, max_attractions_per_day=5)
-    itinerary = [
-        DayPlan(
-            day=1,
-            theme="Temples",
-            morning=["Visit Fushimi Inari Shrine (Morning 6:00-8:00)"],
-            spots=[],
-        ),
-    ]
+def test_detailed_prompt_contains_dedupe_and_plain_name_rules():
+    from agentic_tour_planner.domain.models import DayPlan, PlanningRequest
+    from agentic_tour_planner.pipeline.prompts import build_detailed_places_prompt
 
-    enforced = enforce_minimum_daily_spots(request, itinerary)
+    request = PlanningRequest(destination="Sikkim", trip_length_days=6, interests=["landmarks"], places_per_day="3-5")
 
-    # max_attractions_per_day is used as the minimum target, but only real
-    # activity-derived places are added -- no fake placeholders to pad the count.
-    names = [s.name for s in enforced[0].spots]
-    assert names
-    assert any("Fushimi Inari" in n for n in names)
-    assert not any("optional place" in (s.name or "").lower() for s in enforced[0].spots)
+    class Response:
+        itinerary: ClassVar[list] = [
+            DayPlan(day=1, theme="Gangtok", spots=[{"name": "MG Marg"}, {"name": "Enchey Monastery"}]),
+            DayPlan(day=3, theme="Tsomgo", spots=[{"name": "Tsomgo Lake"}, {"name": "Baba Mandir"}]),
+        ]
+
+    class Insights:
+        class Route:
+            strategy = "cluster by region"
+            cluster_advice: ClassVar[list] = []
+            transit_notes: ClassVar[list] = []
+
+        class Budget:
+            assumptions: ClassVar[list] = []
+
+        route = Route()
+        budget = Budget()
+
+    prompt = build_detailed_places_prompt(request, Response(), None, {}, Insights(), target_day=3)
+
+    assert "ALREADY SCHEDULED ON OTHER DAYS" in prompt
+    assert "Enchey Monastery" in prompt
+    assert "STRICT DEDUPE" in prompt
+    assert "PLAIN TEXT" in prompt
