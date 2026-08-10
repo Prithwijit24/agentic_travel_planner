@@ -26,7 +26,7 @@ def configure_logging(level: str | None = None) -> None:
         format=(
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> ||| "
             "<level>{level}</level> ||| "
-            "<cyan>{extra[name]:<12}</cyan> ||| "
+            "<cyan>{name:<30}</cyan> ||| "
             "<level>{message}</level>"
         ),
     )
