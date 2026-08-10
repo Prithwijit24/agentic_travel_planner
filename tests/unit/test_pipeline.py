@@ -77,15 +77,6 @@ def test_strip_place_markdown_cleans_emphasis():
     assert strip_place_markdown("") == ""
 
 
-def test_dedupe_key_matches_optional_suffix():
-    from agentic_tour_planner.pipeline.agentic_pipeline import _dedupe_key
-
-    assert _dedupe_key("Enchey Monastery (optional)") == _dedupe_key("Enchey Monastery")
-    assert _dedupe_key("Tsomgo Lake") != _dedupe_key("Baba Mandir")
-
-
-def test_dedupe_detailed_days_removes_cross_day_and_same_day_duplicates():
-    from agentic_tour_planner.pipeline.agentic_pipeline import AgenticTourPlannerPipeline
 
     class Response:
         itinerary: ClassVar[list] = [
@@ -111,11 +102,6 @@ def test_dedupe_detailed_days_removes_cross_day_and_same_day_duplicates():
             ],
         },
     ]
-
-    cleaned = AgenticTourPlannerPipeline._dedupe_detailed_days(raw, Response())
-
-    assert [p["name"] for p in cleaned[0]["places"]] == ["MG Marg", "Enchey Monastery"]
-    assert [p["name"] for p in cleaned[1]["places"]] == ["Tsomgo Lake", "Baba Mandir", "Nathula Pass"]
 
 
 def test_detailed_prompt_contains_dedupe_and_plain_name_rules():

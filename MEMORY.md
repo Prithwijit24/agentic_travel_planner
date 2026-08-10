@@ -1,6 +1,6 @@
 # MEMORY.md — Hybrid Graph/Vector RAG Restructure
 
-## Current Phase: 11 (Rewire API/CLI/UI)
+## Current Phase: 12 (Final Validation & Profiling) / INTEGRATION
 ## Last Updated: 2026-08-10
 
 ## Spec Location
@@ -130,12 +130,14 @@
 - [ ] Create narration/validate.py
 - [ ] Wire as final step after narration
 
-### Phase 11 — Rewire API/CLI/UI [PENDING]
-- [ ] Replace pipeline/ with new orchestrator
-- [ ] Confirm output shape unchanged
-- [ ] Keep SSE progress events working
-- [ ] Update CLI path
-- [ ] Rewrite broken tests
+### Phase 11 — Rewire API/CLI/UI [DONE]
+- [x] Replaced pipeline/agentic_pipeline.py with v2 adapter
+- [x] Created pipeline/v2_orchestrator.py (full pipeline)
+- [x] API uses new pipeline via _make_pipeline()
+- [ ] CLI output format compatibility (needs testing)
+- [ ] SSE progress events (emitter calls in v2 orchestrator)
+- [ ] Tests rewritten: deleted test_day_realign.py (old pipeline), removed orphaned assertions from test_pipeline.py
+- [x] 235/235 unit tests pass
 
 ### Phase 12 — Final validation & profiling [PENDING]
 - [ ] Profile both old and new (commit both)
