@@ -28,7 +28,7 @@ from agentic_tour_planner.domain.models import (
 )
 from agentic_tour_planner.narration.narrate import narrate_trip
 from agentic_tour_planner.narration.validate import validate_narration
-from agentic_tour_planner.retrieval.pipeline import retrieve, get_available_tags
+from agentic_tour_planner.retrieval.pipeline import retrieve, get_available_tags, get_balanced_default_pois
 from agentic_tour_planner.sequencing.bin_packer import sequence
 from agentic_tour_planner.tools.weather import WeatherTool
 from agentic_tour_planner.utils.logging import get_logger
@@ -57,13 +57,37 @@ async def generate_itinerary(
 
     _emit(emitter, "step", "Retrieve", "Retrieving POIs...")
 
-    # 1. Retrieve POIs
-    pois = retrieve(destination, interest_tags)
+    # 1. Retrieve POIs (or get balanced defaults if no interests)
+    if not interest_tags:
+        # No interests specified - get balanced defaults
+        from agentic_tour_planner.retrieval.pipeline import get_balanced_default_pois
+        poi_ids = get_balanced_default_pois(destination)
+        if poi_ids:
+            from agentic_tour_planner.retrieval.graph_retrieval import enrich
+            from agentic_tour_planner.retrieval.pipeline import get_graph_db_or_none
+            client = get_graph_db_or_none()
+            if client:
+                pois = enrich(poi_ids, client)
+            else:
+                pois = []
+        else:
+            pois = retrieve(destination, [])
+    else:
+        # Try RAG reformulation if enabled
+        from agentic_tour_planner.agents.retrieval_agent import reformulate_and_retrieve
+        pois = await reformulate_and_retrieve(
+            destination, interest_tags,
+            retrieve_fn=lambda dest, tags: retrieve(dest, tags),
+        )
     if not pois:
         logger.warning("No POIs retrieved, returning empty response")
         return _empty_response(request)
 
     _emit(emitter, "debug", "Retrieve", "POIs retrieved", {"count": len(pois)})
+
+    # 1b. Refresh stale POIs (only triggers LLM for stale ones)
+    from agentic_tour_planner.agents.freshness_agent import refresh_pois
+    pois = await refresh_pois(pois, destination)
 
     # 2. Sequence into days
     _emit(emitter, "step", "Sequence", "Sequencing into days...")

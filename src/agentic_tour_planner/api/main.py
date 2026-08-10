@@ -260,6 +260,15 @@ async def create_feedback(feedback: PlanFeedback) -> dict:
     return {"status": "recorded"}
 
 
+
+@app.get("/destinations/{name}/interests")
+async def get_destination_interests(name: str):
+    """Get dynamic interest tags for a destination."""
+    from agentic_tour_planner.retrieval.pipeline import get_available_tags
+    tags = get_available_tags(name)
+    return {"tags": tags}
+
+
 @app.get("/metrics")
 async def metrics() -> Response:
     logger.debug("GET /metrics")

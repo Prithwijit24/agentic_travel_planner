@@ -89,9 +89,7 @@ def _build_prompt(
         parts.append("Weather: " + str(weather.get("summary", "N/A")))
 
     if cost_summary:
-        parts.append("Total cost: Rs {} (Rs {} per person)".format(
-            cost_summary.get("grand_total", "N/A"),
-            cost_summary.get("per_person_total", "N/A")))
+        parts.append("Total cost: Rs " + str(cost_summary.get("grand_total", "N/A")) + " (Rs " + str(cost_summary.get("per_person_total", "N/A")) + " per person)")
 
     if known_limitations:
         parts.append("")
@@ -124,16 +122,12 @@ def _template_fallback(
 ) -> dict[str, Any]:
     """Build a plain-text template when LLM fails."""
     dest = trip_meta.get("destination", "your destination")
-    overview = "A wonderful {}-day trip to {}. Enjoy the sights, sounds, and flavors of this beautiful destination.".format(
-        len(day_skeleton), dest)
+    overview = "A wonderful " + str(len(day_skeleton)) + "-day trip to " + str(dest) + ". Enjoy the sights, sounds, and flavors of this beautiful destination."
 
     days = []
     for day in day_skeleton:
         poi_names = [p.get("name", "?") for p in day.get("pois", [])]
-        narrative = "Day {} in {}. Visit {}.".format(
-            day.get("day", "?"),
-            day.get("city", "the area"),
-            ", ".join(poi_names) if poi_names else "local attractions")
+        narrative = "Day " + str(day.get("day", "?")) + " in " + str(day.get("city", "the area")) + ". Visit " + (", ".join(poi_names) if poi_names else "local attractions") + "."
         days.append({"day": day.get("day", 0), "narrative": narrative, "tip": "Plan ahead for a smooth day."})
 
     tips = ["Carry cash for small vendors.", "Check opening hours before visiting."]
