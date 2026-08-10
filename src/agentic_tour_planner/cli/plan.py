@@ -371,7 +371,7 @@ def render_plan(response: dict) -> None:
     monthly = response.get("monthly_weather")
     month_label = response.get("travel_month") or "this month"
     if monthly:
-        console.print(f"🌤️ [bold]Estimated weather ({escape(month_label)}):[/bold] {escape(monthly)}")
+        console.print(f"🌤️ [bold]Current weather ({escape(month_label)}):[/bold] {escape(monthly)}")
 
     console.print(
         f"🤖 [bold]Planner Provider:[/bold] {escape(response.get('provider_used', ''))}    "
@@ -441,8 +441,10 @@ def render_plan(response: dict) -> None:
                     if spot.get("history"):
                         timeline_ctx.append(f"     📜 {escape(spot['history'])}")
                     oh, ch = spot.get("opening_hours"), spot.get("closing_hours")
-                    if oh or ch:
-                        timeline_ctx.append(f"     🕒 {escape(oh or '?')} \u2013 {escape(ch or '?')}")
+                    if oh and ch:
+                        timeline_ctx.append(f"     🕒 {escape(oh)} \u2013 {escape(ch)}")
+                    elif oh:
+                        timeline_ctx.append(f"     🕒 {escape(oh)}")
                     if spot.get("best_time"):
                         timeline_ctx.append(f"     ⏰ [green]Best time: {escape(spot['best_time'])}[/green]")
                     if spot.get("description"):

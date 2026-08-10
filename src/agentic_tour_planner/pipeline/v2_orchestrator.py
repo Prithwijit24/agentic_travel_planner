@@ -20,7 +20,6 @@ from agentic_tour_planner.domain.models import (
     CostLineItem,
     DailyCost,
     DayPlan,
-    DayWeather,
     OverallCost,
     PlanningRequest,
     PlanningResponse,
@@ -75,12 +74,17 @@ async def generate_itinerary(
     from agentic_tour_planner.agents.freshness_agent import refresh_pois
     pois = await refresh_pois(pois, destination)
 
-    # 2. Sequence into days
+    # 2. Filter out hotels (sleep POIs) from sequencing - they go to cost, not timeline
+    hotels = [p for p in pois if p.get("category") == "sleep"]
+    sight_pois = [p for p in pois if p.get("category") != "sleep"]
+    logger.info(f"Sequencing: {len(sight_pois)} sight POIs, {len(hotels)} hotel POIs (filtered from timeline)")
+
+    # 3. Sequence sight POIs into days
     _emit(emitter, "step", "Sequence", "Sequencing into days...")
-    skeleton = sequence(pois, duration_days=days)
+    skeleton = sequence(sight_pois, duration_days=days)
     _emit(emitter, "debug", "Sequence", "Sequenced", {"days": len(skeleton)})
 
-    # 3. Get weather
+    # 4. Get weather
     weather = {}
     try:
         weather_tool = WeatherTool()
@@ -205,12 +209,9 @@ def _build_response(
                 meal_text = "Visit {} ({})".format(name, price if price else "budget-friendly")
                 meals.append(meal_text)
 
-        # Build theme from narration or generate from POIs
-        theme = narration_day.get("narrative", "")
-        if theme:
-            # Use first 80 chars of narrative as theme
-            theme = theme.split(".")[0].strip()[:80]
-        else:
+        # Build theme from narration's title or generate from POIs
+        theme = narration_day.get("title", "")
+        if not theme:
             spot_names = [p.get("name", "?") for p in day.get("pois", [])]
             theme = "Explore {}".format(", ".join(spot_names[:3]))
 
@@ -232,10 +233,6 @@ def _build_response(
             meals=meals,
             logistics=logistics if logistics else ["Plan transport between spots"],
             spots=spots,
-            weather=DayWeather(
-                summary=weather.get("summary", ""),
-                temperature_c=weather.get("temperature_c"),
-            ) if weather.get("summary") else None,
         )
         itinerary.append(day_plan)
 
@@ -323,19 +320,9 @@ def _build_cost_estimate(
         subtotal = sum(item.amount for item in items)
         daily_costs.append(DailyCost(day=day.day, items=items, subtotal=subtotal))
 
-    # Calculate grand total
-    calculated_total = sum(dc.subtotal or 0 for dc in daily_costs)
-
-    # Use agent's total if available and reasonable, otherwise use calculated
-    if agent_grand > 0 and agent_grand < calculated_total * 3:
-        grand_total = agent_grand
-        # Scale daily to match
-        if calculated_total > 0:
-            scale = grand_total / calculated_total
-            for dc in daily_costs:
-                dc.subtotal = round((dc.subtotal or 0) * scale, 2)
-    else:
-        grand_total = calculated_total
+    # Calculate grand total from deterministic line items
+    # (Cost agent's estimate is for the pre-revision skeleton, so we use our own breakdown)
+    grand_total = sum(dc.subtotal or 0 for dc in daily_costs)
 
     return CostEstimate(
         daily=daily_costs,

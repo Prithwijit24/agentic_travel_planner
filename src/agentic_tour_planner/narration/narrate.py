@@ -27,7 +27,7 @@ NARRATION_SYSTEM_PROMPT = (
     '{\n'
     '  "overview": "string (2-3 sentences about the trip)",\n'
     '  "days": [\n'
-    '    {"day": 1, "narrative": "string", "tip": "string (one practical tip for the day)"}\n'
+    '    {"day": 1, "title": "short 4-8 word heading for the day", "narrative": "string", "tip": "string (one practical tip for the day)"}\n'
     '  ],\n'
     '  "general_tips": ["string"]\n'
     '}\n'
