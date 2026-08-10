@@ -1,6 +1,6 @@
 # MEMORY.md — Hybrid Graph/Vector RAG Restructure
 
-## Current Phase: 9 (Single-Pass Narration)
+## Current Phase: 11 (Rewire API/CLI/UI)
 ## Last Updated: 2026-08-10
 
 ## Spec Location
@@ -119,12 +119,14 @@
 - [ ] Wire into retrieval/pipeline.py
 - [ ] Test stale POI backfill + persist
 
-### Phase 9 — Single-pass narration [PENDING]
+### Phase 9 — Single-pass narration [DONE]
+- [x] narration/narrate.py — single LLM call + retry + template fallback
+- [x] narration/validate.py — cost match + POI presence + completeness
 - [ ] Create narration/narrate.py
 - [ ] Replace 3-pass generation with single narrate_trip() call
 - [ ] Add timing instrumentation
 
-### Phase 10 — Validation pass [PENDING]
+### Phase 10 — Validation pass [DONE]
 - [ ] Create narration/validate.py
 - [ ] Wire as final step after narration
 
