@@ -18,3 +18,15 @@ ai_stack_api_key: ""
 # Pipeline (search -> crawl -> rerank) can take minutes, so don't use the
 # old 60s default here.
 ai_stack_timeout_seconds: 1000.0
+
+# Graph database (Neo4j)
+neo4j_uri: "bolt://localhost:7687"
+neo4j_user: "neo4j"
+neo4j_password: "changeme"
+
+# Vector database (ChromaDB)
+chroma_persist_dir: "src/agentic_tour_planner/data/chroma"
+
+# Feature flags
+use_graph_db: true
+use_rag_reformulation: false
