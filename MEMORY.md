@@ -1,6 +1,6 @@
 # MEMORY.md — Hybrid Graph/Vector RAG Restructure
 
-## Current Phase: 5-6 (Cost Agent + LangGraph Critique Loop)
+## Current Phase: 9 (Single-Pass Narration)
 ## Last Updated: 2026-08-10
 
 ## Spec Location
@@ -86,13 +86,21 @@
 - [ ] Create scripts/test_sequencing.py
 - [ ] Verify determinism (same input → same output)
 
-### Phase 5 — Cost agent [PENDING]
+### Phase 5 — Cost agent [DONE]
+- [x] agents/cost_agent.py — LLM classification + arithmetic
+- [x] Test script (needs LLM keys to run)
 - [ ] Create agents/cost_agent.py
 - [ ] LLM classification of cost types (per_person/per_room/flat)
 - [ ] Arithmetic application
 - [ ] Test with Phase 4 output
 
-### Phase 6 — LangGraph critique loop [PENDING]
+### Phase 6 — LangGraph critique loop [DONE]
+- [x] agents/state.py (TripState TypedDict)
+- [x] agents/budget_agent.py (arithmetic critique)
+- [x] agents/timing_agent.py (arithmetic critique)
+- [x] agents/planner_agent.py (LLM revision)
+- [x] agents/graph.py (LangGraph wiring, max 2 revisions)
+- [x] Graph compiles successfully
 - [ ] Create agents/state.py (TripState TypedDict)
 - [ ] Create agents/budget_agent.py
 - [ ] Create agents/timing_agent.py
