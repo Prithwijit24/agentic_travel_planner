@@ -1,6 +1,6 @@
 # MEMORY.md — Hybrid Graph/Vector RAG Restructure
 
-## Current Phase: 4 (Deterministic Sequencing)
+## Current Phase: 5-6 (Cost Agent + LangGraph Critique Loop)
 ## Last Updated: 2026-08-10
 
 ## Spec Location
@@ -81,7 +81,7 @@
 - [ ] Add get_balanced_default_pois()
 - [ ] Wire into retrieve() pipeline
 
-### Phase 4 — Deterministic sequencing [PENDING]
+### Phase 4 — Deterministic sequencing [DONE]
 - [ ] Create sequencing/bin_packer.py
 - [ ] Create scripts/test_sequencing.py
 - [ ] Verify determinism (same input → same output)
