@@ -1,6 +1,6 @@
 # MEMORY.md — Hybrid Graph/Vector RAG Restructure
 
-## Current Phase: 3 (Deterministic Retrieval)
+## Current Phase: 4 (Deterministic Sequencing)
 ## Last Updated: 2026-08-10
 
 ## Spec Location
@@ -65,12 +65,13 @@
 - [ ] Sanity test query
 - [ ] Run on full POI set
 
-### Phase 3 — Deterministic retrieval [PENDING]
-- [ ] Create retrieval/graph_retrieval.py
-- [ ] Create retrieval/vector_retrieval.py
-- [ ] Create retrieval/pipeline.py
-- [ ] Create scripts/test_retrieval.py
-- [ ] Verify <1s, correct results
+### Phase 3 — Deterministic retrieval [DONE]
+- [x] Create retrieval/graph_retrieval.py
+- [x] Create retrieval/vector_retrieval.py
+- [x] Create retrieval/pipeline.py
+- [x] Create retrieval/api_retrieval.py (fallback)
+- [x] Create scripts/test_retrieval.py
+- [x] Verify correct results (<2s with cold start)
 
 ### Phase 3B — Dynamic interest tags [PENDING]
 - [ ] Add get_available_tags() to graph_retrieval.py
