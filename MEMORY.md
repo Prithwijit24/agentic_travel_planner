@@ -1,6 +1,6 @@
 # MEMORY.md — Hybrid Graph/Vector RAG Restructure
 
-## Current Phase: 1 (Wikivoyage → Neo4j Ingestion)
+## Current Phase: 2 (Chroma Vector Store)
 ## Last Updated: 2026-08-10
 
 ## Spec Location
@@ -32,7 +32,16 @@
 - [x] Create empty package folders: graphdb/, vectordb/, retrieval/, sequencing/, agents/, narration/
 - [x] Add NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, CHROMA_PERSIST_DIR to config
 
-### Phase 1 — Wikivoyage → Neo4j ingestion [IN PROGRESS]
+### Phase 1 — Wikivoyage → Neo4j ingestion [DONE]
+- [x] Create graphdb/parse_dump.py from 1_parse_dump.py
+- [x] Create graphdb/infer_hierarchy.py from 2_infer_hierarchy.py
+- [x] Create graphdb/load_neo4j.py from 3_load_neo4j.py (uses config loader)
+- [x] Create graphdb/client.py (GraphDBClient wrapper)
+- [x] Small test slice (Gangtok + East Sikkim + Sikkim)
+- [x] Run parse → infer → load on small slice
+- [x] Verify in Neo4j (3 Place, 5 POI, 2 hierarchy edges, 6 NEAR edges)
+- [x] post_clean() helper added
+- [ ] Full dump run (deferred — needs download)
 - [ ] Create graphdb/parse_dump.py from 1_parse_dump.py
 - [ ] Create graphdb/infer_hierarchy.py from 2_infer_hierarchy.py
 - [ ] Create graphdb/load_neo4j.py from 3_load_neo4j.py (use config loader, not os.environ)
