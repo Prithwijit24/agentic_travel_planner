@@ -1,6 +1,6 @@
 # MEMORY.md — Hybrid Graph/Vector RAG Restructure
 
-## Current Phase: 2 (Chroma Vector Store)
+## Current Phase: 3 (Deterministic Retrieval)
 ## Last Updated: 2026-08-10
 
 ## Spec Location
@@ -53,7 +53,12 @@
 - [ ] Spot-check long_description values
 - [ ] Full dump run (after small slice works)
 
-### Phase 2 — Chroma vector store [PENDING]
+### Phase 2 — Chroma vector store [DONE]
+- [x] Create vectordb/client.py (VectorDBClient)
+- [x] Create vectordb/embed_pois.py
+- [x] Embedded 5 test POIs
+- [x] Sanity test query returns relevant results
+- [ ] Full POI set (deferred — needs full dump)
 - [ ] Create vectordb/client.py (VectorDBClient)
 - [ ] Create vectordb/embed_pois.py
 - [ ] Run on small test slice
