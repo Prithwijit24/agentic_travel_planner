@@ -1,11 +1,4 @@
-"""Freshness agent - checks and refreshes stale POIs.
-
-A POI is stale if:
-- long_description is empty/near-empty, OR
-- last_verified is older than 6 months (if the field exists)
-
-Stale POIs are refreshed using the existing news_service search capability.
-"""
+"""Freshness agent - checks and refreshes stale POIs."""
 
 from __future__ import annotations
 
@@ -23,7 +16,7 @@ FRESHNESS_THRESHOLD_DAYS = 180  # 6 months
 REFRESH_SYSTEM_PROMPT = (
     "You are a travel content writer. Given a place name and destination, "
     "write a concise 2-3 sentence description of the place for a travel itinerary.\n"
-    "Return strict JSON only: {"long_description": "...", "short_highlight": "..."}"
+    "Return strict JSON only with keys: long_description, short_highlight"
 )
 
 

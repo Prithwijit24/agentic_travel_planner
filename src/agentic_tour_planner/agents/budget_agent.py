@@ -34,6 +34,10 @@ async def critique_budget(state: TripState) -> TripState:
     for day_cost in daily_costs:
         day = day_cost.get("day", "?")
         per_person = day_cost.get("day_total_per_person", 0)
+        try:
+            per_person = float(per_person)
+        except (ValueError, TypeError):
+            continue
         if per_person > threshold:
             excess = per_person - threshold
             msg = "Day {} exceeds {} budget: Rs {:.0f}/person (threshold Rs {:.0f}, excess Rs {:.0f}). Consider dropping a paid attraction or switching to a cheaper hotel.".format(

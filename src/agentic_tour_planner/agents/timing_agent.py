@@ -32,14 +32,14 @@ async def critique_timing(state: TripState) -> TripState:
             hrs = float(poi.get("avg_visit_hrs", DEFAULT_AVG_VISIT_HRS) or DEFAULT_AVG_VISIT_HRS)
             total_hours += hrs
 
-        # Add estimated inter-POI travel time (15 min between POIs in same city)
         if len(pois) > 1:
             total_hours += (len(pois) - 1) * 0.25
 
         if total_hours > daily_hour_budget:
             excess = total_hours - daily_hour_budget
+            drops = math.ceil(excess / DEFAULT_AVG_VISIT_HRS)
             msg = "Day {} has {:.1f}h of activities (budget {:.1f}h, excess {:.1f}h). Consider splitting across days or dropping {} stop(s).".format(
-                day_num, total_hours, daily_hour_budget, math.ceil(excess / DEFAULT_AVG_VISIT_HRS))
+                day_num, total_hours, daily_hour_budget, excess, drops)
             critiques.append(msg)
             logger.info("Timing critique: " + msg)
 

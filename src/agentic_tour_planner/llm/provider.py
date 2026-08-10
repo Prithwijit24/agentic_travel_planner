@@ -69,11 +69,13 @@ TIMING_PROMPT = (
 # llm.yml are used; entries here that are commented out in config are skipped.
 # The chain is intentionally short so a degraded provider fails over fast.
 PROVIDER_PRIORITY = [
-    "oraclellm",
     "agnes",
+    "grokai",
+    "gemini",
     "nararouter",
     "llm7io",
     "opencode",
+    "oraclellm",
 ]
 
 # API-key env-var aliases per provider (handles typos / vendor naming in .env)

@@ -1,7 +1,7 @@
 # Default provider/model used when a request does not specify one.
 # `oraclellm` is the self-hosted primary provider; the provider layer
 # cascades to the other providers (agnes, nararouter, ...) on failure anyway.
-default_llm_provider: oraclellm
+default_llm_provider: agnes
 default_llm_model: deepseek-r1-80k:latest
 
 # # Default fallback models

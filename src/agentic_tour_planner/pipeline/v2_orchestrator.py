@@ -63,8 +63,7 @@ async def generate_itinerary(
         from agentic_tour_planner.retrieval.pipeline import get_balanced_default_pois
         poi_ids = get_balanced_default_pois(destination)
         if poi_ids:
-            from agentic_tour_planner.retrieval.graph_retrieval import enrich
-            from agentic_tour_planner.retrieval.pipeline import get_graph_db_or_none
+            from agentic_tour_planner.retrieval.graph_retrieval import get_graph_db_or_none, enrich
             client = get_graph_db_or_none()
             if client:
                 pois = enrich(poi_ids, client)
@@ -98,7 +97,9 @@ async def generate_itinerary(
     weather = {}
     try:
         weather_tool = WeatherTool()
-        weather = await weather_tool.get_forecast(destination)
+        snapshot = await weather_tool.current_weather(destination)
+        if snapshot:
+            weather = {"summary": snapshot.summary, "temp_c": snapshot.temperature_c}
     except Exception as e:
         logger.warning("Weather fetch failed: {}".format(e))
 
