@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mediawiki xmlns="http://www.mediawiki.org/xml/export-0.10/">
+  <page>
+    <title>Gangtok</title>
+    <ns>0</ns>
+    <revision>
+      <text>{{geo|27.3389|88.6065}}
+[[Category:East Sikkim]]
+==See==
+* {{see
+| name = Rumtek Monastery
+| content = A Tibetan Buddhist monastery near Gangtok. It is the seat of the Gyalwa Karmapa.
+| address = Rumtek
+| lat = 27.3389
+| long = 88.6065
+| hours = 6AM-6PM
+| price = Free
+}}
+* {{see
+| name = Enchey Monastery
+| content = A 200-year-old monastery with beautiful murals.
+| address = Enchey
+| lat = 27.3400
+| long = 88.6200
+| hours = 7AM-5PM
+| price = Free
+}}
+==Eat==
+* {{eat
+| name = Taste of Tibet
+| content = Popular Tibetan restaurant with momos and thukpa.
+| address = MG Marg
+| lat = 27.3350
+| long = 88.6150
+| hours = 10AM-9PM
+| price = Rs 200-400
+}}
+* {{eat
+| name = The Coffee Shop
+| content = Cozy cafe with espresso and pastries.
+| address = Lal Bazaar
+| lat = 27.3320
+| long = 88.6100
+| hours = 8AM-8PM
+| price = Rs 150-300
+}}
+==Sleep==
+* {{sleep
+| name = Mayfair Gangtok
+| content = Luxury hotel with mountain views.
+| address = Police Bazaar
+| lat = 27.3300
+| long = 88.6050
+| hours = Check-in 2PM
+| price = Rs 8000-15000
+| phone = +91-3592-123456
+}}
+</text>
+    </revision>
+  </page>
+  <page>
+    <title>East Sikkim</title>
+    <ns>0</ns>
+    <revision>
+      <text>{{geo|27.3500|88.6200}}
+[[Category:Sikkim]]
+Region in Sikkim known for monasteries and nature.
+</text>
+    </revision>
+  </page>
+  <page>
+    <title>Sikkim</title>
+    <ns>0</ns>
+    <revision>
+      <text>{{geo|27.5330|88.5122}}
+[[Category:States of India]]
+Beautiful Himalayan state in India.
+</text>
+    </revision>
+  </page>
+</mediawiki>
