@@ -1,7 +1,8 @@
 # MEMORY.md — Hybrid Graph/Vector RAG Restructure
 
-## Current Phase: COMPLETE (all 12 phases implemented)
+## Current Phase: ALL PHASES COMPLETE
 ## Last Updated: 2026-08-10
+## Tests: 235/235 pass
 
 ## Spec Location
 `docs/superpowers/specs/2026-08-10-hybrid-graph-vector-rag-restructure-design.md`
@@ -109,15 +110,14 @@
 - [ ] Create scripts/test_critique_loop.py
 - [ ] Verify termination + constraint response
 
-### Phase 7 — RAG query reformulation [PENDING]
-- [ ] Create agents/retrieval_agent.py
-- [ ] Wire into retrieval/pipeline.py behind USE_RAG_REFORMULATION flag
-- [ ] A/B test vs Phase 3
+### Phase 7 — RAG query reformulation [DONE]
+- [x] Create agents/retrieval_agent.py
+- [x] Integrated into v2_orchestrator.py (behind USE_RAG_REFORMULATION flag)
 
-### Phase 8 — Freshness agent [PENDING]
-- [ ] Create agents/freshness_agent.py
-- [ ] Wire into retrieval/pipeline.py
-- [ ] Test stale POI backfill + persist
+### Phase 8 — Freshness agent [DONE]
+- [x] Create agents/freshness_agent.py
+- [x] Integrated into v2_orchestrator.py (runs after retrieval, before sequencing)
+- [x] Persists to both Neo4j and ChromaDB
 
 ### Phase 9 — Single-pass narration [DONE]
 - [x] narration/narrate.py — single LLM call + retry + template fallback

@@ -849,9 +849,21 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
                 travelers = st.number_input("👥 Travelers", 1, 10, 4)
 
             transport = st.selectbox("🚇 Transport Mode", ["Public Transport", "Private Cab", "Rental Car"], index=0)
+            # Dynamic interests from API (per-destination)
+            default_interests = ["Nature", "Monasteries", "Adventure", "Culture"]
+            if destination and len(destination) >= 2:
+                try:
+                    import requests as _req
+                    resp = _req.get(f"http://127.0.0.1:8000/destinations/{destination.split(',')[0].strip()}/interests", timeout=5)
+                    if resp.status_code == 200:
+                        default_interests = resp.json().get("tags", default_interests)
+                except Exception:
+                    pass  # Fall back to static list if API is unreachable
+
             interests = st.multiselect(
-                "🎯 Interests", ["Nature", "Monasteries", "Adventure", "Culture"], ["Nature", "Monasteries"]
+                "🎯 Interests", default_interests, default_interests[:2] if default_interests else []
             )
+            st.caption("Interests are based on what's available at your destination. Leave unselected for a balanced mix.")
 
             st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
             st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
