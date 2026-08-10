@@ -694,126 +694,29 @@ def _render_profile(profile_rows: list[dict]) -> str:
 
 
 async def run_pipeline(request: PlanningRequest, verbose: bool = True, profile: bool = False) -> dict[str, Any]:
-    """Run the full pipeline with detailed logging.
-
-    Always generates the detailed place-by-place itinerary with real opening hours.
-    """
-    logger.debug(f"run_pipeline start destination={request.destination} live={request.include_live_data}")
+    """Run the v2 pipeline with graph/vector retrieval + critique loop."""
     metrics_bus.reset()
     if verbose:
-        console.rule("[bold cyan]🚀 AGENTIC TRAVEL PLANNER PIPELINE[/bold cyan]")
+        console.rule("[bold cyan]AGENTIC TRAVEL PLANNER v2 - Graph + Vector Pipeline[/bold cyan]")
 
-    # Initialize components
-    if verbose:
-        logger.info("Initializing pipeline components...")
-
-    pipeline = AgenticTourPlannerPipeline()
-
-    if verbose:
-        logger.info(f"Planner model: {pipeline.planner_provider}/{pipeline.planner_model}")
-        worker_provider, worker_model = pipeline.llm_provider.get_worker_model()
-        logger.info(f"Worker model: {worker_provider}/{worker_model}")
-        if request.provider:
-            logger.info(f"Selected provider override: {request.provider}")
-
-    # Step 1: Gather Context
-    if verbose:
-        print_step(1, "Gather Context", "Retrieving relevant information...")
-        logger.info(f"Destination: {request.destination}")
-        logger.info(f"Trip length: {request.trip_length_days} days")
-        logger.info(f"Interests: {request.interests}")
-
-    with pipeline.profiler.track("CLI: Gather Context"):
-        context = await pipeline.gather_context(request)
-    elapsed = pipeline.profiler.summary().get("CLI: Gather Context", 0.0)
-
-    if verbose:
-        print_step_done("Gather Context", elapsed)
-        logger.debug(f"Documents retrieved: {len(context.documents)}")
-        logger.debug(f"Search results: {len(context.search_results)}")
-        logger.debug(f"Place hours: {len(context.place_hours)}")
-        logger.debug(f"Weather: {context.weather.summary if context.weather else 'N/A'}")
-
-    # Step 2: Build Insights
-    if verbose:
-        print_step(2, "Build Insights", "Generating route, budget, and timing guidance...")
-
-    with pipeline.profiler.track("CLI: Build Insights"):
-        insights = await pipeline.insights_builder.build(request, context, provider_override=request.provider)
-    elapsed = pipeline.profiler.summary().get("CLI: Build Insights", 0.0)
-
-    if verbose:
-        print_step_done("Build Insights", elapsed)
-        logger.debug(f"Route strategy: {insights.route.strategy[:80]}...")
-        logger.debug(f"Budget: ${insights.budget.estimated_daily_budget:.0f}/day")
-        logger.debug(f"Booking: {insights.timing.booking_window}")
-
-    # Step 3: Build Prompt
-    if verbose:
-        print_step(3, "Build Prompt", "Constructing planning prompt...")
-
-    from agentic_tour_planner.pipeline.prompts import build_itinerary_prompt
-
-    prompt = build_itinerary_prompt(request, context, insights)
-
-    if verbose:
-        print_step_done("Build Prompt", 0.0)
-        logger.debug(f"Prompt length: {len(prompt)} characters")
-
-    # Step 4: Generate Plan
-    if verbose:
-        print_step(4, "Generate Plan", "Creating itinerary with LLM...")
+    from agentic_tour_planner.pipeline.v2_orchestrator import generate_itinerary
 
     start_time = datetime.now(tz=UTC)
-    response = await pipeline.run(request, context=context, insights=insights)
+    response = await generate_itinerary(request)
     elapsed = (datetime.now(tz=UTC) - start_time).total_seconds()
 
     if verbose:
-        print_step_done("Generate Plan", elapsed)
-        logger.info(f"Planner: {response.provider_used}/{response.model_used}")
-        logger.info(f"Worker: {response.worker_provider_used}/{response.worker_model_used}")
+        console.print(f"[green]Pipeline completed in {elapsed:.1f}s[/green]")
+        console.print(f"Provider: {response.provider_used}/{response.model_used}")
+        console.print(f"Days: {len(response.itinerary)}")
 
-    profile_rows: list[dict] = []
-    if profile:
-        profile_rows = pipeline.profiler.as_table()
-
-    if verbose:
-        print_step(5, "Detailed Places", "Fetching real hours + writing place-by-place itinerary...")
-    start_time = datetime.now(tz=UTC)
-    detailed_obj = await pipeline.run_detailed_places(request, response, context=context, insights=insights)
-    elapsed = (datetime.now(tz=UTC) - start_time).total_seconds()
-    if verbose:
-        print_step_done("Detailed Places", elapsed)
-    if profile:
-        profile_rows = pipeline.profiler.as_table()
-
-    # ── Step 6: Resolve images for all spots ─────────────────────────
-    images_result = []
-    try:
-        from agentic_tour_planner.api.images import collect_places_for_images, resolve_images
-
-        places_for_images = collect_places_for_images(response)
-        if places_for_images:
-            if verbose:
-                print_step(6, "Resolve Images", f"Fetching images for {len(places_for_images)} places...")
-            images_result = await resolve_images(places_for_images)
-            if verbose:
-                print_step_done("Resolve Images", 0.0)
-    except Exception as img_err:
-        logger.warning(f"Image resolution failed (non-fatal): {img_err}")
-
-    return build_output(
-        request=request,
-        context=context,
-        insights=insights,
-        response=response,
-        detailed=detailed_obj,
-        pipeline=pipeline,
-        metrics=metrics_bus.summary(),
-        profile_rows=profile_rows,
-        images=images_result,
-    )
-
+    return {
+        "response": response.model_dump(),
+        "detailed": None,
+        "profile": [],
+        "metrics": metrics_bus.summary(),
+        "wall_time_s": elapsed,
+    }
 
 @app.command()
 def plan(

@@ -130,93 +130,23 @@ async def _run_plan_job(request_id: str, request: PlanningRequest, emitter: Even
         )
         detailed = None
         images_result: list = []
-        try:
-            places_for_images = collect_places_for_images(response, destination=request.destination)
-        except Exception as img_err:
-            logger.warning(f"Image place collection failed (non-fatal): {img_err}")
-            places_for_images = []
 
-        # Detailed places (LLM, minutes) and image resolution (I/O, minutes) are
-        # independent of each other — run them concurrently to cut wall-clock time.
-        async def _generate_detailed() -> DetailedPlan | None:
-            nonlocal detailed
-            try:
-                emitter.emit(
-                    LogEvent(event="step", step="Detailed Places", message="Generating detailed place descriptions...")
-                )
-                detailed = await pipeline.run_detailed_places(request, response, insights=response.insights)
-                if detailed is not None:
-                    logger.info(f"Detailed places generated for plan_id={response.plan_id}")
-            except Exception as det_err:
-                logger.warning(f"Detailed places generation skipped (non-fatal): {det_err}")
-            return detailed
-
-        async def _resolve_images() -> list:
-            import asyncio as _asyncio
-
-            try:
-                if places_for_images:
-                    logger.info(f"Resolving images for {len(places_for_images)} places")
-                    return await _asyncio.wait_for(resolve_images(places_for_images), timeout=180)
-            except Exception as img_err:
-                logger.warning(f"Image resolution failed (non-fatal): {img_err}")
-            return []
-
-        detailed_task = asyncio.create_task(_generate_detailed())
-        images_task = asyncio.create_task(_resolve_images())
-
-        # Heartbeat: emit a lightweight progress event periodically so the SSE
-        # stream never sits idle long enough to hit the (600s) idle timeout while
-        # the two heavy phases above run concurrently.
-        async def _heartbeat() -> None:
-            try:
-                while True:
-                    await asyncio.sleep(60)
-                    emitter.emit(
-                        LogEvent(
-                            event="progress",
-                            step="Refinements",
-                            message="Still working — compiling detailed descriptions and imagery…",
-                        )
-                    )
-            except asyncio.CancelledError:
-                return
-
-        heartbeat_task = asyncio.create_task(_heartbeat())
-        try:
-            detailed = await detailed_task
-            images_result = await images_task
-        finally:
-            heartbeat_task.cancel()
-
+        # V2 pipeline: narration already includes descriptions
         store.save_plan(request, response)
         elapsed = time.perf_counter() - start
         REQUEST_LATENCY.labels(endpoint="/plans").observe(elapsed)
         logger.info(f"POST /plans completed plan_id={response.plan_id} in {elapsed:.2f}s")
 
-        base_result = build_output(
-            request=request,
-            context=pipeline.context,
-            insights=response.insights,
-            response=response,
-            detailed=detailed,
-            pipeline=pipeline,
-            metrics=None,
-            profile_rows=pipeline.profiler.as_table(),
-            images=images_result,
-        )
-        # Wall time + LLM usage ride along with the response payload so the UI
-        # can show them on the overview page without extra plumbing.
-        response_payload = base_result.setdefault("response", {})
+        response_payload = response.model_dump()
         response_payload["wall_time_s"] = round(elapsed, 1)
-        response_payload["llm_usage"] = getattr(pipeline, "llm_usage", {"used": [], "fallback": []})
         full_result = {
             "plan_id": response.plan_id,
             "request_id": request_id,
             "status": "completed",
-            **base_result,
+            "response": response_payload,
         }
         emitter.emit(LogEvent(event="done", message="Plan complete", detail=full_result))
+
     except Exception as e:
         elapsed = time.perf_counter() - start
         REQUEST_LATENCY.labels(endpoint="/plans").observe(elapsed)

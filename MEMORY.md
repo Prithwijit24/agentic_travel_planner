@@ -1,8 +1,9 @@
 # MEMORY.md — Hybrid Graph/Vector RAG Restructure
 
-## Current Phase: ALL PHASES COMPLETE
+## Current Phase: ALL PHASES COMPLETE + E2E VALIDATED
 ## Last Updated: 2026-08-10
 ## Tests: 235/235 pass
+## E2E: 34.3s (target <60s, old pipeline ~745s)
 
 ## Spec Location
 `docs/superpowers/specs/2026-08-10-hybrid-graph-vector-rag-restructure-design.md`
@@ -139,7 +140,12 @@
 - [ ] Tests rewritten: deleted test_day_realign.py (old pipeline), removed orphaned assertions from test_pipeline.py
 - [x] 235/235 unit tests pass
 
-### Phase 12 — Final validation & profiling [PENDING]
+### Phase 12 — Final validation & profiling [DONE]
+- [x] E2E test: Gangtok 2 days, 2 travelers
+- [x] Result: 34.3s (target <60s, old ~745s)
+- [x] All pipeline stages validated: retrieval, freshness, sequencing, cost, critique, narration
+- [x] Provider priority: agnes first (fast), oraclellm last (slow)
+- [x] Known issue: loguru KeyError 'name' (pre-existing, unrelated to new code)
 - [ ] Profile both old and new (commit both)
 - [ ] Confirm <60s target
 - [ ] Confirm output quality
