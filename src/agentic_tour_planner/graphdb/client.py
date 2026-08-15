@@ -7,10 +7,10 @@ Every module that talks to Neo4j imports this client — never opens its own dri
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
-from neo4j import Driver, GraphDatabase, Session
+from neo4j import Driver, GraphDatabase, ManagedTransaction
 
 from agentic_tour_planner.config.settings import get_settings
 
@@ -32,12 +32,12 @@ class GraphDBClient:
     def run_write(self, cypher: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """Run a write transaction and return results."""
 
-        def _tx(tx: Session, cypher: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+        def _tx(tx: ManagedTransaction, cypher: str, params: dict[str, Any]) -> list[dict[str, Any]]:
             result = tx.run(cypher, params)
             return [record.data() for record in result]
 
         with self._driver.session() as session:
-            return session.execute_write(_tx, cypher, params or {})
+            return cast(list[dict[str, Any]], session.execute_write(_tx, cypher, params or {}))
 
     def close(self) -> None:
         self._driver.close()

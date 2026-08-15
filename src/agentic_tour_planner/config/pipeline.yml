@@ -1,0 +1,19 @@
+# ── Pipeline orchestration ──────────────────────────────────────────────
+pipeline_daily_hour_budget: 8.0
+pipeline_plan_timeout_seconds: 1800
+pipeline_sse_timeout_seconds: 900
+pipeline_max_revisions: 2
+pipeline_target_description_words: 200
+pipeline_word_count_tolerance: 20
+pipeline_daily_transport_budget_budget: 200
+pipeline_daily_transport_budget_midrange: 500
+pipeline_daily_transport_budget_luxury: 1500
+
+# ── Sequencing ──────────────────────────────────────────────────────────
+sequencing_avg_visit_hrs: 1.5
+sequencing_daily_hour_budget: 8.0
+
+# ── Travel constraints ──────────────────────────────────────────────────
+constraints_far_apart_km: 50.0
+constraints_far_apart_min: 120.0
+constraints_daily_travel_budget_min: 240.0

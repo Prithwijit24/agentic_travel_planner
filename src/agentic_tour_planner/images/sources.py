@@ -11,16 +11,22 @@ from urllib.parse import quote
 
 import httpx
 
+from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.images.models import ImageCandidate
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-_USER_AGENT = "AgenticTravelPlanner/1.0 (https://github.com/agentic-travel-planner)"
-_WIKIDATA_API = "https://www.wikidata.org/w/api.php"
-_COMMONS_API = "https://commons.wikimedia.org/w/api.php"
-_WIKIPEDIA_REST = "https://en.wikipedia.org/api/rest_v1/page/summary"
-_OPENVERSE_API = "https://api.openverse.org/v1/images"
+
+def _image_source_config():
+    s = get_settings()
+    return {
+        "user_agent": s.image_user_agent,
+        "wikidata_api": s.image_wikidata_api_url,
+        "commons_api": s.image_commons_api_url,
+        "wikipedia_rest": s.image_wikipedia_rest_url,
+        "openverse_api": s.image_openverse_api_url,
+    }
 
 
 def _sanitize_int(value: Any) -> int | None:
@@ -59,11 +65,13 @@ def _make_candidate(
 
 async def fetch_wikidata(place_name: str) -> list[ImageCandidate]:
     """Resolve a place name to a Wikidata entity and return its P18 image."""
+    cfg = _image_source_config()
+    timeout = get_settings().image_request_timeout
     try:
-        async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}, timeout=15) as client:
+        async with httpx.AsyncClient(headers={"User-Agent": cfg["user_agent"]}, timeout=timeout) as client:
             # Step 1: Search for the entity
             search_resp = await client.get(
-                _WIKIDATA_API,
+                cfg["wikidata_api"],
                 params={
                     "action": "wbsearchentities",
                     "search": place_name,
@@ -106,17 +114,20 @@ async def fetch_wikidata(place_name: str) -> list[ImageCandidate]:
 
 async def fetch_wikimedia_commons(place_name: str) -> list[ImageCandidate]:
     """Search Wikimedia Commons category for candidate images."""
+    cfg = _image_source_config()
+    settings = get_settings()
+    timeout = settings.image_request_timeout
     try:
-        async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}, timeout=15) as client:
+        async with httpx.AsyncClient(headers={"User-Agent": cfg["user_agent"]}, timeout=timeout) as client:
             # Search for category members
             cat_resp = await client.get(
-                _COMMONS_API,
+                cfg["commons_api"],
                 params={
                     "action": "query",
                     "list": "categorymembers",
                     "cmtitle": f"Category:{place_name}",
                     "cmtype": "file",
-                    "cmlimit": 10,
+                    "cmlimit": settings.image_commons_category_limit,
                     "format": "json",
                 },
             )
@@ -139,12 +150,14 @@ async def fetch_wikimedia_commons(place_name: str) -> list[ImageCandidate]:
 
 async def fetch_wikipedia(place_name: str) -> list[ImageCandidate]:
     """Fetch the lead image from a Wikipedia article summary."""
+    cfg = _image_source_config()
+    timeout = get_settings().image_search_timeout
     try:
         # Normalize page title (spaces to underscores)
         page_title = place_name.replace(" ", "_")
 
-        async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}, timeout=10) as client:
-            resp = await client.get(f"{_WIKIPEDIA_REST}/{quote(page_title)}")
+        async with httpx.AsyncClient(headers={"User-Agent": cfg["user_agent"]}, timeout=timeout) as client:
+            resp = await client.get(f"{cfg['wikipedia_rest']}/{quote(page_title)}")
             if resp.status_code != 200:
                 return []
             data = resp.json()
@@ -175,6 +188,7 @@ async def fetch_wikipedia(place_name: str) -> list[ImageCandidate]:
 
 async def fetch_openverse(place_name: str) -> list[ImageCandidate]:
     """Search Openverse for CC-licensed images."""
+    cfg = _image_source_config()
     from agentic_tour_planner.config.settings import get_settings
 
     settings = get_settings()
@@ -182,14 +196,18 @@ async def fetch_openverse(place_name: str) -> list[ImageCandidate]:
         return []
 
     try:
-        async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}, timeout=15, follow_redirects=True) as client:
+        timeout = settings.image_request_timeout
+        page_size = settings.image_openverse_page_size
+        async with httpx.AsyncClient(
+            headers={"User-Agent": cfg["user_agent"]}, timeout=timeout, follow_redirects=True
+        ) as client:
             resp = await client.get(
-                _OPENVERSE_API,
+                cfg["openverse_api"],
                 params={
                     "q": place_name,
                     "license_type": "commercial",
                     "mature": "false",
-                    "page_size": 5,
+                    "page_size": page_size,
                 },
             )
             resp.raise_for_status()
@@ -224,6 +242,7 @@ async def fetch_openverse(place_name: str) -> list[ImageCandidate]:
 
 async def fetch_mapillary(place_name: str, lat: float | None = None, lng: float | None = None) -> list[ImageCandidate]:
     """Search Mapillary for street-level images near coordinates."""
+    cfg = _image_source_config()
     from agentic_tour_planner.config.settings import get_settings
 
     settings = get_settings()
@@ -232,15 +251,16 @@ async def fetch_mapillary(place_name: str, lat: float | None = None, lng: float 
         return []
 
     try:
-        async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}, timeout=15) as client:
+        timeout = settings.image_request_timeout
+        async with httpx.AsyncClient(headers={"User-Agent": cfg["user_agent"]}, timeout=timeout) as client:
             resp = await client.get(
                 "https://graph.mapillary.com/images",
                 params={
                     "fields": "id,thumb_2048_url,width,height",
                     "closeto": f"{lng},{lat}",
-                    "radius": 250,
+                    "radius": settings.image_mapillary_radius,
                     "access_token": token,
-                    "limit": 5,
+                    "limit": settings.image_mapillary_limit,
                 },
             )
             resp.raise_for_status()
@@ -268,6 +288,7 @@ async def fetch_mapillary(place_name: str, lat: float | None = None, lng: float 
 
 async def fetch_stock(place_name: str, place_type: str = "") -> list[ImageCandidate]:
     """Fetch generic mood photos from Unsplash or Pexels as last resort."""
+    cfg = _image_source_config()
     from agentic_tour_planner.config.settings import get_settings
 
     settings = get_settings()
@@ -276,10 +297,12 @@ async def fetch_stock(place_name: str, place_type: str = "") -> list[ImageCandid
     # Try Unsplash
     if settings.unsplash_access_key:
         try:
-            async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}, timeout=10) as client:
+            timeout = settings.image_search_timeout
+            per_page = settings.image_unsplash_per_page
+            async with httpx.AsyncClient(headers={"User-Agent": cfg["user_agent"]}, timeout=timeout) as client:
                 resp = await client.get(
                     "https://api.unsplash.com/search/photos",
-                    params={"query": place_type or place_name, "per_page": 3},
+                    params={"query": place_type or place_name, "per_page": per_page},
                     headers={"Authorization": f"Client-ID {settings.unsplash_access_key}"},
                 )
                 resp.raise_for_status()
@@ -302,10 +325,12 @@ async def fetch_stock(place_name: str, place_type: str = "") -> list[ImageCandid
     # Try Pexels
     if settings.pexels_api_key:
         try:
-            async with httpx.AsyncClient(headers={"User-Agent": _USER_AGENT}, timeout=10) as client:
+            timeout = settings.image_search_timeout
+            per_page = settings.image_pexels_per_page
+            async with httpx.AsyncClient(headers={"User-Agent": cfg["user_agent"]}, timeout=timeout) as client:
                 resp = await client.get(
                     "https://api.pexels.com/v1/search",
-                    params={"query": place_type or place_name, "per_page": 3},
+                    params={"query": place_type or place_name, "per_page": per_page},
                     headers={"Authorization": settings.pexels_api_key},
                 )
                 resp.raise_for_status()
@@ -344,7 +369,7 @@ async def fetch_stack_images(place_name: str) -> list[ImageCandidate]:
     try:
         result = await stack.images(
             query=place_name,
-            max_results=5,
+            max_results=get_settings().image_stack_max_results,
             use_clip=True,
         )
         images = result.get("images", []) or result.get("results", [])
@@ -381,7 +406,7 @@ async def fetch_ddgs_images(place_name: str) -> list[ImageCandidate]:
     try:
         from ddgs import DDGS
 
-        items = list(DDGS().images(place_name, max_results=5))
+        items = list(DDGS().images(place_name, max_results=get_settings().image_ddgs_max_results))
         return [
             _make_candidate(
                 url=item.get("image") or item.get("thumbnail") or "",
@@ -409,8 +434,9 @@ async def _commons_imageinfo_to_candidates(
     source: str,
 ) -> list[ImageCandidate]:
     """Fetch imageinfo from Wikimedia Commons for one or more file titles."""
+    cfg = _image_source_config()
     resp = await client.get(
-        _COMMONS_API,
+        cfg["commons_api"],
         params={
             "action": "query",
             "titles": titles,

@@ -17,6 +17,7 @@ repos:
       - id: check-json
       - id: check-added-large-files
         args: [--maxkb=500]
+        exclude: ^graphify-out/  # generated knowledge-graph artifacts can exceed 500KB
       - id: check-merge-conflict
       - id: check-case-conflict
       - id: check-symlinks

@@ -22,7 +22,7 @@ src/agentic_tour_planner/
 
 ## PHASE 0 — Environment setup
 
-- [ ] Install Neo4j locally (Docker is easiest): 
+- [ ] Install Neo4j locally (Docker is easiest):
       `docker run -d --name neo4j -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/testpassword neo4j:5`
 - [ ] Confirm Neo4j browser loads at `http://localhost:7474` and you can log in with `neo4j` / `testpassword`.
 - [ ] Install ChromaDB: `pip install chromadb --break-system-packages`

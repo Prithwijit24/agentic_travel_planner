@@ -6,14 +6,11 @@ into a single entry point that produces a PlanningResponse matching v1 structure
 
 from __future__ import annotations
 
-import asyncio
-import time
-from typing import Any
-
-from loguru import logger
+from typing import Any, Literal
 
 from agentic_tour_planner.agents.graph import run_critique_loop
 from agentic_tour_planner.agents.state import TripState
+from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import (
     Citation,
     CostEstimate,
@@ -27,7 +24,7 @@ from agentic_tour_planner.domain.models import (
 )
 from agentic_tour_planner.narration.narrate import narrate_trip
 from agentic_tour_planner.narration.validate import validate_narration
-from agentic_tour_planner.retrieval.pipeline import retrieve, get_available_tags
+from agentic_tour_planner.retrieval.pipeline import retrieve
 from agentic_tour_planner.sequencing.bin_packer import sequence
 from agentic_tour_planner.tools.weather import WeatherTool
 from agentic_tour_planner.utils.logging import get_logger
@@ -52,14 +49,13 @@ async def generate_itinerary(
     # 1. Retrieve POIs (or get balanced defaults if no interests)
     if not interest_tags:
         from agentic_tour_planner.retrieval.pipeline import get_balanced_default_pois
+
         poi_ids = get_balanced_default_pois(destination)
         if poi_ids:
-            from agentic_tour_planner.retrieval.graph_retrieval import get_graph_db_or_none, enrich
+            from agentic_tour_planner.retrieval.graph_retrieval import enrich, get_graph_db_or_none
+
             client = get_graph_db_or_none()
-            if client:
-                pois = enrich(poi_ids, client)
-            else:
-                pois = []
+            pois = enrich(poi_ids, client) if client else []
         else:
             pois = retrieve(destination, [])
     else:
@@ -72,6 +68,7 @@ async def generate_itinerary(
 
     # 1b. Refresh stale POIs (only triggers LLM for stale ones)
     from agentic_tour_planner.agents.freshness_agent import refresh_pois
+
     pois = await refresh_pois(pois, destination)
 
     # 2. Filter out hotels (sleep POIs) from sequencing - they go to cost, not timeline
@@ -92,17 +89,18 @@ async def generate_itinerary(
         if snapshot:
             weather = {"summary": snapshot.summary, "temperature_c": snapshot.temperature_c}
     except Exception as e:
-        logger.warning("Weather fetch failed: {}".format(e))
+        logger.warning(f"Weather fetch failed: {e}")
 
     # 4. Run critique loop (cost -> budget critique -> timing critique -> revise)
     _emit(emitter, "step", "Critique", "Running critique loop...")
+    settings = get_settings()
     state = TripState(
         trip_meta={
             "destination": destination,
             "travelers": travelers,
             "budget_level": budget_level,
             "duration_days": days,
-            "daily_hour_budget": 8.0,
+            "daily_hour_budget": settings.pipeline_daily_hour_budget,
             "travel_month": travel_month,
         },
         retrieved_pois=pois,
@@ -117,10 +115,16 @@ async def generate_itinerary(
     known_limitations = state.get("known_limitations", [])
     skeleton = state.get("day_skeleton", skeleton)
 
-    _emit(emitter, "debug", "Critique", "Critique loop done", {
-        "revisions": state.get("revision_count", 0),
-        "limitations": len(known_limitations),
-    })
+    _emit(
+        emitter,
+        "debug",
+        "Critique",
+        "Critique loop done",
+        {
+            "revisions": state.get("revision_count", 0),
+            "limitations": len(known_limitations),
+        },
+    )
 
     # 5. Narrate
     _emit(emitter, "step", "Narrate", "Generating narration...")
@@ -135,7 +139,7 @@ async def generate_itinerary(
     # 6. Validate
     issues = validate_narration(narration, skeleton, cost_summary)
     if issues:
-        logger.warning("Narration validation issues: {}".format(issues))
+        logger.warning(f"Narration validation issues: {issues}")
 
     _emit(emitter, "step", "Done", "Itinerary complete")
 
@@ -185,16 +189,16 @@ def _build_response(
             price = poi.get("price", "")
 
             # Create activity string with time window
-            time_slot = _assign_time_slot(idx, len(day.get("pois", [])))
-            activity = "{}: {}".format(time_slot, name)
+            time_slot = _assign_time_slot(idx)
+            activity = f"{time_slot}: {name}"
             if hours:
-                activity += " ({})".format(hours)
+                activity += f" ({hours})"
             if desc:
                 # Use first sentence of description (up to 100 chars)
                 first_sentence = desc.split(".")[0].strip()
                 if len(first_sentence) > 100:
                     first_sentence = first_sentence[:97] + "..."
-                activity += " - {}".format(first_sentence)
+                activity += f" - {first_sentence}"
 
             if idx % 3 == 0:
                 morning.append(activity)
@@ -219,8 +223,7 @@ def _build_response(
         summary = narration_day.get("narrative", "")
         if not summary:
             summary = "Visit {} with {}.".format(
-                ", ".join(p.get("name", "?") for p in day.get("pois", [])),
-                day.get("city", "local area")
+                ", ".join(p.get("name", "?") for p in day.get("pois", [])), day.get("city", "local area")
             )
 
         day_plan = DayPlan(
@@ -246,14 +249,16 @@ def _build_response(
         practical_tips = known_limitations + practical_tips
 
     return PlanningResponse(
-        overview=narration.get("overview", "Trip plan for {}".format(request.destination)),
+        overview=narration.get("overview", f"Trip plan for {request.destination}"),
         itinerary=itinerary,
         practical_tips=practical_tips,
         citations=[Citation(title="Wikivoyage", url="https://en.wikivoyage.org")],
-        insights=_build_minimal_insights(request),
+        insights=_build_minimal_insights(),
         provider_used="pipeline-v2",
         model_used="hybrid-graph-vector",
-        monthly_weather="{}: {}".format(getattr(request, "travel_month", None) or "This month", weather.get("summary", "")),
+        monthly_weather="{}: {}".format(
+            getattr(request, "travel_month", None) or "This month", weather.get("summary", "")
+        ),
         transport_options=[],
         cost_estimate=cost_estimate,
     )
@@ -272,13 +277,7 @@ def _build_cost_estimate(
     budget_level = request.budget_level
 
     # Get cost agent's grand total as reference
-    try:
-        gt = cost_summary.get("grand_total", 0)
-        if isinstance(gt, str):
-            gt = gt.replace(",", "").replace("Rs", "").replace("INR", "").strip()
-        agent_grand = float(gt)
-    except (ValueError, TypeError):
-        agent_grand = 0.0
+    # (kept intentionally unused: the deterministic breakdown below is authoritative)
 
     # Build per-day costs with deterministic estimates
     daily_costs = []
@@ -296,25 +295,34 @@ def _build_cost_estimate(
                     amount = 0.0
                 elif "rs" in desc_lower:
                     import re
-                    match = re.search(r'rs\s*([\d,]+)', desc_lower)
+
+                    match = re.search(r"rs\s*([\d,]+)", desc_lower)
                     if match:
                         amount = float(match.group(1).replace(",", ""))
-
-            # Categorize by POI type
-            category = ""
-            for s in day.spots:
-                if s.name == name:
-                    # Check original POI category
-                    break
             items.append(CostLineItem(label=name, amount=amount))
 
         # Fixed daily costs based on budget tier
-        hotel_rates = {"budget": 1200, "midrange": 3500, "luxury": 12000}
-        food_rates = {"budget": 400, "midrange": 1000, "luxury": 3000}
-        transport_rates = {"budget": 200, "midrange": 500, "luxury": 1500}
+        settings = get_settings()
+        hotel_rates = {
+            "budget": settings.cost_hotel_rate_budget,
+            "midrange": settings.cost_hotel_rate_midrange,
+            "luxury": settings.cost_hotel_rate_luxury,
+        }
+        food_rates = {
+            "budget": settings.cost_food_rate_budget,
+            "midrange": settings.cost_food_rate_midrange,
+            "luxury": settings.cost_food_rate_luxury,
+        }
+        transport_rates = {
+            "budget": settings.pipeline_daily_transport_budget_budget,
+            "midrange": settings.pipeline_daily_transport_budget_midrange,
+            "luxury": settings.pipeline_daily_transport_budget_luxury,
+        }
 
         items.append(CostLineItem(label="Hotel (per night)", amount=float(hotel_rates.get(budget_level, 3500))))
-        items.append(CostLineItem(label="Meals (per person)", amount=float(food_rates.get(budget_level, 1000) * travelers)))
+        items.append(
+            CostLineItem(label="Meals (per person)", amount=float(food_rates.get(budget_level, 1000) * travelers))
+        )
         items.append(CostLineItem(label="Local transport", amount=float(transport_rates.get(budget_level, 500))))
 
         subtotal = sum(item.amount for item in items)
@@ -334,7 +342,7 @@ def _build_cost_estimate(
     )
 
 
-def _assign_time_slot(index: int, total: int) -> str:
+def _assign_time_slot(index: int) -> str:
     """Assign a time window based on position in the day."""
     slots = [
         "Morning 8:00-10:00",
@@ -348,21 +356,25 @@ def _assign_time_slot(index: int, total: int) -> str:
     return "Afternoon 14:00-16:00"
 
 
-def _build_minimal_insights(request: PlanningRequest) -> Any:
+def _build_minimal_insights() -> Any:
     """Build minimal PlanningInsights for the response."""
-    from agentic_tour_planner.domain.models import PlanningInsights, RouteGuidance, BudgetGuidance, TimingGuidance
+    from agentic_tour_planner.domain.models import BudgetGuidance, PlanningInsights, RouteGuidance, TimingGuidance
+
     return PlanningInsights(
         route=RouteGuidance(strategy="Graph-based retrieval with deterministic sequencing"),
-        budget=BudgetGuidance(estimated_daily_budget=0, estimated_total_budget=0, assumptions=["Cost estimated via cost agent"]),
+        budget=BudgetGuidance(
+            estimated_daily_budget=0, estimated_total_budget=0, assumptions=["Cost estimated via cost agent"]
+        ),
         timing=TimingGuidance(season_summary="", booking_window="", day_planning_notes=[]),
     )
 
 
 def _empty_response(request: PlanningRequest) -> PlanningResponse:
     """Return an empty response when no POIs found."""
-    from agentic_tour_planner.domain.models import PlanningInsights, RouteGuidance, BudgetGuidance, TimingGuidance
+    from agentic_tour_planner.domain.models import BudgetGuidance, PlanningInsights, RouteGuidance, TimingGuidance
+
     return PlanningResponse(
-        overview="No POIs found for {}".format(request.destination),
+        overview=f"No POIs found for {request.destination}",
         itinerary=[],
         practical_tips=[],
         citations=[],
@@ -376,8 +388,12 @@ def _empty_response(request: PlanningRequest) -> PlanningResponse:
     )
 
 
-def _emit(emitter: Any, event: str, step: str, message: str, detail: dict | None = None) -> None:
+_EVENT_TYPES = Literal["step", "debug", "metric", "progress", "error", "done"]
+
+
+def _emit(emitter: Any, event: _EVENT_TYPES, step: str, message: str, detail: dict | None = None) -> None:
     """Emit an event if emitter is available."""
     if emitter:
         from agentic_tour_planner.domain.models import LogEvent
+
         emitter.emit(LogEvent(event=event, step=step, message=message, detail=detail or {}))

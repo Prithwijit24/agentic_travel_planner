@@ -1,46 +1,54 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from agentic_tour_planner.domain.models import PlanningResponse
 
+from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import PlaceImage
 from agentic_tour_planner.images.pipeline import resolve_images as _pipeline_resolve
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Deterministic place-type hint for search queries. When the LLM's
-# `image_query` is missing, appending the place's type anchors the search to
-# the physical landmark (e.g. "Hanuman Tok temple, Gangtok") instead of letting
-# an ambiguous name return generic animal/deity/object photos.
-_PLACE_TYPE_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("temple", ("temple", "mandir", "hanuman", "shiva", "durga", "krishna", "sri ", "mata")),
-    ("monastery", ("monastery", "gompa", "lama", "pemayangtse", "rumtek")),
-    ("church", ("church", "cathedral", "basilica")),
-    ("mosque", ("mosque", "masjid", "dargah")),
-    ("fort", ("fort", "castle", "citadel", "ruins")),
-    ("palace", ("palace", "maharaja", "haveli")),
-    ("museum", ("museum", "gallery")),
-    ("waterfall", ("waterfall", "falls", "ghat")),
-    ("lake", ("lake", "tarn")),
-    ("beach", ("beach", "cove")),
-    ("valley", ("valley", "meadow")),
-    ("viewpoint", ("viewpoint", "view point", "tok", "top", "hill", "peak", "pass", "ridge")),
-    ("park", ("park", "sanctuary", "reserve", "garden")),
-    ("market", ("market", "bazaar", "marg", "street", "square")),
-    ("lighthouse", ("lighthouse",)),
-    ("cave", ("cave",)),
-    ("island", ("island",)),
-    ("bridge", ("bridge",)),
-)
+
+def _place_type_markers() -> Sequence[tuple[str, tuple[str, ...]]]:
+    """Deterministic place-type hint for search queries. When the LLM's
+    `image_query` is missing, appending the place's type anchors the search to
+    the physical landmark (e.g. "Hanuman Tok temple, Gangtok") instead of letting
+    an ambiguous name return generic animal/deity/object photos.
+    """
+    markers = get_settings().place_type_markers
+    if markers:
+        return cast(Sequence[tuple[str, tuple[str, ...]]], [(pt, tuple(ms)) for pt, ms in markers.items()])
+    return (
+        ("temple", ("temple", "mandir", "hanuman", "shiva", "durga", "krishna", "sri ", "mata")),
+        ("monastery", ("monastery", "gompa", "lama", "pemayangtse", "rumtek")),
+        ("church", ("church", "cathedral", "basilica")),
+        ("mosque", ("mosque", "masjid", "dargah")),
+        ("fort", ("fort", "castle", "citadel", "ruins")),
+        ("palace", ("palace", "maharaja", "haveli")),
+        ("museum", ("museum", "gallery")),
+        ("waterfall", ("waterfall", "falls", "ghat")),
+        ("lake", ("lake", "tarn")),
+        ("beach", ("beach", "cove")),
+        ("valley", ("valley", "meadow")),
+        ("viewpoint", ("viewpoint", "view point", "tok", "top", "hill", "peak", "pass", "ridge")),
+        ("park", ("park", "sanctuary", "reserve", "garden")),
+        ("market", ("market", "bazaar", "marg", "street", "square")),
+        ("lighthouse", ("lighthouse",)),
+        ("cave", ("cave",)),
+        ("island", ("island",)),
+        ("bridge", ("bridge",)),
+    )
 
 
 def _place_type_hint(name: str) -> str:
     """Infer the place's physical type from its name ("" when unknown)."""
     n = (name or "").lower()
-    for place_type, markers in _PLACE_TYPE_MARKERS:
+    for place_type, markers in _place_type_markers():
         if any(m in n for m in markers):
             return place_type
     return ""

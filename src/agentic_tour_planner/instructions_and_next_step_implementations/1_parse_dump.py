@@ -11,10 +11,11 @@ Run:
     python 1_parse_dump.py enwikivoyage-latest-pages-articles.xml
 """
 
-import sys
-import re
 import json
+import re
+import sys
 import xml.etree.ElementTree as ET
+
 import mwparserfromhell
 
 # Wikivoyage listing template names -> our POI category
@@ -78,7 +79,7 @@ def extract_listings(wikitext: str, page_title: str):
             "poi_id": f"{slugify(page_title)}__{slugify(name)}",
             "name": name,
             "category": LISTING_TEMPLATES[tname],
-            "base_page": page_title,          # the article this listing lives under
+            "base_page": page_title,  # the article this listing lives under
             "address": get("address"),
             "lat": safe_float(get("lat")),
             "long": safe_float(get("long")),
@@ -156,7 +157,7 @@ def main(dump_path: str):
 
             page_record = {
                 "page_title": title,
-                "poi_id": slugify(title),   # the page itself can BE a city/region node
+                "poi_id": slugify(title),  # the page itself can BE a city/region node
                 "lat": lat,
                 "long": lon,
                 "categories": categories,

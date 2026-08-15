@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from agentic_tour_planner.config.settings import get_settings
+
 if TYPE_CHECKING:
     from agentic_tour_planner.domain.models import (
         DetailedPlan,
@@ -14,16 +16,18 @@ if TYPE_CHECKING:
         PlanningResponse,
         RetrievedContext,
     )
-    from agentic_tour_planner.pipeline.agentic_pipeline import AgenticTourPlannerPipeline
 
 logger = logging.getLogger(__name__)
 
-TARGET_DESCRIPTION_WORDS = 200
-WORD_COUNT_TOLERANCE = 20  # ±20 words from target (180-220 words)
+
+def _word_count_settings():
+    s = get_settings()
+    return s.pipeline_target_description_words, s.pipeline_word_count_tolerance
 
 
 def _validate_place_word_counts(detailed: DetailedPlan | None) -> list[str]:
     """Check that each place description is approximately TARGET_DESCRIPTION_WORDS."""
+    target_description_words, word_count_tolerance = _word_count_settings()
     warnings: list[str] = []
     if not detailed:
         return warnings
@@ -31,9 +35,9 @@ def _validate_place_word_counts(detailed: DetailedPlan | None) -> list[str]:
         for place in day.places or []:
             desc = place.description or ""
             word_count = len(desc.split())
-            if abs(word_count - TARGET_DESCRIPTION_WORDS) > WORD_COUNT_TOLERANCE:
+            if abs(word_count - target_description_words) > word_count_tolerance:
                 warnings.append(
-                    f"Place '{place.name}' description has {word_count} words (target ~{TARGET_DESCRIPTION_WORDS})"
+                    f"Place '{place.name}' description has {word_count} words (target ~{target_description_words})"
                 )
     return warnings
 
@@ -44,7 +48,6 @@ def build_output(
     insights: PlanningInsights,
     response: PlanningResponse,
     detailed: DetailedPlan | None = None,
-    pipeline: AgenticTourPlannerPipeline | None = None,
     metrics: dict | None = None,
     profile_rows: list[dict] | None = None,
     images: list[PlaceImage] | None = None,
@@ -56,6 +59,10 @@ def build_output(
     word_warnings = _validate_place_word_counts(detailed)
     for w in word_warnings:
         logger.warning(w)
+
+    worker_routing = None
+    if response.worker_provider_used and response.worker_model_used:
+        worker_routing = {"planner": (response.worker_provider_used, response.worker_model_used)}
 
     return {
         "request": request.model_dump(mode="json"),
@@ -98,7 +105,7 @@ def build_output(
             "worker_provider_used": response.worker_provider_used,
             "worker_model_used": response.worker_model_used,
             "live_web_brief": response.live_web_brief.model_dump() if response.live_web_brief else None,
-            "worker_routing": pipeline.insights_builder.last_worker_used if pipeline else None,
+            "worker_routing": worker_routing,
             "generated_at": response.generated_at,
             "metrics": metrics,
         },

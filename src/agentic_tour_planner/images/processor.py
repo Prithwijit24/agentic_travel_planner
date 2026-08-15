@@ -23,7 +23,7 @@ async def _clip_score(image_bytes: bytes, place_name: str, place_type: str = "")
     import base64
 
     settings = get_settings()
-    threshold = getattr(settings, "image_clip_threshold", 0.20)
+    threshold = settings.image_clip_threshold
     try:
         stack = get_ai_stack()
         query = f"{place_name} {place_type}".strip()
@@ -55,15 +55,16 @@ async def process_image(
     Returns a ProcessedImage or None if the image is rejected at any stage.
     """
     settings = get_settings()
-    min_res = getattr(settings, "image_min_resolution", 300)
-    max_ratio = getattr(settings, "image_max_aspect_ratio", 4.0)
+    min_res = settings.image_min_resolution
+    max_ratio = settings.image_max_aspect_ratio
 
     if not candidate.url:
         return None
 
     # Stage 1: Download
     try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        timeout = get_settings().image_request_timeout
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             resp = await client.get(candidate.url)
             resp.raise_for_status()
             image_bytes = resp.content

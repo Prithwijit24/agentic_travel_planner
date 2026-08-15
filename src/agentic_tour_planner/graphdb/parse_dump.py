@@ -16,25 +16,37 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Any
 
 import mwparserfromhell
 
-LISTING_TEMPLATES = {
-    "see": "see",
-    "do": "do",
-    "eat": "eat",
-    "drink": "drink",
-    "sleep": "sleep",
-    "buy": "buy",
-    "listing": "listing",
-}
+from agentic_tour_planner.config.settings import get_settings
 
-NS = {"mw": "http://www.mediawiki.org/xml/export-0.10/"}
+
+def _listing_templates():
+    templates = get_settings().listing_templates
+    return (
+        templates
+        if templates
+        else {
+            "see": "see",
+            "do": "do",
+            "eat": "eat",
+            "drink": "drink",
+            "sleep": "sleep",
+            "buy": "buy",
+            "listing": "listing",
+        }
+    )
+
+
+def _mediawiki_ns():
+    return {"mw": get_settings().mediawiki_xml_namespace}
 
 
 def _register_namespaces():
     """Register the mw namespace prefix so ElementTree find() works with iterparse."""
-    ET.register_namespace("mw", NS["mw"])
+    ET.register_namespace("mw", _mediawiki_ns()["mw"])
 
 
 def slugify(text: str) -> str:
@@ -60,22 +72,23 @@ def post_clean(text: str) -> str:
     return text.strip()
 
 
-def extract_listings(wikitext: str, page_title: str):
+def extract_listings(wikitext: str, page_title: str) -> list[dict[str, Any]]:
     """Parse one page's wikitext and pull out every {{see}}/{{do}}/{{eat}}/... template."""
-    pois = []
+    pois: list[dict[str, Any]] = []
     try:
         parsed = mwparserfromhell.parse(wikitext)
     except Exception:
         return pois
 
+    listing_templates = _listing_templates()
     for template in parsed.filter_templates():
         tname = str(template.name).strip().lower()
-        if tname not in LISTING_TEMPLATES:
+        if tname not in listing_templates:
             continue
 
-        def get(param, default=""):
-            if template.has(param):
-                val = str(template.get(param).value).strip()
+        def get(param, default="", _template=template):
+            if _template.has(param):
+                val = str(_template.get(param).value).strip()
                 val = re.sub(r"\[\[|\]\]|\{\{|\}\}", "", val)
                 return val
             return default
@@ -87,7 +100,7 @@ def extract_listings(wikitext: str, page_title: str):
         poi = {
             "poi_id": f"{slugify(page_title)}__{slugify(name)}",
             "name": name,
-            "category": LISTING_TEMPLATES[tname],
+            "category": listing_templates[tname],
             "base_page": page_title,
             "address": get("address"),
             "lat": safe_float(get("lat")),
@@ -126,74 +139,78 @@ def extract_categories(wikitext: str):
 
 
 def main(dump_path: str, output_dir: str | None = None) -> tuple[int, int]:
-    output_path = Path(output_dir) if output_dir else Path(".")
+    output_path = Path(output_dir) if output_dir else Path()
     output_path.mkdir(parents=True, exist_ok=True)
 
-    poi_out = open(output_path / "pois.jsonl", "w", encoding="utf-8")
-    page_out = open(output_path / "pages.jsonl", "w", encoding="utf-8")
+    with (output_path / "pois.jsonl").open("w", encoding="utf-8") as poi_out:
+        page_count, poi_count = _parse_pages(dump_path, output_path, poi_out)
+    print(f"DONE. Pages: {page_count}, POIs extracted: {poi_count}")
+    return page_count, poi_count
 
-    page_count = 0
-    poi_count = 0
 
-    context = ET.iterparse(dump_path, events=("end",))
-    for event, elem in context:
-        tag = elem.tag.split("}")[-1]
-        if tag != "page":
-            continue
+def _parse_pages(dump_path: str, output_path: Path, poi_out) -> tuple[int, int]:
+    """Stream the dump, writing pages to pages.jsonl and POIs to the given open file."""
+    with (output_path / "pages.jsonl").open("w", encoding="utf-8") as page_out:
+        page_count = 0
+        poi_count = 0
 
-        ns_el = elem.find("mw:ns", NS)
-        ns_val = ns_el.text if ns_el is not None else elem.findtext("ns")
-        if ns_val not in ("0", None):
-            elem.clear()
-            continue
+        # Input is a trusted Wikimedia dump; stdlib iterparse keeps this script dependency-free.
+        context = ET.iterparse(dump_path, events=("end",))  # noqa: S314
+        for _, elem in context:
+            tag = elem.tag.split("}")[-1]
+            if tag != "page":
+                continue
 
-        title_el = elem.find("mw:title", NS)
-        if title_el is None:
-            title_el = elem.find("title")
-        title = title_el.text if title_el is not None else elem.findtext("title")
-
-        revision = elem.find("mw:revision", NS)
-        if revision is None:
-            revision = elem.find("revision")
-        text_el = None
-        if revision is not None:
-            text_el = revision.find("mw:text", NS)
-            if text_el is None:
-                text_el = revision.find("text")
-        wikitext = text_el.text if text_el is not None and text_el.text else ""
-
-        if title and wikitext:
-            if wikitext.strip().lower().startswith("#redirect"):
+            ns_el = elem.find("mw:ns", _mediawiki_ns())
+            ns_val = ns_el.text if ns_el is not None else elem.findtext("ns")
+            if ns_val not in ("0", None):
                 elem.clear()
                 continue
 
-            lat, lon = extract_page_geo(wikitext)
-            categories = extract_categories(wikitext)
+            title_el = elem.find("mw:title", _mediawiki_ns())
+            if title_el is None:
+                title_el = elem.find("title")
+            title = title_el.text if title_el is not None else elem.findtext("title")
 
-            page_record = {
-                "page_title": title,
-                "poi_id": slugify(title),
-                "lat": lat,
-                "long": lon,
-                "categories": categories,
-            }
-            page_out.write(json.dumps(page_record, ensure_ascii=False) + "\n")
-            page_count += 1
+            revision = elem.find("mw:revision", _mediawiki_ns())
+            if revision is None:
+                revision = elem.find("revision")
+            text_el = None
+            if revision is not None:
+                text_el = revision.find("mw:text", _mediawiki_ns())
+                if text_el is None:
+                    text_el = revision.find("text")
+            wikitext = text_el.text if text_el is not None and text_el.text else ""
 
-            listings = extract_listings(wikitext, title)
-            for poi in listings:
-                poi["long_description"] = clean_wikitext_to_plain(poi.pop("long_description_raw"))
-                poi_out.write(json.dumps(poi, ensure_ascii=False) + "\n")
-                poi_count += 1
+            if title and wikitext:
+                if wikitext.strip().lower().startswith("#redirect"):
+                    elem.clear()
+                    continue
 
-        elem.clear()
+                lat, lon = extract_page_geo(wikitext)
+                categories = extract_categories(wikitext)
 
-        if page_count % 2000 == 0 and page_count > 0:
-            print(f"...processed {page_count} pages, {poi_count} POIs so far")
+                page_record = {
+                    "page_title": title,
+                    "poi_id": slugify(title),
+                    "lat": lat,
+                    "long": lon,
+                    "categories": categories,
+                }
+                page_out.write(json.dumps(page_record, ensure_ascii=False) + "\n")
+                page_count += 1
 
-    poi_out.close()
-    page_out.close()
-    print(f"DONE. Pages: {page_count}, POIs extracted: {poi_count}")
+                listings = extract_listings(wikitext, title)
+                for poi in listings:
+                    poi["long_description"] = clean_wikitext_to_plain(poi.pop("long_description_raw"))
+                    poi_out.write(json.dumps(poi, ensure_ascii=False) + "\n")
+                    poi_count += 1
+
+            elem.clear()
+
+            if page_count % 2000 == 0 and page_count > 0:
+                print(f"...processed {page_count} pages, {poi_count} POIs so far")
+
     return page_count, poi_count
 
 

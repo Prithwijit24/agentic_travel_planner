@@ -18,6 +18,8 @@ Welcome to the **Agentic Travel Planner**! 🌍 This project brings you a produc
 
 Dive into the intelligent design powering your travel plans!
 
+![Agentic Travel Planner Architecture](agentic_travel_planner.drawio.svg)
+
 ```text
 User
   |
@@ -484,4 +486,3 @@ use_rag_reformulation: false
 - **Non-LLM validation** for hallucination detection
 - **Dynamic interest tags** from real data
 - **Graceful API fallback** when Neo4j/Chroma unavailable
-

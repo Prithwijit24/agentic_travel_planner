@@ -39,8 +39,10 @@ async def main():
             print(f"  - {spot.name}")
 
     if response.cost_estimate and response.cost_estimate.overall:
-        print(f"\nCost: Rs {response.cost_estimate.overall.grand_total} total, "
-              f"Rs {response.cost_estimate.overall.per_person_total} per person")
+        print(
+            f"\nCost: Rs {response.cost_estimate.overall.grand_total} total, "
+            f"Rs {response.cost_estimate.overall.per_person_total} per person"
+        )
 
     if response.practical_tips:
         print(f"\nTips: {len(response.practical_tips)}")

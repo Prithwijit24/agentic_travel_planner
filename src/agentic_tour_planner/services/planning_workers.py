@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from typing import Any, ClassVar, TypeVar
+from typing import Any, TypeVar
 
 import pydantic
 
+from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import (
     BudgetGuidance,
     PlanningInsights,
@@ -126,6 +127,15 @@ class BudgetPlannerWorker:
         self.llm = LLMProvider()
         logger.debug("BudgetPlannerWorker initialized")
 
+    @staticmethod
+    def _daily_budgets():
+        s = get_settings()
+        return {
+            "budget": s.worker_daily_budget_budget,
+            "midrange": s.worker_daily_budget_midrange,
+            "luxury": s.worker_daily_budget_luxury,
+        }
+
     async def build(
         self,
         request: PlanningRequest,
@@ -171,7 +181,7 @@ Return JSON with keys: estimated_daily_budget, estimated_total_budget, assumptio
 
     @staticmethod
     def _heuristic(request: PlanningRequest) -> BudgetGuidance:
-        daily_budgets = {"budget": 70.0, "midrange": 160.0, "luxury": 320.0}
+        daily_budgets = BudgetPlannerWorker._daily_budgets()
         base = daily_budgets.get(request.budget_level, 160.0)
         multiplier = 1.0 + min(len(request.interests), 5) * 0.05
         daily = round(base * multiplier, 2)
@@ -192,16 +202,14 @@ Return JSON with keys: estimated_daily_budget, estimated_total_budget, assumptio
 
 
 class TimingPlannerWorker:
-    HIGH_SEASON_MONTHS: ClassVar[set[str]] = {
-        "june",
-        "july",
-        "august",
-        "december",
-    }
-
     def __init__(self) -> None:
         self.llm = LLMProvider()
         logger.debug("TimingPlannerWorker initialized")
+
+    @staticmethod
+    def _high_season_months() -> set[str]:
+        months = get_settings().worker_high_season_months
+        return set(months) if months else {"june", "july", "august", "december"}
 
     async def build(
         self,
@@ -210,7 +218,7 @@ class TimingPlannerWorker:
         provider_override: str | None = None,
     ) -> TimingGuidance:
         month = (request.travel_month or "").strip().lower()
-        high_season = month in self.HIGH_SEASON_MONTHS
+        high_season = month in self._high_season_months()
         logger.info(
             "TimingPlannerWorker.build start destination={} travel_month={} provider_override={}",
             request.destination,

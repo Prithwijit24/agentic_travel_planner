@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Any
+from typing import Any, cast
 
 import folium
 import httpx
@@ -20,30 +20,38 @@ from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+
 # ---------------------------------------------------------------------------
 # Day colour palette
 # ---------------------------------------------------------------------------
-HEX_DAY_COLORS = [
-    "#e6194b",
-    "#3cb44b",
-    "#4363d8",
-    "#f58231",
-    "#911eb4",
-    "#42d4f4",
-    "#f032e6",
-    "#bfef45",
-    "#fabed4",
-    "#469990",
-    "#dcbeff",
-    "#9A6324",
-    "#800000",
-    "#aaffc3",
-    "#808000",
-]
+def _hex_day_colors() -> list[str]:
+    colors = get_settings().map_day_colors
+    return (
+        cast(list[str], colors)
+        if colors
+        else [
+            "#e6194b",
+            "#3cb44b",
+            "#4363d8",
+            "#f58231",
+            "#911eb4",
+            "#42d4f4",
+            "#f032e6",
+            "#bfef45",
+            "#fabed4",
+            "#469990",
+            "#dcbeff",
+            "#9A6324",
+            "#800000",
+            "#aaffc3",
+            "#808000",
+        ]
+    )
 
 
 def _hex_color(day_number: int) -> str:
-    return HEX_DAY_COLORS[(day_number - 1) % len(HEX_DAY_COLORS)]
+    colors = _hex_day_colors()
+    return colors[(day_number - 1) % len(colors)]
 
 
 # ---------------------------------------------------------------------------
@@ -55,11 +63,14 @@ _OPENTOPOMAP_ATTR = (
     'Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> '
     '(<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
 )
-_OPENTOPOMAP_URL = "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
+
+
+def _tile_urls():
+    s = get_settings()
+    return s.map_tile_opentopomap_url, s.map_tile_cartopositon_url
+
 
 _CARTOPOSITRON_ATTR = '&copy; <a href="https://carto.com/">CARTO</a>'
-_CARTOPOSITRON_URL = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
-
 _OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 
 
@@ -103,7 +114,7 @@ class MapTool:
 
     def _record_google_failure(self) -> None:
         self._google_consecutive_failures += 1
-        if self._google_consecutive_failures >= 5:
+        if self._google_consecutive_failures >= get_settings().geocode_circuit_breaker_threshold:
             self._google_circuit_open = True
             logger.warning(
                 f"Google geocoding circuit breaker OPEN after {self._google_consecutive_failures} consecutive failures"
@@ -143,7 +154,8 @@ class MapTool:
 
         if not locations:
             logger.warning("No locations found for itinerary, returning empty map")
-            return folium.Map(location=[0, 0], zoom_start=2, tiles=_OPENTOPOMAP_URL, attr=_OPENTOPOMAP_ATTR)
+            opentopomap_url, _ = _tile_urls()
+            return folium.Map(location=[0, 0], zoom_start=2, tiles=opentopomap_url, attr=_OPENTOPOMAP_ATTR)
 
         # Determine map center
         first_day_activities = next(iter(locations.values()), [])
@@ -153,9 +165,10 @@ class MapTool:
         # Base layer: CartoDB positron (clean, minimal) — default view
         m = folium.Map(location=center, zoom_start=10, tiles=None)
 
+        opentopomap_url, cartopositon_url = _tile_urls()
         # Add CartoDB positron as the default base layer
         TileLayer(
-            tiles=_CARTOPOSITRON_URL,
+            tiles=cartopositon_url,
             attr=_CARTOPOSITRON_ATTR,
             name="CartoDB Positron (clean)",
             show=True,
@@ -171,7 +184,7 @@ class MapTool:
 
         # Add OpenTopoMap as an alternative layer (terrain/overview)
         TileLayer(
-            tiles=_OPENTOPOMAP_URL,
+            tiles=opentopomap_url,
             attr=_OPENTOPOMAP_ATTR,
             name="OpenTopoMap (Elevation)",
             show=False,
@@ -429,13 +442,16 @@ class MapTool:
         if destination:
             address = f"{address}, {destination}"
 
-        for attempt in range(1, 4):
+        retries = get_settings().geocode_retries
+        timeout = get_settings().geocode_timeout_seconds
+        backoff = get_settings().geocode_backoff_base
+        for attempt in range(1, retries + 1):
             try:
                 url = "https://maps.googleapis.com/maps/api/geocode/json"
                 params = {"address": address, "key": self._google_maps_key}
                 if destination:
                     params["region"] = destination
-                with httpx.Client(timeout=httpx.Timeout(5.0, read=5.0)) as client:
+                with httpx.Client(timeout=httpx.Timeout(timeout, read=timeout)) as client:
                     response = client.get(url, params=params)
                     data = response.json()
                     if data.get("status") == "OK" and data.get("results"):
@@ -445,8 +461,8 @@ class MapTool:
                     return None
             except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as exc:
                 logger.debug(f"Google Maps attempt {attempt} failed for '{address}': {exc}")
-                if attempt < 3:
-                    time.sleep(0.5 * attempt)
+                if attempt < retries:
+                    time.sleep(backoff * attempt)
             except Exception as exc:
                 logger.debug(f"Google Maps unexpected error for '{address}': {exc}")
                 return None
@@ -456,9 +472,11 @@ class MapTool:
     def _geocode_nominatim(self, location: str, destination: str = "") -> tuple[float, float] | None:
         """Nominatim geocoding with strict 1 req/s rate limit and destination bias."""
         try:
+            rate_limit = get_settings().nominatim_rate_limit_seconds
+            timeout = get_settings().geocode_timeout_seconds
             elapsed = time.time() - self._last_geocode_time
-            if elapsed < 1.1:
-                sleep_time = 1.1 - elapsed
+            if elapsed < rate_limit:
+                sleep_time = rate_limit - elapsed
                 logger.debug(f"Rate limiting Nominatim, sleeping {sleep_time:.2f}s")
                 time.sleep(sleep_time)
 
@@ -473,7 +491,7 @@ class MapTool:
                 "Accept-Language": "en",
             }
 
-            with httpx.Client(timeout=httpx.Timeout(5.0, read=5.0)) as client:
+            with httpx.Client(timeout=httpx.Timeout(timeout, read=timeout)) as client:
                 response = client.get(url, params=params, headers=headers)
                 response.raise_for_status()
                 results = response.json()
@@ -602,10 +620,13 @@ class MapTool:
     # Autocomplete
     # ------------------------------------------------------------------
 
-    def autocomplete(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+    def autocomplete(self, query: str, limit: int | None = None) -> list[dict[str, Any]]:
         """Get autocomplete suggestions for a location query."""
         if not query or len(query) < 2:
             return []
+
+        if limit is None:
+            limit = get_settings().autocomplete_limit
 
         suggestions: list[dict[str, Any]] = []
 
@@ -617,9 +638,11 @@ class MapTool:
 
         # Nominatim (rate-limited)
         try:
+            rate_limit = get_settings().nominatim_rate_limit_seconds
+            timeout = get_settings().geocode_timeout_seconds
             elapsed = time.time() - self._last_geocode_time
-            if elapsed < 1.1:
-                time.sleep(1.1 - elapsed)
+            if elapsed < rate_limit:
+                time.sleep(rate_limit - elapsed)
 
             url = "https://nominatim.openstreetmap.org/search"
             params: dict[str, Any] = {"q": query, "format": "json", "limit": limit, "addressdetails": 1}
@@ -627,7 +650,7 @@ class MapTool:
                 "User-Agent": "AgenticTravelPlanner/1.0 (contact@agentictravelplanner.com)",
                 "Accept-Language": "en",
             }
-            with httpx.Client(timeout=httpx.Timeout(5.0, read=5.0)) as client:
+            with httpx.Client(timeout=httpx.Timeout(timeout, read=timeout)) as client:
                 response = client.get(url, params=params, headers=headers)
                 self._last_geocode_time = time.time()
                 response.raise_for_status()
@@ -651,6 +674,7 @@ class MapTool:
             return []
 
         try:
+            timeout = get_settings().geocode_timeout_seconds
             url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
             params: dict[str, Any] = {
                 "input": query,
@@ -658,7 +682,7 @@ class MapTool:
                 "radius": 50000000,
                 "language": "en",
             }
-            with httpx.Client(timeout=httpx.Timeout(5.0, read=5.0)) as client:
+            with httpx.Client(timeout=httpx.Timeout(timeout, read=timeout)) as client:
                 response = client.get(url, params=params)
                 data = response.json()
                 if data.get("status") != "OK":

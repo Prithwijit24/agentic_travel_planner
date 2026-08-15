@@ -5,7 +5,6 @@ Used when Neo4j or ChromaDB are unavailable.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from loguru import logger
@@ -37,8 +36,10 @@ def get_candidates(destination: str) -> list[str]:
     return []
 
 
-def filter_by_interest(poi_ids: list[str], interest_tags: list[str], top_k: int = 40) -> list[str]:
+def filter_by_interest(poi_ids: list[str], _interest_tags: list[str], top_k: int | None = None) -> list[str]:
     """Filter via API-based relevance (fallback: return as-is)."""
+    if top_k is None:
+        top_k = get_settings().retrieval_api_top_k
     # Without vector DB, return top_k by original order
     return poi_ids[:top_k]
 
@@ -48,12 +49,12 @@ def enrich(poi_ids: list[str]) -> list[dict[str, Any]]:
     return [{"poi_id": pid, "name": pid.split("__")[-1].replace("_", " ").title()} for pid in poi_ids]
 
 
-def get_available_tags(destination: str, limit: int = 10) -> list[str]:
+def get_available_tags(_destination: str, limit: int = 10) -> list[str]:
     """Default tags when graph DB is unavailable."""
     return ["see", "do", "eat", "drink", "sleep", "buy"][:limit]
 
 
-def get_balanced_default_pois(destination: str, limit_per_category: int = 3) -> list[str]:
+def get_balanced_default_pois(_destination: str, _limit_per_category: int = 3) -> list[str]:
     """Fallback returns empty — API mode doesn't support balanced selection without graph."""
     return []
 
@@ -64,5 +65,7 @@ def _extract_poi_ids_from_text(text: str) -> list[str]:
         return []
     # Simple extraction: look for capitalized phrases
     import re
-    names = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', text)
-    return [f"api__{n.lower().replace(' ', '_')}" for n in names[:20]]
+
+    max_names = get_settings().retrieval_api_max_poi_names
+    names = re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b", text)
+    return [f"api__{n.lower().replace(' ', '_')}" for n in names[:max_names]]

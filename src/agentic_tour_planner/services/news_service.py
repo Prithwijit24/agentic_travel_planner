@@ -10,12 +10,12 @@ from typing import Any, cast
 
 from pydantic import BaseModel
 
+from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.llm.provider import LLMProvider
 from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-_CACHE_TTL = 3600  # 1 hour
 _MEMORY_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
@@ -88,7 +88,8 @@ class NewsService:
         now = datetime.now(UTC).timestamp()
 
         cached = _MEMORY_CACHE.get(cache_key)
-        if cached and now - cached[0] < _CACHE_TTL:
+        ttl = get_settings().news_cache_ttl_seconds
+        if cached and now - cached[0] < ttl:
             logger.info(f"[news] cache hit for {destination}")
             return NewsDigest(**cached[1])
 

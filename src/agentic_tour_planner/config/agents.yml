@@ -1,0 +1,60 @@
+# ── Freshness agent ────────────────────────────────────────────────────
+freshness_threshold_days: 180
+freshness_min_description_length: 20
+
+# ── Budget agent (INR / person / day) ───────────────────────────────────
+budget_threshold_budget: 3000
+budget_threshold_midrange: 8000
+budget_threshold_luxury: 25000
+
+# ── Cost estimator (INR) ────────────────────────────────────────────────
+cost_hotel_rate_budget: 800.0
+cost_hotel_rate_midrange: 1500.0
+cost_hotel_rate_luxury: 3000.0
+cost_food_rate_budget: 250.0
+cost_food_rate_midrange: 600.0
+cost_food_rate_luxury: 1200.0
+cost_transport_rate_public: 80.0
+cost_transport_rate_car: 150.0
+cost_hotel_prompt_budget: "Rs800-1500/room"
+cost_hotel_prompt_midrange: "Rs2500-6000/room"
+cost_hotel_prompt_luxury: "Rs8000-25000/room"
+cost_food_prompt_budget: "Rs300-600/person/day"
+cost_food_prompt_midrange: "Rs800-2000/person/day"
+cost_food_prompt_luxury: "Rs2500-8000/person/day"
+cost_transport_prompt: "Rs300-800 per trip"
+cost_max_daily_per_person: 8000.0
+
+# ── News service ────────────────────────────────────────────────────────
+news_cache_ttl_seconds: 3600
+
+# ── Planning workers (heuristic fallbacks) ─────────────────────────────
+worker_daily_budget_budget: 70.0
+worker_daily_budget_midrange: 160.0
+worker_daily_budget_luxury: 320.0
+worker_high_season_months: ["june", "july", "august", "december"]
+
+# ── Cost estimator ticket classification ────────────────────────────────
+cost_major_markers: ["temple", "monastery", "palace", "fort", "museum", "waterfall", "falls", "peak", "trek", "sanctuary", "reserve", "monument", "valley", "national park"]
+cost_popular_markers: ["garden", "market", "bazaar", "viewpoint", "view point", "lake", "beach", "bridge", "square", "statue", "gallery", "ridge", "ghat", "island", "station", "church", "mosque", "tower", "hill", "cave", "point", "park"]
+
+# ── Place type classification ──────────────────────────────────────────
+place_type_markers:
+  temple: ["temple", "mandir", "hanuman", "shiva", "durga", "krishna", "sri ", "mata"]
+  monastery: ["monastery", "gompa", "lama", "pemayangtse", "rumtek"]
+  church: ["church", "cathedral", "basilica"]
+  mosque: ["mosque", "masjid", "dargah"]
+  fort: ["fort", "castle", "citadel", "ruins"]
+  palace: ["palace", "maharaja", "haveli"]
+  museum: ["museum", "gallery"]
+  waterfall: ["waterfall", "falls", "ghat"]
+  lake: ["lake", "tarn"]
+  beach: ["beach", "cove"]
+  valley: ["valley", "meadow"]
+  viewpoint: ["viewpoint", "view point", "tok", "top", "hill", "peak", "pass", "ridge"]
+  park: ["park", "sanctuary", "reserve", "garden"]
+  market: ["market", "bazaar", "marg", "street", "square"]
+  lighthouse: ["lighthouse"]
+  cave: ["cave"]
+  island: ["island"]
+  bridge: ["bridge"]

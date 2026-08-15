@@ -13,7 +13,7 @@ print(f"Retrieved {len(pois)} POIs")
 result1 = sequence(pois, duration_days=2)
 result2 = sequence(pois, duration_days=2)
 
-print(f"\n=== Sequencing result (2 days) ===")
+print("\n=== Sequencing result (2 days) ===")
 for day in result1:
     print(f"Day {day['day']} ({day['city']}):")
     for poi in day["pois"]:

@@ -65,6 +65,12 @@ dev = [
 target-version = "py311"
 line-length = 120
 src = ["src", "tests"]
+# Notebooks are execution checkpoints (partial cells, not lintable source);
+# instructions_and_next_step_implementations is reference material, not live code.
+exclude = [
+    "notebooks",
+    "src/agentic_tour_planner/instructions_and_next_step_implementations",
+]
 
 [tool.ruff.lint]
 select = [
@@ -139,6 +145,9 @@ warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
 disallow_untyped_defs = false
+exclude = [
+    "src/agentic_tour_planner/instructions_and_next_step_implementations",
+]
 
 # ── Bandit (security SAST) ───────────────────────────────────────────
 [tool.bandit]

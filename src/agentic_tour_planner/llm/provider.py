@@ -14,90 +14,41 @@ from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-PLANNER_SYSTEM_PROMPT = (
-    "You are a travel itinerary generator. Return strict JSON only, no markdown or code fences. "
-    "The JSON must include: overview (string), monthly_weather (string, a 1-2 sentence estimate for the travel month), "
-    "itinerary (list of day objects), practical_tips (list of strings), citations (list of objects with keys title and url, or a list of strings). "
-    "Every morning/afternoon/evening/meals/logistics value must be a list of strings, never a single string.\n"
-    "\n"
-    "TIME WINDOWS: Prefix or embed a concrete time window in every activity string, e.g. "
-    "'Visit Fushimi Inari Shrine (Morning 6:00-8:30): climb the vermilion torii gates before crowds'. "
-    "Use realistic windows: Morning 6:00-8:30, Late Morning 8:30-11:00, Midday 11:00-13:00, "
-    "Afternoon 14:00-16:30, Late Afternoon 16:30-18:30, Evening 19:00-21:30.\n"
-    "\n"
-    "RETURN DAY: The final day is the return/departure day. Do NOT schedule any attractions, meals, or activities on it. "
-    "Set its morning/afternoon/evening to empty lists, theme to 'Departure / Return Travel', and put only a logistics note "
-    "about checkout and airport/station transfer. Still include its weather block.\n"
-    "\n"
-    "Each itinerary day object must have keys: day (integer), theme (string), morning, afternoon, evening, meals, logistics "
-    "(each a list of strings), weather, spots, needs_hotel_change, hotel_recommendation. "
-    "weather is an object: {temperature_c (number, daytime), temperature_night_c (number, nighttime), "
-    "sunrise (string like '06:12'), sunset (string like '18:45'), humidity_percent (integer), "
-    "rainfall_chance_percent (integer)} estimated for the travel month. "
-    "spots is a list of objects, one per notable place scheduled that day, each: "
-    "{name (string), slot (one of 'morning'|'afternoon'|'evening'), history (1-2 sentence history), "
-    "opening_hours (string like '09:00'), closing_hours (string like '17:00'), "
-    "best_time (ideal visiting window, e.g. 'Morning 6:00-8:30'), "
-    "description (1-2 sentence note on the scenic beauty)}. Use the exact same place name in the matching activity string. "
-    "Include a top-level transport_options list (mode, description, fare, notes) when public transport is relevant.\n"
-    "\n"
-    "STRICT PLANNING RULES — you MUST obey these exactly on every plan:\n"
-    "• PLACES PER DAY (SOFT TARGET): Aim for the number of places the user requested per day "
-    "(e.g. if they ask for 6-7, aim for about 6-7 on regular days). This is a preference, not a quota: "
-    "fewer places are fine on arrival/transfer/departure days or when the region is sparse, and never pad "
-    "a day with distant places just to hit the count. Populate the 'spots' list with the places you "
-    "actually schedule.\n"
-    "• TRIP-LENGTH ROUTING STRATEGY:\n"
-    "  - 2-3 days: stay compact — wander the nearer places around a single base; minimise long transfers.\n"
-    "  - 4-6 days: cover the main sights AND add 1-2 offbeat / lesser-known places in addition to the popular ones.\n"
-    "  - 11-12+ days: split the stay across TWO OR MORE distinct regions/areas of the destination "
-    "(e.g. Andaman: first 5-6 days in one area, then move to a different region such as the north for the rest). "
-    "Apply this region-split principle to any long trip.\n"
-    "  - Other lengths: follow the route strategy while keeping the trip coherent.\n"
-)
 
-ROUTE_PROMPT = 'Return ONLY JSON: {"strategy": "string", "cluster_advice": ["string"], "transit_notes": ["string"]}'
-BUDGET_PROMPT = (
-    'Return ONLY JSON: {"estimated_daily_budget": number, "estimated_total_budget": number, '
-    '"assumptions": ["string"], "saving_tips": ["string"]}'
-)
-TIMING_PROMPT = (
-    'Return ONLY JSON: {"season_summary": "string", "booking_window": "string", "day_planning_notes": ["string"]}'
-)
+def _planner_system_prompt():
+    return get_settings().PLANNER_SYSTEM_PROMPT
 
-# Provider fallback priority (first = preferred). Only providers declared in
-# llm.yml are used; entries here that are commented out in config are skipped.
-# The chain is intentionally short so a degraded provider fails over fast.
-PROVIDER_PRIORITY = [
-    "agnes",
-    "grokai",
-    "gemini",
-    "nararouter",
-    "llm7io",
-    "opencode",
-    "oraclellm",
-]
 
-# API-key env-var aliases per provider (handles typos / vendor naming in .env)
-API_KEY_ALIASES = {
-    "oraclellm": ["oraclellm_api_key"],
-    "agnes": ["agnes_api_key"],
-    "nararouter": ["nararouter_api_key"],
-    "llm7io": ["llm7io_api_key"],
-    "opencode": ["opencode_api_key"],
-    "openrouter": ["openrouter_api_key"],
-    "grokai": ["grokai_api_key", "groqai_api_key"],
-    "nvidia": ["nvidia_api_key"],
-    "morphllm": ["morphllm_api_key"],
-    "gemini": ["gemini_api_key"],
-    "ollama": ["ollama_api_key"],
-    "omniroute": ["omniroute_api_key", "omnirute_api_key"],
-}
+def _worker_prompts():
+    s = get_settings()
+    return s.ROUTE_PROMPT, s.BUDGET_PROMPT, s.TIMING_PROMPT
 
-# Per-call timeouts (seconds). Kept modest so a degraded provider fails over
-# fast instead of eating wall-clock time.
-CALL_TIMEOUT = 60.0
-PLANNER_TIMEOUT = 120.0
+
+def _provider_priority():
+    priority = get_settings().llm_provider_priority
+    return (
+        list(priority) if priority else ["agnes", "grokai", "gemini", "nararouter", "llm7io", "opencode", "oraclellm"]
+    )
+
+
+def _api_key_aliases():
+    aliases = get_settings().llm_api_key_aliases
+    if aliases:
+        return {k: list(v) for k, v in aliases.items()}
+    return {
+        "oraclellm": ["oraclellm_api_key"],
+        "agnes": ["agnes_api_key"],
+        "nararouter": ["nararouter_api_key"],
+        "llm7io": ["llm7io_api_key"],
+        "opencode": ["opencode_api_key"],
+        "openrouter": ["openrouter_api_key"],
+        "grokai": ["grokai_api_key", "groqai_api_key"],
+        "nvidia": ["nvidia_api_key"],
+        "morphllm": ["morphllm_api_key"],
+        "gemini": ["gemini_api_key"],
+        "ollama": ["ollama_api_key"],
+        "omniroute": ["omniroute_api_key", "omnirute_api_key"],
+    }
 
 
 class LLMUnavailableError(RuntimeError):
@@ -113,34 +64,27 @@ def _extract_json(text: str) -> str:
     return text
 
 
-# Error-looking strings some OpenAI-compatible gateways return with HTTP 200
-# when overloaded. If a response's content starts with any of these, treat the
-# whole call as a server-busy failure rather than valid model output.
-_GATEWAY_ERROR_HINTS = (
-    "streaming response failed",
-    "request queue is full",
-    "server error",
-    "upstream service error",
-    "the upstream server",
-)
+def _gateway_error_hints():
+    hints = get_settings().llm_gateway_error_hints
+    return tuple(hints) if hints else ()
 
 
 def _is_gateway_error_content(content: str) -> bool:
     if not content:
         return False
+    prefix_len = get_settings().llm_gateway_error_hint_prefix_length
     lowered = content.strip().lower()
-    return any(lowered.startswith(hint) or hint in lowered[:80] for hint in _GATEWAY_ERROR_HINTS)
+    return any(lowered.startswith(hint) or hint in lowered[:prefix_len] for hint in _gateway_error_hints())
 
 
-# Providers that expose a non-standard endpoint: they accept a single `prompt`
-# string (not OpenAI `messages`) and return {"response": "..."} instead of
-# {"choices": [{"message": {"content": ...}}]}.
-_PROMPT_FIELD_PROVIDERS = frozenset({"oraclellm"})
+def _prompt_field_providers():
+    providers = get_settings().llm_prompt_field_providers
+    return frozenset(providers) if providers else frozenset({"oraclellm"})
 
 
 def _payload_for(provider: str, model: str, messages: list[dict[str, Any]]) -> dict[str, Any]:
     """Build the request body for a provider, adapting non-OpenAI formats."""
-    if provider in _PROMPT_FIELD_PROVIDERS:
+    if provider in _prompt_field_providers():
         text = "\n\n".join(f"{m.get('role', 'user')}: {m.get('content', '')}" for m in messages)
         return {"model": model, "prompt": text, "temperature": 0}
     return {"model": model, "messages": messages, "temperature": 0}
@@ -148,7 +92,7 @@ def _payload_for(provider: str, model: str, messages: list[dict[str, Any]]) -> d
 
 def _content_of(provider: str, data: dict[str, Any]) -> str:
     """Extract the assistant text from a response body, adapting non-OpenAI formats."""
-    if provider in _PROMPT_FIELD_PROVIDERS:
+    if provider in _prompt_field_providers():
         return str(data.get("response") or "")
     return (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
 
@@ -166,8 +110,8 @@ class LLMProvider:
         self.providers = self._load_providers()
         self.last_planner: tuple[str, str] | None = None
         self.last_worker: tuple[str, str] | None = None
-        self.timeout = float(getattr(self.settings, "llm_call_timeout_seconds", None) or CALL_TIMEOUT)
-        self.planner_timeout = float(getattr(self.settings, "llm_planner_timeout_seconds", None) or PLANNER_TIMEOUT)
+        self.timeout = float(self.settings.llm_call_timeout_seconds)
+        self.planner_timeout = float(self.settings.llm_planner_timeout_seconds)
         self._cooldown: dict[str, float] = {}
         self._cooldown_seconds = float(getattr(self.settings, "llm_provider_cooldown_seconds", None) or 30.0)
         self._failures: dict[str, int] = {}  # consecutive failure streak per provider
@@ -182,16 +126,17 @@ class LLMProvider:
         get the longest floor: a hung upstream usually stays hung for a while,
         so we must not re-try it on the next call (e.g. the next day's planner).
         """
+        s = get_settings()
         if error_type in ("rate_limit", "server_busy"):
-            base = max(self._cooldown_seconds * 2, 120.0)
+            base = max(self._cooldown_seconds * 2, s.llm_cooldown_rate_limit_floor)
         elif error_type in ("auth", "connection", "not_found"):
             base = self._cooldown_seconds
         elif error_type == "timeout":
-            base = max(self._cooldown_seconds * 10, 300.0)
+            base = max(self._cooldown_seconds * 10, s.llm_cooldown_timeout_floor)
         else:
             return
         streak = self._failures.get(provider, 0)
-        cooldown = min(base * (2 ** min(streak, 3)), 900.0)
+        cooldown = min(base * (2 ** min(streak, 3)), s.llm_cooldown_max_seconds)
         self._failures[provider] = streak + 1
         self._cooldown[provider] = time.monotonic() + cooldown
         logger.warning(f"[LLM] provider {provider!r} marked down for {cooldown:.0f}s ({error_type})")
@@ -244,21 +189,21 @@ class LLMProvider:
             found[name] = value
 
         # Order by PROVIDER_PRIORITY first, then any extra providers discovered.
-        priority = [p for p in PROVIDER_PRIORITY if p in found]
-        extras = [p for p in found if p not in PROVIDER_PRIORITY]
+        priority = [p for p in _provider_priority() if p in found]
+        extras = [p for p in found if p not in _provider_priority()]
         ordered = priority + extras
         logger.debug("_load_providers found={}", ordered)
         return {p: found[p] for p in ordered}
 
     def _api_key_for(self, provider: str) -> str | None:
-        for attr in API_KEY_ALIASES.get(provider, [f"{provider}_api_key"]):
+        for attr in _api_key_aliases().get(provider, [f"{provider}_api_key"]):
             key = getattr(self.settings, attr, None)
             if key:
                 return str(key)
         return None
 
     def _provider_chain(self) -> list[str]:
-        chain = [p for p in PROVIDER_PRIORITY if p in self.providers]
+        chain = [p for p in _provider_priority() if p in self.providers]
         # Honour the configured default provider (llm.yml `default_llm_provider`):
         # try it first so a reliable default isn't buried behind a flaky one.
         default = getattr(self.settings, "default_llm_provider", None)
@@ -482,7 +427,7 @@ class LLMProvider:
     ) -> dict[str, Any]:
         logger.info("complete_json start role=planner prompt_len={}", len(prompt))
         messages = [
-            {"role": "system", "content": system_prompt or PLANNER_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt or _planner_system_prompt()},
             {"role": "user", "content": prompt},
         ]
         # An explicit provider selection (from the CLI/UI) is tried first (sticky),
@@ -527,10 +472,11 @@ class LLMProvider:
             provider_override,
             model_override,
         )
+        route_prompt, budget_prompt, timing_prompt = _worker_prompts()
         system_prompt = {
-            "route": ROUTE_PROMPT,
-            "budget": BUDGET_PROMPT,
-            "timing": TIMING_PROMPT,
+            "route": route_prompt,
+            "budget": budget_prompt,
+            "timing": timing_prompt,
         }.get(worker_type, "Return strict JSON only. Do not wrap in markdown.")
 
         messages = [

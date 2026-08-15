@@ -1,0 +1,10 @@
+# ── Graph DB loading ────────────────────────────────────────────────────
+graph_near_threshold_km: 3.0
+graph_load_batch_size: 1000
+
+# ── Wikivoyage XML dump parsing ───────────────────────────────────────
+mediawiki_xml_namespace: "http://www.mediawiki.org/xml/export-0.10/"
+
+# ── Vector DB ─────────────────────────────────────────────────────────
+vectordb_collection_name: "poi_descriptions"
+vectordb_batch_size: 200

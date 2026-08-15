@@ -5,6 +5,8 @@ Provides interest-based filtering of POI candidates using embeddings.
 
 from __future__ import annotations
 
+from typing import cast
+
 from loguru import logger
 
 from agentic_tour_planner.vectordb.client import VectorDBClient, get_vector_db
@@ -42,7 +44,7 @@ def filter_by_interest(
             where=where_filter,
         )
         if result["ids"] and result["ids"][0]:
-            filtered = result["ids"][0]
+            filtered = cast(list[str], result["ids"][0])
             logger.info(f"Vector filter: {len(poi_ids)} candidates → {len(filtered)} for tags {interest_tags}")
             return filtered
     except Exception as e:

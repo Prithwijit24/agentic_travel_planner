@@ -7,23 +7,13 @@ rewrite the whole skeleton).
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from loguru import logger
 
 from agentic_tour_planner.agents.state import TripState
+from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.llm.provider import LLMProvider
-
-REVISION_SYSTEM_PROMPT = (
-    "You are a trip revision planner. Given a day-by-day itinerary skeleton and "
-    "a list of critiques, propose ONE specific edit to address the issues.\n"
-    "Return strict JSON only with one of these actions:\n"
-    '  {"action": "drop_poi", "poi_id": "<poi_id>", "day": <day_number>}\n'
-    '  {"action": "move_poi", "poi_id": "<poi_id", "from_day": <day>, "to_day": <day>}\n'
-    '  {"action": "swap_poi", "drop_poi_id": "<id>", "add_poi_id": "<id>", "day": <day>}\n'
-    "Choose the single most impactful edit. Do not rewrite the entire itinerary."
-)
 
 
 async def resolve_critiques(state: TripState) -> TripState:
@@ -50,9 +40,9 @@ async def resolve_critiques(state: TripState) -> TripState:
 
     try:
         provider = LLMProvider()
-        result = await provider.complete_json(prompt, system_prompt=REVISION_SYSTEM_PROMPT)
+        result = await provider.complete_json(prompt, system_prompt=get_settings().REVISION_SYSTEM_PROMPT)
         action = result.get("action", "")
-        logger.info("Planner agent proposed: {}".format(action))
+        logger.info(f"Planner agent proposed: {action}")
 
         # Apply the edit in code
         new_skeleton = _apply_edit(skeleton, result)
@@ -60,7 +50,7 @@ async def resolve_critiques(state: TripState) -> TripState:
 
         return {**state, "day_skeleton": new_skeleton, "revision_count": revision_count}
     except Exception as e:
-        logger.warning("Planner agent failed: {}".format(e))
+        logger.warning(f"Planner agent failed: {e}")
         return {**state, "revision_count": state.get("revision_count", 0) + 1}
 
 

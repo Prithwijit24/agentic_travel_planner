@@ -9,6 +9,7 @@ from typing import NamedTuple
 import marisa_trie
 from rapidfuzz import fuzz
 
+from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.geonames.parser import (
     City,
     parse_admin1_codes,
@@ -21,8 +22,6 @@ from agentic_tour_planner.utils.logging import get_logger
 logger = get_logger(__name__)
 
 INDEX_DIR = Path(__file__).resolve().parents[1] / "data" / "ui"
-
-_SUGGESTION_LIMIT = 10
 
 
 class Suggestion(NamedTuple):
@@ -226,9 +225,11 @@ def _get_index():
     return index
 
 
-def search_places(query: str, limit: int = _SUGGESTION_LIMIT) -> list[Suggestion]:
+def search_places(query: str, limit: int | None = None) -> list[Suggestion]:
     if not query or len(query) < 1:
         return []
+    if limit is None:
+        limit = get_settings().geonames_suggestion_limit
     q = query.lower().strip()
 
     cities, trie, name_to_idxs, admin1_map, country_data = _get_index()

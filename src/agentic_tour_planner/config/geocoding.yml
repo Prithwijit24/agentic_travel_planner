@@ -1,0 +1,12 @@
+# ── Geocoding / map tool ────────────────────────────────────────────────
+geocode_timeout_seconds: 5.0
+geocode_retries: 3
+geocode_backoff_base: 0.5
+nominatim_rate_limit_seconds: 1.1
+geocode_circuit_breaker_threshold: 5
+autocomplete_limit: 10
+
+# ── Map tool ───────────────────────────────────────────────────────────
+map_day_colors: ["#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4", "#42d4f4", "#f032e6", "#bfef45", "#fabed4", "#469990", "#dcbeff", "#9A6324", "#800000", "#aaffc3", "#808000"]
+map_tile_opentopomap_url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
+map_tile_cartopositon_url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"

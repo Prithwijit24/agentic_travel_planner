@@ -7,41 +7,43 @@ Nodes: cost_agent -> budget_agent -> timing_agent -> should_revise?
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from langgraph.graph import END, StateGraph
 from loguru import logger
 
-from agentic_tour_planner.agents.state import TripState
-from agentic_tour_planner.agents.cost_agent import estimate_cost
 from agentic_tour_planner.agents.budget_agent import critique_budget
-from agentic_tour_planner.agents.timing_agent import critique_timing
+from agentic_tour_planner.agents.cost_agent import estimate_cost
 from agentic_tour_planner.agents.planner_agent import resolve_critiques
+from agentic_tour_planner.agents.state import TripState
+from agentic_tour_planner.agents.timing_agent import critique_timing
+from agentic_tour_planner.config.settings import get_settings
 
-MAX_REVISIONS = 2
+
+def _max_revisions():
+    return get_settings().pipeline_max_revisions
 
 
 def _should_revise(state: TripState) -> str:
     """Conditional edge: decide whether to revise or end."""
+    max_revisions = _max_revisions()
     critiques = state.get("critiques", [])
     revision_count = state.get("revision_count", 0)
 
-    if critiques and revision_count < MAX_REVISIONS:
-        logger.info("Revising (iteration {}/{}): {} critiques pending".format(
-            revision_count + 1, MAX_REVISIONS, len(critiques)))
+    if critiques and revision_count < max_revisions:
+        logger.info(f"Revising (iteration {revision_count + 1}/{max_revisions}): {len(critiques)} critiques pending")
         return "revise"
-    else:
-        if critiques and revision_count >= MAX_REVISIONS:
-            logger.info("Max revisions reached ({}), passing {} critiques as known limitations".format(
-                MAX_REVISIONS, len(critiques)))
-        return "end"
+    if critiques and revision_count >= max_revisions:
+        logger.info(f"Max revisions reached ({max_revisions}), passing {len(critiques)} critiques as known limitations")
+    return "end"
 
 
 def _add_known_limitations(state: TripState) -> TripState:
     """Move surviving critiques to known_limitations before END."""
+    max_revisions = _max_revisions()
     critiques = state.get("critiques", [])
     revision_count = state.get("revision_count", 0)
-    if critiques and revision_count >= MAX_REVISIONS:
+    if critiques and revision_count >= max_revisions:
         limitations = list(state.get("known_limitations", []))
         limitations.extend(critiques)
         return {**state, "known_limitations": limitations}
@@ -75,4 +77,4 @@ def build_graph() -> Any:
 async def run_critique_loop(state: TripState) -> TripState:
     """Run the critique loop to completion."""
     app = build_graph()
-    return await app.ainvoke(state)
+    return cast(TripState, await app.ainvoke(state))

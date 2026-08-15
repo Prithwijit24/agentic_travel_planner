@@ -15,7 +15,6 @@ from agentic_tour_planner.api.events import EventEmitter, get_emitter, register_
 from agentic_tour_planner.api.images import collect_places_for_images, resolve_images
 from agentic_tour_planner.config.settings import Settings, get_settings
 from agentic_tour_planner.domain.models import (
-    DetailedPlan,
     ImageResponse,
     LogEvent,
     PlanAPIResponse,
@@ -23,7 +22,6 @@ from agentic_tour_planner.domain.models import (
     PlanningRequest,
     StoredPlanRecord,
 )
-from agentic_tour_planner.pipeline.output_builder import build_output
 from agentic_tour_planner.storage.sqlite_store import SQLitePlanStore
 from agentic_tour_planner.utils.logging import get_logger
 
@@ -56,9 +54,10 @@ def _make_pipeline():
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
+cors_origins = settings.api_cors_origins or ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -91,7 +90,7 @@ async def health() -> dict:
 
 # Hard cap on a single plan job. Generous so slow LLM runs (10-15 min for a
 # multi-day plan) are not killed mid-flight; the UI surfaces the failure reason.
-PLAN_TIMEOUT_SECONDS = 1800
+PLAN_TIMEOUT_SECONDS = settings.pipeline_plan_timeout_seconds
 
 
 def _job_error_message(exc: Exception) -> str:
@@ -128,8 +127,6 @@ async def _run_plan_job(request_id: str, request: PlanningRequest, emitter: Even
             pipeline.run(request, emitter=emitter),
             timeout=PLAN_TIMEOUT_SECONDS,
         )
-        detailed = None
-        images_result: list = []
 
         # V2 pipeline: narration already includes descriptions
         store.save_plan(request, response)
@@ -190,11 +187,11 @@ async def create_feedback(feedback: PlanFeedback) -> dict:
     return {"status": "recorded"}
 
 
-
 @app.get("/destinations/{name}/interests")
 async def get_destination_interests(name: str):
     """Get dynamic interest tags for a destination."""
     from agentic_tour_planner.retrieval.pipeline import get_available_tags
+
     tags = get_available_tags(name)
     return {"tags": tags}
 
@@ -227,5 +224,8 @@ async def stream_plan(request_id: str):
 
 def run() -> None:
     api_host = getattr(settings, "api_host", "127.0.0.1")
-    logger.info(f"Starting API server on {api_host}:8000 (env={settings.app_env})")
-    uvicorn.run("agentic_tour_planner.api.main:app", host=api_host, port=8000, reload=settings.app_env == "development")
+    api_port = getattr(settings, "api_port", 8000)
+    logger.info(f"Starting API server on {api_host}:{api_port} (env={settings.app_env})")
+    uvicorn.run(
+        "agentic_tour_planner.api.main:app", host=api_host, port=api_port, reload=settings.app_env == "development"
+    )

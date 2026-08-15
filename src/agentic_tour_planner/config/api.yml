@@ -1,1 +1,16 @@
-enable_prometheus_metrics: true
+# ── API server ──────────────────────────────────────────────────────────
+api_port: 8000
+api_cors_origins: ["*"]
+
+# ── API client defaults ────────────────────────────────────────────────
+api_client_base_url: "http://localhost:8000"
+api_client_admin_user: "admin"
+
+# ── Streamlit UI ──────────────────────────────────────────────────────
+streamlit_api_base_url: "http://localhost:8000"
+streamlit_keyword_colors:
+  place: "#0078D4"
+  altitude: "#ff8c00"
+  person: "#c026d3"
+  deity: "#ffb900"
+  other: "#00b294"

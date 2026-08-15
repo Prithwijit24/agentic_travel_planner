@@ -11,7 +11,7 @@ from typing import Any
 
 from loguru import logger
 
-from agentic_tour_planner.retrieval import graph_retrieval, vector_retrieval, api_retrieval
+from agentic_tour_planner.retrieval import api_retrieval, graph_retrieval, vector_retrieval
 
 
 def _try_primary_else_fallback(primary_fn, fallback_fn, *args, **kwargs):
@@ -36,13 +36,17 @@ def retrieve(
 
     # 1. Get candidates
     graph_client = graph_retrieval.get_graph_db_or_none()
+
+    def _enrich(ids: list[str]) -> list[dict[str, Any]]:
+        if graph_client:
+            return graph_retrieval.enrich(ids, graph_client)
+        return api_retrieval.enrich(ids)
+
     if graph_client:
         poi_ids = graph_retrieval.get_candidates(destination, graph_client)
-        enrich_fn = lambda ids: graph_retrieval.enrich(ids, graph_client)
     else:
         logger.info("Using API fallback for candidate retrieval")
         poi_ids = api_retrieval.get_candidates(destination)
-        enrich_fn = api_retrieval.enrich
 
     if not poi_ids:
         logger.warning(f"No candidates found for '{destination}'")
@@ -58,7 +62,7 @@ def retrieve(
         filtered = poi_ids[:top_k]
 
     # 3. Enrich
-    results = enrich_fn(filtered)
+    results = _enrich(filtered)
 
     elapsed = time.time() - start
     logger.info(f"Retrieved {len(results)} POIs for '{destination}' in {elapsed:.2f}s")

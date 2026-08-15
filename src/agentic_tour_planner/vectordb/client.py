@@ -7,13 +7,12 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import cast
 
 import chromadb
 from loguru import logger
 
 from agentic_tour_planner.config.settings import get_settings
-
-COLLECTION_NAME = "poi_descriptions"
 
 
 class VectorDBClient:
@@ -23,21 +22,22 @@ class VectorDBClient:
         self._path = persist_dir
         Path(persist_dir).mkdir(parents=True, exist_ok=True)
         self._client = chromadb.PersistentClient(path=persist_dir)
+        self._collection_name = get_settings().vectordb_collection_name
         logger.info(f"ChromaDB initialized: {persist_dir}")
 
     def get_collection(self):
-        return self._client.get_or_create_collection(name=COLLECTION_NAME)
+        return self._client.get_or_create_collection(name=self._collection_name)
 
     def add_pois(self, ids: list[str], documents: list[str], metadatas: list[dict]) -> None:
         """Add POI embeddings in batches."""
         if not ids:
             return
         collection = self.get_collection()
-        batch_size = 200
+        batch_size = get_settings().vectordb_batch_size
         for i in range(0, len(ids), batch_size):
-            batch_ids = ids[i:i + batch_size]
-            batch_docs = documents[i:i + batch_size]
-            batch_meta = metadatas[i:i + batch_size]
+            batch_ids = ids[i : i + batch_size]
+            batch_docs = documents[i : i + batch_size]
+            batch_meta = metadatas[i : i + batch_size]
             collection.add(ids=batch_ids, documents=batch_docs, metadatas=batch_meta)
 
     def query(self, query_text: str, n_results: int = 10, where: dict | None = None) -> dict:
@@ -46,10 +46,10 @@ class VectorDBClient:
         kwargs = {"query_texts": [query_text], "n_results": n_results}
         if where:
             kwargs["where"] = where
-        return collection.query(**kwargs)
+        return cast(dict, collection.query(**kwargs))
 
     def count(self) -> int:
-        return self.get_collection().count()
+        return cast(int, self.get_collection().count())
 
     def upsert(self, ids: list[str], documents: list[str], metadatas: list[dict]) -> None:
         """Upsert POI embeddings (insert or update)."""
@@ -61,7 +61,7 @@ class VectorDBClient:
     def get_by_ids(self, ids: list[str]) -> dict:
         """Get documents by IDs."""
         collection = self.get_collection()
-        return collection.get(ids=ids)
+        return cast(dict, collection.get(ids=ids))
 
 
 @lru_cache(maxsize=1)

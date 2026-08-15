@@ -10,8 +10,12 @@ from typing import Any
 
 from loguru import logger
 
-DEFAULT_AVG_VISIT_HRS = 1.5
-DEFAULT_DAILY_HOUR_BUDGET = 8.0
+from agentic_tour_planner.config.settings import get_settings
+
+
+def _sequencing_settings() -> tuple[float, float]:
+    s = get_settings()
+    return s.sequencing_avg_visit_hrs, s.sequencing_daily_hour_budget
 
 
 def _group_by_city(pois: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -30,19 +34,20 @@ def _order_city_groups(groups: dict[str, list[dict[str, Any]]]) -> list[str]:
 
 def _get_visit_hrs(poi: dict[str, Any]) -> float:
     """Get visit hours for a POI, defaulting to DEFAULT_AVG_VISIT_HRS if missing."""
-    val = poi.get("avg_visit_hrs", DEFAULT_AVG_VISIT_HRS)
+    default_avg_visit_hrs, _ = _sequencing_settings()
+    val = poi.get("avg_visit_hrs", default_avg_visit_hrs)
     if val is None:
-        return DEFAULT_AVG_VISIT_HRS
+        return default_avg_visit_hrs
     try:
         return float(val)
     except (ValueError, TypeError):
-        return DEFAULT_AVG_VISIT_HRS
+        return default_avg_visit_hrs
 
 
 def sequence(
     pois: list[dict[str, Any]],
     duration_days: int,
-    daily_hour_budget: float = DEFAULT_DAILY_HOUR_BUDGET,
+    daily_hour_budget: float | None = None,
 ) -> list[dict[str, Any]]:
     """Deterministic day-by-day sequencing.
 
@@ -57,8 +62,12 @@ def sequence(
     Returns:
         List of day dicts: [{"day": 1, "city": "Gangtok", "pois": [...]}, ...]
     """
+    if daily_hour_budget is None:
+        _, daily_hour_budget = _sequencing_settings()
     if not pois or duration_days <= 0:
         return []
+
+    _, daily_hour_budget = _sequencing_settings()
 
     groups = _group_by_city(pois)
     ordered_cities = _order_city_groups(groups)
@@ -104,5 +113,5 @@ def sequence(
     for i, day in enumerate(days):
         day["day"] = i + 1
 
-    logger.info("Sequenced {} POIs into {} days".format(len(pois), len(days)))
+    logger.info(f"Sequenced {len(pois)} POIs into {len(days)} days")
     return days

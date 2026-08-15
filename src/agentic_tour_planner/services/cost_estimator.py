@@ -24,6 +24,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import (
     CostEstimate,
     CostLineItem,
@@ -35,58 +36,82 @@ from agentic_tour_planner.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-_HOTEL_RATE = {"budget": 800.0, "midrange": 1500.0, "luxury": 3000.0}
-_FOOD_RATE = {"budget": 250.0, "midrange": 600.0, "luxury": 1200.0}
-_TRANSPORT_RATE = {"public": 80.0, "car": 150.0}
-_MAX_DAILY_PER_PERSON = 8000.0
 
-_MAJOR_MARKERS = (
-    "temple",
-    "monastery",
-    "palace",
-    "fort",
-    "museum",
-    "waterfall",
-    "falls",
-    "peak",
-    "trek",
-    "sanctuary",
-    "reserve",
-    "monument",
-    "valley",
-    "national park",
-)
-_POPULAR_MARKERS = (
-    "garden",
-    "market",
-    "bazaar",
-    "viewpoint",
-    "view point",
-    "lake",
-    "beach",
-    "bridge",
-    "square",
-    "statue",
-    "gallery",
-    "ridge",
-    "ghat",
-    "island",
-    "station",
-    "church",
-    "mosque",
-    "tower",
-    "hill",
-    "cave",
-    "point",
-    "park",
-)
+def _cost_rates():
+    s = get_settings()
+    return {
+        "hotel": {
+            "budget": s.cost_hotel_rate_budget,
+            "midrange": s.cost_hotel_rate_midrange,
+            "luxury": s.cost_hotel_rate_luxury,
+        },
+        "food": {
+            "budget": s.cost_food_rate_budget,
+            "midrange": s.cost_food_rate_midrange,
+            "luxury": s.cost_food_rate_luxury,
+        },
+        "transport": {"public": s.cost_transport_rate_public, "car": s.cost_transport_rate_car},
+    }, s.cost_max_daily_per_person
+
+
+def _ticket_markers():
+    s = get_settings()
+    major = s.cost_major_markers
+    popular = s.cost_popular_markers
+    return (
+        tuple(major)
+        if major
+        else (
+            "temple",
+            "monastery",
+            "palace",
+            "fort",
+            "museum",
+            "waterfall",
+            "falls",
+            "peak",
+            "trek",
+            "sanctuary",
+            "reserve",
+            "monument",
+            "valley",
+            "national park",
+        ),
+        tuple(popular)
+        if popular
+        else (
+            "garden",
+            "market",
+            "bazaar",
+            "viewpoint",
+            "view point",
+            "lake",
+            "beach",
+            "bridge",
+            "square",
+            "statue",
+            "gallery",
+            "ridge",
+            "ghat",
+            "island",
+            "station",
+            "church",
+            "mosque",
+            "tower",
+            "hill",
+            "cave",
+            "point",
+            "park",
+        ),
+    )
 
 
 def _ticket_price(name: str) -> float:
+    major_markers, popular_markers = _ticket_markers()
     n = (name or "").lower()
-    if any(m in n for m in _MAJOR_MARKERS):
+    if any(m in n for m in major_markers):
         return 600.0
-    if any(m in n for m in _POPULAR_MARKERS):
+    if any(m in n for m in popular_markers):
         return 300.0
     return 100.0
 
@@ -103,9 +128,10 @@ class CostEstimator:
         members = max(int(request.travelers or 1), 1)
         rooms = max(1, math.ceil(members / 2))
         budget = (request.budget_level or "midrange").lower()
-        hotel_rate = _HOTEL_RATE.get(budget, 1500.0)
-        food_rate = _FOOD_RATE.get(budget, 600.0)
-        transport_rate = _TRANSPORT_RATE.get((request.transport_mode or "").lower(), 80.0)
+        rates, max_daily_per_person = _cost_rates()
+        hotel_rate = rates["hotel"].get(budget, 1500.0)
+        food_rate = rates["food"].get(budget, 600.0)
+        transport_rate = rates["transport"].get((request.transport_mode or "").lower(), 80.0)
 
         daily: list[DailyCost] = []
         for d in plan_json.get("itinerary", []) or []:
@@ -135,7 +161,7 @@ class CostEstimator:
             tickets_total = ticket_total * members
 
             per_person_day = (hotel_total + food_total + transport_total + tickets_total) / members
-            capped = min(per_person_day, _MAX_DAILY_PER_PERSON)
+            capped = min(per_person_day, max_daily_per_person)
             day_total = capped * members
 
             items = [

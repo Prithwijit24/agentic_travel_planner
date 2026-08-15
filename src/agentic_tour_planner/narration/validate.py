@@ -5,6 +5,7 @@ Non-LLM checks for cost match, POI presence, and completeness.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -35,7 +36,7 @@ def validate_narration(
     issues.extend(completeness_issues)
 
     if issues:
-        logger.warning("Validation found {} issues".format(len(issues)))
+        logger.warning(f"Validation found {len(issues)} issues")
     else:
         logger.info("Validation passed")
 
@@ -49,9 +50,13 @@ def _extract_numbers(text: str) -> list[float]:
 
 def _check_cost_match(narration: dict[str, Any], cost_summary: dict[str, Any]) -> list[str]:
     """Check if cost mentioned in narration matches cost_summary."""
-    issues = []
+    issues: list[str] = []
     grand_total = cost_summary.get("grand_total")
     if not grand_total:
+        return issues
+    try:
+        grand_total = float(grand_total)
+    except (ValueError, TypeError):
         return issues
 
     narration_text = json.dumps(narration) if isinstance(narration, dict) else str(narration)
@@ -60,7 +65,7 @@ def _check_cost_match(narration: dict[str, Any], cost_summary: dict[str, Any]) -
     # Check if any number in narration is close to grand_total
     found = any(abs(n - grand_total) / max(grand_total, 1) < 0.1 for n in numbers)
     if not found:
-        issues.append("Cost mismatch: grand total {} not mentioned in narration".format(grand_total))
+        issues.append(f"Cost mismatch: grand total {grand_total} not mentioned in narration")
 
     return issues
 
@@ -83,7 +88,7 @@ def _check_poi_presence(narration: dict[str, Any], day_skeleton: list[dict[str, 
         for poi in day.get("pois", []):
             name = poi.get("name", "").strip().lower()
             if name and name not in narration_text:
-                issues.append("POI missing from narration: {}".format(name))
+                issues.append(f"POI missing from narration: {name}")
 
     return issues
 
@@ -98,9 +103,6 @@ def _check_completeness(narration: dict[str, Any], day_skeleton: list[dict[str, 
 
     missing_days = skeleton_day_nums - narration_day_nums
     for day_num in missing_days:
-        issues.append("Day {} missing from narration".format(day_num))
+        issues.append(f"Day {day_num} missing from narration")
 
     return issues
-
-
-import json  # needed for _check_cost_match and _check_poi_presence

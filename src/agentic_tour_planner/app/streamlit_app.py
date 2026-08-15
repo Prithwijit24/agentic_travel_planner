@@ -12,12 +12,13 @@ import httpx
 import streamlit as st
 from streamlit_searchbox import st_searchbox
 
+from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import BudgetLevel, PlanningRequest
 from agentic_tour_planner.geonames.index import search_places
 from agentic_tour_planner.llm.provider import LLMProvider
 from agentic_tour_planner.services.news_service import NewsService
 
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+_api_base_url = os.getenv("API_BASE_URL") or get_settings().streamlit_api_base_url
 
 
 @st.cache_resource
@@ -62,13 +63,19 @@ def html_escape(text: str) -> str:
 
 
 # Markdown category -> colour used for keyword highlighting (mirrors the CLI).
-_KEYWORD_COLORS = {
-    "place": "#0078D4",
-    "altitude": "#ff8c00",
-    "person": "#c026d3",
-    "deity": "#ffb900",
-    "other": "#00b294",
-}
+def _keyword_colors():
+    colors = get_settings().streamlit_keyword_colors
+    return (
+        colors
+        if colors
+        else {
+            "place": "#0078D4",
+            "altitude": "#ff8c00",
+            "person": "#c026d3",
+            "deity": "#ffb900",
+            "other": "#00b294",
+        }
+    )
 
 
 def render_highlighted(text: str, keywords: list | None = None) -> str:
@@ -89,7 +96,7 @@ def render_highlighted(text: str, keywords: list | None = None) -> str:
             cat = getattr(kw, "category", "other")
         if not term:
             continue
-        color = _KEYWORD_COLORS.get(cat, _KEYWORD_COLORS["other"])
+        color = _keyword_colors().get(cat, _keyword_colors()["other"])
         pattern = re.compile(r"(?i)\b(" + re.escape(str(term)) + r")\b")
         s = pattern.sub(rf'<b style="color: {color};">\1</b>', s)
     return s
@@ -189,7 +196,7 @@ def _build_request_from_form(
 async def _call_plans_api(request: PlanningRequest) -> dict:
     """POST to /plans and return the response."""
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
-        r = await client.post(f"{API_BASE_URL}/plans", json=request.model_dump(mode="json"))
+        r = await client.post(f"{_api_base_url}/plans", json=request.model_dump(mode="json"))
         r.raise_for_status()
         return cast(dict, r.json())
 
@@ -198,7 +205,7 @@ async def _stream_logs(request_id: str, callback) -> None:
     """Connect to SSE stream and call callback for each event."""
     async with (
         httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0)) as client,
-        client.stream("GET", f"{API_BASE_URL}/plans/stream/{request_id}") as response,
+        client.stream("GET", f"{_api_base_url}/plans/stream/{request_id}") as response,
     ):
         async for line in response.aiter_lines():
             if line.startswith("data: "):
@@ -213,7 +220,7 @@ async def _stream_logs(request_id: str, callback) -> None:
 async def _fetch_images(plan_id: str) -> dict:
     """GET /plans/{plan_id}/images."""
     async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.get(f"{API_BASE_URL}/plans/{plan_id}/images")
+        r = await client.get(f"{_api_base_url}/plans/{plan_id}/images")
         r.raise_for_status()
         return cast(dict, r.json())
 
@@ -853,17 +860,20 @@ if not st.session_state.form_submitted and not st.session_state.is_loading:
             default_interests = ["Nature", "Monasteries", "Adventure", "Culture"]
             if destination and len(destination) >= 2:
                 try:
-                    import requests as _req
-                    resp = _req.get(f"http://127.0.0.1:8000/destinations/{destination.split(',')[0].strip()}/interests", timeout=5)
+                    resp = httpx.get(
+                        f"http://127.0.0.1:8000/destinations/{destination.split(',')[0].strip()}/interests", timeout=5
+                    )
                     if resp.status_code == 200:
                         default_interests = resp.json().get("tags", default_interests)
-                except Exception:
-                    pass  # Fall back to static list if API is unreachable
+                except httpx.HTTPError as e:
+                    st.caption(f"Interest tags unavailable ({e}); using defaults")
 
             interests = st.multiselect(
                 "🎯 Interests", default_interests, default_interests[:2] if default_interests else []
             )
-            st.caption("Interests are based on what's available at your destination. Leave unselected for a balanced mix.")
+            st.caption(
+                "Interests are based on what's available at your destination. Leave unselected for a balanced mix."
+            )
 
             st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
             st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)

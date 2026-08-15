@@ -1,0 +1,29 @@
+# ── Image pipeline ──────────────────────────────────────────────────────
+image_openverse_enabled: true
+image_mapillary_token: null
+image_cache_ttl_seconds: 2592000
+image_request_timeout: 15
+image_search_timeout: 10
+image_max_concurrency: 5
+image_waterfall_timeout: 20
+image_commons_category_limit: 10
+image_openverse_page_size: 5
+image_mapillary_radius: 250
+image_mapillary_limit: 5
+image_unsplash_per_page: 3
+image_pexels_per_page: 3
+image_stack_max_results: 5
+image_ddgs_max_results: 5
+image_clip_threshold: 0.22
+image_min_resolution: 800
+image_max_aspect_ratio: 2.5
+image_dedup_threshold: 5
+image_nsfw_threshold: 0.5
+image_smart_crop_enabled: true
+
+# ── Image sources ──────────────────────────────────────────────────────
+image_user_agent: "AgenticTravelPlanner/1.0 (https://github.com/agentic-travel-planner)"
+image_wikidata_api_url: "https://www.wikidata.org/w/api.php"
+image_commons_api_url: "https://commons.wikimedia.org/w/api.php"
+image_wikipedia_rest_url: "https://en.wikipedia.org/api/rest_v1/page/summary"
+image_openverse_api_url: "https://api.openverse.org/v1/images"

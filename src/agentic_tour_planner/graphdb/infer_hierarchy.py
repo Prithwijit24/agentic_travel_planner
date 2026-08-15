@@ -21,18 +21,20 @@ from pathlib import Path
 
 def slugify(text: str) -> str:
     import re
+
     text = text.lower().strip()
     text = re.sub(r"[^a-z0-9]+", "_", text)
     return text.strip("_")
 
 
 def main(input_dir: str | None = None, output_dir: str | None = None) -> tuple[int, int]:
-    input_path = Path(input_dir) if input_dir else Path(".")
-    output_path = Path(output_dir) if output_dir else Path(".")
+    input_path = Path(input_dir) if input_dir else Path()
+    output_path = Path(output_dir) if output_dir else Path()
     output_path.mkdir(parents=True, exist_ok=True)
 
     pages_file = input_path / "pages.jsonl"
-    pages = [json.loads(line) for line in open(pages_file, encoding="utf-8") if line.strip()]
+    with pages_file.open(encoding="utf-8") as f:
+        pages = [json.loads(line) for line in f if line.strip()]
 
     title_to_id = {p["page_title"].strip().lower(): p["poi_id"] for p in pages}
 
@@ -52,11 +54,11 @@ def main(input_dir: str | None = None, output_dir: str | None = None) -> tuple[i
         else:
             orphans.append(page["page_title"])
 
-    with open(output_path / "hierarchy_edges.jsonl", "w", encoding="utf-8") as f:
+    with (output_path / "hierarchy_edges.jsonl").open("w", encoding="utf-8") as f:
         for e in edges:
             f.write(json.dumps(e) + "\n")
 
-    with open(output_path / "orphans.jsonl", "w", encoding="utf-8") as f:
+    with (output_path / "orphans.jsonl").open("w", encoding="utf-8") as f:
         for title in orphans:
             f.write(json.dumps({"page_title": title}) + "\n")
 

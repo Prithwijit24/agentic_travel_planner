@@ -76,8 +76,6 @@ def test_strip_place_markdown_cleans_emphasis():
     assert strip_place_markdown("plain name") == "plain name"
     assert strip_place_markdown("") == ""
 
-
-
     class Response:
         itinerary: ClassVar[list] = [
             {"day": 1, "spots": [{"name": "MG Marg"}, {"name": "Enchey Monastery"}, {"name": "Do Drul Chorten"}]},

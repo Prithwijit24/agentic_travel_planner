@@ -10,10 +10,17 @@ from typing import Any, ClassVar, cast
 
 import httpx
 
+from agentic_tour_planner.config.settings import get_settings
+
 # dotenv loaded in __main__ block only
 
-DEFAULT_BASE_URL = "http://localhost:8000"
-DEFAULT_ADMIN_USER = "admin"
+
+def _api_client_defaults():
+    s = get_settings()
+    return s.api_client_base_url, s.api_client_admin_user
+
+
+DEFAULT_BASE_URL, DEFAULT_ADMIN_USER = _api_client_defaults()
 
 
 class ApiClient:
@@ -73,7 +80,7 @@ class ApiClient:
         transport: httpx.BaseTransport | None = None,
         client: httpx.Client | None = None,
     ) -> None:
-        self.username = username or os.getenv("ADMIN_USER", DEFAULT_ADMIN_USER)
+        self.username = username or os.getenv("ADMIN_USER", _api_client_defaults()[1])
         self.password = password or os.getenv("ADMIN_PASS", "")
         self.token = token or os.getenv("AI_STACK_TOKEN", "")
         self.api_key = api_key or os.getenv("AI_STACK_API_KEY", "")
@@ -81,8 +88,9 @@ class ApiClient:
             self._client = client
             self.base_url = str(client.base_url).rstrip("/")
         else:
+            default_base_url, _ = _api_client_defaults()
             self.base_url = (
-                base_url or os.getenv("BASE_URL") or os.getenv("AI_STACK_BASE_URL") or DEFAULT_BASE_URL
+                base_url or os.getenv("BASE_URL") or os.getenv("AI_STACK_BASE_URL") or default_base_url
             ).rstrip("/")
             self._client = httpx.Client(base_url=self.base_url, timeout=timeout, transport=transport)
 

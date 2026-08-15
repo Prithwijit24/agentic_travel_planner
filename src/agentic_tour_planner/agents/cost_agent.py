@@ -6,24 +6,24 @@ then applies arithmetic. The LLM provides reasoning; prices come from data.
 
 from __future__ import annotations
 
-from typing import Any
-
 from loguru import logger
 
 from agentic_tour_planner.agents.state import TripState
+from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.llm.provider import LLMProvider
 
-COST_SYSTEM_PROMPT = (
-    "You are a travel cost classifier. Given a day-by-day itinerary skeleton "
-    "with POI prices and trip metadata, classify each cost line item as one of:\n"
-    "- per_person: entries, meals, tickets, activities (multiply by number of travelers)\n"
-    "- per_room: hotels, lodging (multiply by rooms needed = ceil(travelers / occupancy))\n"
-    "- flat: cab hire, vehicle rental, guide fees (count once per use, not per person)\n"
-    "Return strict JSON only with keys: daily_costs (list of day objects with items, "
-    "day_total_per_person, day_total_all_travelers), grand_total, per_person_total, "
-    "currency, notes. Use the POI price field when available. For unknown amounts, "
-    "estimate reasonably for the destination and budget_tier. Never invent POIs."
-)
+
+def _cost_prompt_hints():
+    s = get_settings()
+    return {
+        "hotel_budget": s.cost_hotel_prompt_budget,
+        "hotel_midrange": s.cost_hotel_prompt_midrange,
+        "hotel_luxury": s.cost_hotel_prompt_luxury,
+        "food_budget": s.cost_food_prompt_budget,
+        "food_midrange": s.cost_food_prompt_midrange,
+        "food_luxury": s.cost_food_prompt_luxury,
+        "transport": s.cost_transport_prompt,
+    }
 
 
 async def estimate_cost(state: TripState) -> TripState:
@@ -52,21 +52,33 @@ async def estimate_cost(state: TripState) -> TripState:
             prompt_parts.append("  - " + str(poi.get("name", "?")) + " (price: " + str(price) + ")")
 
     prompt_parts.append("")
-    prompt_parts.append("Hotel estimates: budget=Rs800-1500/room, midrange=Rs2500-6000/room, luxury=Rs8000-25000/room")
-    prompt_parts.append("Food estimates: budget=Rs300-600/person/day, midrange=Rs800-2000/person/day, luxury=Rs2500-8000/person/day")
-    prompt_parts.append("Assume double occupancy for hotels. Estimate cab/transport at Rs300-800 per trip.")
+    hints = _cost_prompt_hints()
+    prompt_parts.append(
+        "Hotel estimates: budget={}, midrange={}, luxury={}".format(
+            hints["hotel_budget"], hints["hotel_midrange"], hints["hotel_luxury"]
+        )
+    )
+    prompt_parts.append(
+        "Food estimates: budget={}, midrange={}, luxury={}".format(
+            hints["food_budget"], hints["food_midrange"], hints["food_luxury"]
+        )
+    )
+    prompt_parts.append("Assume double occupancy for hotels. Estimate cab/transport at {}.".format(hints["transport"]))
 
     prompt = "\n".join(prompt_parts)
 
     try:
         provider = LLMProvider()
-        result = await provider.complete_json(prompt, system_prompt=COST_SYSTEM_PROMPT)
+        result = await provider.complete_json(prompt, system_prompt=get_settings().COST_SYSTEM_PROMPT)
         result.setdefault("currency", "INR")
         result["travelers"] = travelers
         result["budget_tier"] = budget_tier
-        logger.info("Cost estimated: {} {} for {} travelers".format(
-            result.get("grand_total", 0), result.get("currency", "INR"), travelers))
+        logger.info(
+            "Cost estimated: {} {} for {} travelers".format(
+                result.get("grand_total", 0), result.get("currency", "INR"), travelers
+            )
+        )
         return {**state, "cost_summary": result}
     except Exception as e:
-        logger.warning("Cost agent failed: {}".format(e))
+        logger.warning(f"Cost agent failed: {e}")
         return {**state, "cost_summary": {"daily_costs": [], "grand_total": 0, "per_person_total": 0, "error": str(e)}}

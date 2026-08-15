@@ -4,6 +4,7 @@ import asyncio
 import time
 from collections.abc import AsyncIterator
 
+from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import LogEvent
 from agentic_tour_planner.utils.logging import get_logger
 
@@ -29,7 +30,8 @@ class EventEmitter:
     async def stream(self) -> AsyncIterator[LogEvent]:
         while True:
             try:
-                event = await asyncio.wait_for(self._queue.get(), timeout=PLAN_TIMEOUT_SECONDS)
+                timeout = get_settings().pipeline_sse_timeout_seconds
+                event = await asyncio.wait_for(self._queue.get(), timeout=timeout)
             except TimeoutError:
                 logger.warning("EventEmitter stream timed out")
                 break
@@ -38,10 +40,9 @@ class EventEmitter:
                 break
 
 
-PLAN_TIMEOUT_SECONDS = 900
-
-
-def register_emitter(request_id: str, emitter: EventEmitter, ttl_seconds: int = PLAN_TIMEOUT_SECONDS) -> None:
+def register_emitter(request_id: str, emitter: EventEmitter, ttl_seconds: int | None = None) -> None:
+    if ttl_seconds is None:
+        ttl_seconds = get_settings().pipeline_sse_timeout_seconds
     now = time.monotonic()
     _prune_emitters(now)
     _emitters[request_id] = emitter

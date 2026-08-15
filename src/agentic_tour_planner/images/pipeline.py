@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 
+from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.images.cache import (
     add_dedup_hash,
     get_cached_image,
@@ -62,7 +63,7 @@ async def resolve_images(places: list[dict]) -> list[ImageResult]:
     is I/O bound (network fetches), turning serial per-place latency into a single
     parallel pass.
     """
-    semaphore = asyncio.Semaphore(5)
+    semaphore = asyncio.Semaphore(get_settings().image_max_concurrency)
 
     async def _resolve_one(place: dict) -> ImageResult:
         name = place.get("place_name", "")
@@ -94,6 +95,7 @@ async def _run_waterfall(
 ) -> ImageResult:
     """Try each source in order, return the first one that passes processing."""
     existing_hashes = await get_dedup_hashes(pid)
+    waterfall_timeout = get_settings().image_waterfall_timeout
 
     for fetcher, needs_coords in _WATERFALL:
         try:
@@ -101,9 +103,9 @@ async def _run_waterfall(
             # AI Stack /images endpoint with a 1000s client timeout) cannot stall
             # the waterfall. We only need a few good hits, not the slowest source.
             if needs_coords:
-                candidates = await asyncio.wait_for(fetcher(query, lat=lat, lng=lng), timeout=20)
+                candidates = await asyncio.wait_for(fetcher(query, lat=lat, lng=lng), timeout=waterfall_timeout)
             else:
-                candidates = await asyncio.wait_for(fetcher(query), timeout=20)
+                candidates = await asyncio.wait_for(fetcher(query), timeout=waterfall_timeout)
 
             if not candidates:
                 continue

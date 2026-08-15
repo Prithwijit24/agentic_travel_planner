@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import DayPlan, PlanningRequest
 
-FAR_APART_KM: float = 50.0
-FAR_APART_MIN: float = 120.0
-DAILY_TRAVEL_BUDGET_MIN: float = 240.0
+
+def _constraints():
+    s = get_settings()
+    return s.constraints_far_apart_km, s.constraints_far_apart_min, s.constraints_daily_travel_budget_min
 
 
 @dataclass
@@ -27,6 +29,7 @@ async def lookup_travel_leg(origin: str, destination: str, _request: PlanningReq
 
 
 async def annotate_travel_constraints(request: PlanningRequest, itinerary: list[DayPlan]) -> list[DayPlan]:
+    far_apart_km, far_apart_min, daily_travel_budget_min = _constraints()
     for day in itinerary:
         spots = day.spots
         total_duration = 0.0
@@ -36,7 +39,7 @@ async def annotate_travel_constraints(request: PlanningRequest, itinerary: list[
             leg = await lookup_travel_leg(spots[i].name, spots[i + 1].name, request)
             total_duration += leg.duration_minutes
 
-            if leg.distance_km > FAR_APART_KM or leg.duration_minutes > FAR_APART_MIN:
+            if leg.distance_km > far_apart_km or leg.duration_minutes > far_apart_min:
                 has_long_leg = True
                 msg = (
                     f"{spots[i].name} and {spots[i + 1].name} are {leg.distance_km:.0f} km apart "
@@ -51,7 +54,7 @@ async def annotate_travel_constraints(request: PlanningRequest, itinerary: list[
                 f"Consider grouping nearby attractions together."
             )
 
-        if total_duration > DAILY_TRAVEL_BUDGET_MIN:
+        if total_duration > daily_travel_budget_min:
             hours = int(total_duration // 60)
             minutes = int(total_duration % 60)
             parts = []
@@ -62,8 +65,8 @@ async def annotate_travel_constraints(request: PlanningRequest, itinerary: list[
             time_str = " ".join(parts)
             day.logistics.append(
                 f"You have {total_duration:.0f} min of travel ({time_str}) on day {day.day} — "
-                f"this exceeds the daily travel budget of {DAILY_TRAVEL_BUDGET_MIN:.0f} min "
-                f"({int(DAILY_TRAVEL_BUDGET_MIN // 60)} hours). Consider reducing the number of stops."
+                f"this exceeds the daily travel budget of {daily_travel_budget_min:.0f} min "
+                f"({int(daily_travel_budget_min // 60)} hours). Consider reducing the number of stops."
             )
 
     return itinerary

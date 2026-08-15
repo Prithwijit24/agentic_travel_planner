@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from agentic_tour_planner.retrieval.pipeline import retrieve, get_available_tags
+from agentic_tour_planner.retrieval.pipeline import get_available_tags, retrieve
 
 print("=== Test 1: retrieve('Gangtok', ['monasteries']) ===")
 start = time.time()

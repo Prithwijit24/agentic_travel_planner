@@ -6,32 +6,12 @@ Includes retry + template fallback.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from loguru import logger
 
+from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.llm.provider import LLMProvider
-
-NARRATION_SYSTEM_PROMPT = (
-    "You are a travel itinerary narrator. Given a fixed day-by-day skeleton with "
-    "POI names, descriptions, costs, weather, and any known limitations, write "
-    "a compelling travel overview and per-day narrative.\n"
-    "RULES:\n"
-    "- Do NOT reorder the days or POIs.\n"
-    "- Do NOT invent POIs, facts, or attractions not in the skeleton.\n"
-    "- Use the exact POI names from the skeleton.\n"
-    "- Mention costs only if they are provided in the cost summary.\n"
-    "- Keep each day narrative to 2-3 paragraphs.\n"
-    "Return strict JSON only:\n"
-    '{\n'
-    '  "overview": "string (2-3 sentences about the trip)",\n'
-    '  "days": [\n'
-    '    {"day": 1, "title": "short 4-8 word heading for the day", "narrative": "string", "tip": "string (one practical tip for the day)"}\n'
-    '  ],\n'
-    '  "general_tips": ["string"]\n'
-    '}\n'
-)
 
 
 async def narrate_trip(
@@ -52,7 +32,7 @@ async def narrate_trip(
 
     try:
         provider = LLMProvider()
-        result = await provider.complete_json(prompt, system_prompt=NARRATION_SYSTEM_PROMPT)
+        result = await provider.complete_json(prompt, system_prompt=get_settings().NARRATION_SYSTEM_PROMPT)
 
         # Validate shape
         if "overview" in result and "days" in result:
@@ -60,12 +40,15 @@ async def narrate_trip(
 
         # Retry with stricter prompt
         logger.warning("Narration shape invalid, retrying with stricter prompt")
-        retry_prompt = prompt + "\n\nIMPORTANT: Return ONLY valid JSON with keys: overview, days (list of objects with day/narrative/tip), general_tips."
-        result = await provider.complete_json(retry_prompt, system_prompt=NARRATION_SYSTEM_PROMPT)
+        retry_prompt = (
+            prompt
+            + "\n\nIMPORTANT: Return ONLY valid JSON with keys: overview, days (list of objects with day/narrative/tip), general_tips."
+        )
+        result = await provider.complete_json(retry_prompt, system_prompt=get_settings().NARRATION_SYSTEM_PROMPT)
         if "overview" in result and "days" in result:
             return result
     except Exception as e:
-        logger.warning("Narration LLM call failed: {}".format(e))
+        logger.warning(f"Narration LLM call failed: {e}")
 
     # Template fallback
     return _template_fallback(trip_meta, day_skeleton, known_limitations)
@@ -89,7 +72,13 @@ def _build_prompt(
         parts.append("Weather: " + str(weather.get("summary", "N/A")))
 
     if cost_summary:
-        parts.append("Total cost: Rs " + str(cost_summary.get("grand_total", "N/A")) + " (Rs " + str(cost_summary.get("per_person_total", "N/A")) + " per person)")
+        parts.append(
+            "Total cost: Rs "
+            + str(cost_summary.get("grand_total", "N/A"))
+            + " (Rs "
+            + str(cost_summary.get("per_person_total", "N/A"))
+            + " per person)"
+        )
 
     if known_limitations:
         parts.append("")
@@ -122,12 +111,26 @@ def _template_fallback(
 ) -> dict[str, Any]:
     """Build a plain-text template when LLM fails."""
     dest = trip_meta.get("destination", "your destination")
-    overview = "A wonderful " + str(len(day_skeleton)) + "-day trip to " + str(dest) + ". Enjoy the sights, sounds, and flavors of this beautiful destination."
+    overview = (
+        "A wonderful "
+        + str(len(day_skeleton))
+        + "-day trip to "
+        + str(dest)
+        + ". Enjoy the sights, sounds, and flavors of this beautiful destination."
+    )
 
     days = []
     for day in day_skeleton:
         poi_names = [p.get("name", "?") for p in day.get("pois", [])]
-        narrative = "Day " + str(day.get("day", "?")) + " in " + str(day.get("city", "the area")) + ". Visit " + (", ".join(poi_names) if poi_names else "local attractions") + "."
+        narrative = (
+            "Day "
+            + str(day.get("day", "?"))
+            + " in "
+            + str(day.get("city", "the area"))
+            + ". Visit "
+            + (", ".join(poi_names) if poi_names else "local attractions")
+            + "."
+        )
         days.append({"day": day.get("day", 0), "narrative": narrative, "tip": "Plan ahead for a smooth day."})
 
     tips = ["Carry cash for small vendors.", "Check opening hours before visiting."]

@@ -14,17 +14,18 @@ Run:
     (edit NEO4J_URI / USER / PASSWORD below, or set as env vars)
 """
 
-import os
 import json
 import math
+import os
 from itertools import combinations
+
 from neo4j import GraphDatabase
 
 NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "password")
 
-NEAR_THRESHOLD_KM = 3.0   # POIs within this distance get a NEAR edge
+NEAR_THRESHOLD_KM = 3.0  # POIs within this distance get a NEAR edge
 BATCH_SIZE = 1000
 
 
@@ -47,7 +48,7 @@ def load_places(driver, pages_path):
     pages = [json.loads(l) for l in open(pages_path, encoding="utf-8")]
     with driver.session() as session:
         for i in range(0, len(pages), BATCH_SIZE):
-            batch = pages[i:i + BATCH_SIZE]
+            batch = pages[i : i + BATCH_SIZE]
             session.run(
                 """
                 UNWIND $rows AS row
@@ -65,7 +66,7 @@ def load_pois(driver, pois_path):
     pois = [json.loads(l) for l in open(pois_path, encoding="utf-8")]
     with driver.session() as session:
         for i in range(0, len(pois), BATCH_SIZE):
-            batch = pois[i:i + BATCH_SIZE]
+            batch = pois[i : i + BATCH_SIZE]
             session.run(
                 """
                 UNWIND $rows AS row
@@ -94,7 +95,7 @@ def load_hierarchy(driver, edges_path):
     edges = [json.loads(l) for l in open(edges_path, encoding="utf-8")]
     with driver.session() as session:
         for i in range(0, len(edges), BATCH_SIZE):
-            batch = edges[i:i + BATCH_SIZE]
+            batch = edges[i : i + BATCH_SIZE]
             session.run(
                 """
                 UNWIND $rows AS row
@@ -133,7 +134,7 @@ def compute_and_load_near_edges(driver, pois):
 
     with driver.session() as session:
         for i in range(0, len(near_edges), BATCH_SIZE):
-            batch = near_edges[i:i + BATCH_SIZE]
+            batch = near_edges[i : i + BATCH_SIZE]
             session.run(
                 """
                 UNWIND $rows AS row

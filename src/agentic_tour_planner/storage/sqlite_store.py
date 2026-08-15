@@ -22,7 +22,7 @@ class SQLitePlanStore:
     def _connect(self) -> sqlite3.Connection:
         db_path = self.settings.operations_db_path
         if db_path is None:
-            raise RuntimeError("operations_db_path is not configured in config/storage.yml")
+            raise RuntimeError("operations_db_path is not configured in config/general.yml")
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         return conn

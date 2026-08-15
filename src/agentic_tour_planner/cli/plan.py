@@ -26,8 +26,6 @@ from agentic_tour_planner.config.settings import get_settings
 from agentic_tour_planner.domain.models import BudgetLevel, PlanningRequest, parse_place_range
 from agentic_tour_planner.llm.hooks import metrics_bus
 from agentic_tour_planner.llm.provider import LLMProvider, LLMUnavailableError
-from agentic_tour_planner.pipeline.agentic_pipeline import AgenticTourPlannerPipeline
-from agentic_tour_planner.pipeline.output_builder import build_output
 from agentic_tour_planner.utils.logging import configure_logging, get_logger
 
 console = Console()
@@ -135,13 +133,19 @@ def _select_provider_interactive() -> str | None:
 
 
 # Category -> rich colour used for keyword highlighting in description paragraphs.
-CATEGORY_COLORS = {
-    "place": "cyan",
-    "altitude": "orange",
-    "person": "magenta",
-    "deity": "yellow",
-    "other": "green",
-}
+def _category_colors():
+    colors = get_settings().cli_category_colors
+    return (
+        colors
+        if colors
+        else {
+            "place": "cyan",
+            "altitude": "orange",
+            "person": "magenta",
+            "deity": "yellow",
+            "other": "green",
+        }
+    )
 
 
 def _apply_emphasis(s: str) -> str:
@@ -184,7 +188,7 @@ def _highlight_keywords(text: str, keywords: list) -> str:
             kc = getattr(kw, "category", "other")
         if not kt:
             continue
-        items.append((escape(str(kt)), CATEGORY_COLORS.get(kc or "other", "green")))
+        items.append((escape(str(kt)), _category_colors().get(kc or "other", "green")))
     # Wrap longer terms first so nested/shorter overlaps don't clobber them.
     items.sort(key=lambda x: len(x[0]), reverse=True)
     for kt, color in items:
@@ -695,7 +699,7 @@ def _render_profile(profile_rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
-async def run_pipeline(request: PlanningRequest, verbose: bool = True, profile: bool = False) -> dict[str, Any]:
+async def run_pipeline(request: PlanningRequest, verbose: bool = True, _profile: bool = False) -> dict[str, Any]:
     """Run the v2 pipeline with graph/vector retrieval + critique loop."""
     metrics_bus.reset()
     if verbose:
@@ -719,6 +723,7 @@ async def run_pipeline(request: PlanningRequest, verbose: bool = True, profile: 
         "metrics": metrics_bus.summary(),
         "wall_time_s": elapsed,
     }
+
 
 @app.command()
 def plan(
@@ -785,7 +790,7 @@ def plan(
     )
 
     try:
-        result = _run_async(run_pipeline(request, verbose=verbose, profile=profile))
+        result = _run_async(run_pipeline(request, verbose=verbose, _profile=profile))
         logger.info("Plan generated successfully")
 
         if result.get("detailed"):

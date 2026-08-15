@@ -56,18 +56,11 @@ def enrich(poi_ids: list[str], client: GraphDBClient) -> list[dict[str, Any]]:
     """Return full POI records for given IDs."""
     if not poi_ids:
         return []
-    query = """
-    MATCH (poi:POI {poi_id: $poi_id})
-    RETURN poi {
-        .poi_id, .name, .category, .address, .lat, .long,
-        .hours, .price, .phone, .long_description, .base_page
-    } AS poi
-    """
     results = []
     # Batch in groups to avoid huge queries
     batch_size = 100
     for i in range(0, len(poi_ids), batch_size):
-        batch = poi_ids[i:i + batch_size]
+        batch = poi_ids[i : i + batch_size]
         batch_results = client.run_query(
             """
             UNWIND $ids AS poi_id

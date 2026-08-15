@@ -20,8 +20,10 @@ Run:
 
 import json
 
+
 def slugify(text: str) -> str:
     import re
+
     text = text.lower().strip()
     text = re.sub(r"[^a-z0-9]+", "_", text)
     return text.strip("_")
