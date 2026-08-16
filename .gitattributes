@@ -1,2 +1,2 @@
-*.ipynb linguist-documentation
+*.ipynb linguist-vendored
 *.svg linguist-detectable=false
